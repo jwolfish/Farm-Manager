@@ -12,12 +12,14 @@ import { CostTemplates } from './pages/CostTemplates';
 import { Yields } from './pages/Yields';
 import { SalesTracking } from './pages/SalesTracking';
 import { Reports } from './pages/Reports';
-import { Settings } from './pages/Settings';
+import { AccountSettings } from './pages/AccountSettings';
+import { FarmSettings } from './pages/FarmSettings';
 import { Team } from './pages/Team';
 import { DashboardLayout } from './components/DashboardLayout';
 import { SeasonImportWizard } from './components/SeasonImportWizard';
 import { supabase } from './lib/supabase';
 import { fetchSharedFarms, SharedFarm } from './lib/teamMembers';
+import { fetchOwnedFarms, createFarm, Farm } from './lib/farms';
 import { Plus } from 'lucide-react';
 import { setNotificationCallback } from './lib/backgroundTasks';
 
@@ -26,12 +28,13 @@ interface Season {
   year: number;
   name: string;
   is_active: boolean;
+  farm_id?: string | null;
 }
 
 function AppContent() {
   const { user, loading: authLoading } = useAuth();
   const { addNotification } = useNotifications();
-  const { activeFarm, setOwnFarm, setSharedFarm } = useFarm();
+  const { activeFarm, ownedFarms, setOwnedFarms, setOwnFarm, setOwnFarmById, setSharedFarm, activeFarmId } = useFarm();
   const wasAuthenticated = useRef(false);
   const [activePage, setActivePage] = useState<string>(() => {
     return sessionStorage.getItem('activePage') || 'dashboard';
@@ -51,7 +54,6 @@ function AppContent() {
   const [seasonToDelete, setSeasonToDelete] = useState<Season | null>(null);
   const [selectedFieldId, setSelectedFieldId] = useState<string | null>(null);
   const [sharedFarms, setSharedFarms] = useState<SharedFarm[]>([]);
-  const [farmName, setFarmName] = useState<string | null>(null);
 
   useEffect(() => {
     setNotificationCallback((message, type) => {
@@ -62,24 +64,48 @@ function AppContent() {
   useEffect(() => {
     if (user) {
       wasAuthenticated.current = true;
-      loadUserProfile();
-      loadSeasons(user.id);
-      loadSharedFarms();
+      loadInitialData();
     } else if (!authLoading) {
       setLoading(false);
     }
   }, [user, authLoading]);
 
-  const loadUserProfile = async () => {
+  const loadInitialData = async () => {
     if (!user) return;
-    const { data } = await supabase
-      .from('user_profiles')
-      .select('farm_name')
-      .eq('id', user.id)
-      .maybeSingle();
-    const name = data?.farm_name ?? null;
-    setFarmName(name);
-    setOwnFarm(user.id, name);
+    setLoading(true);
+    try {
+      const [farms, sharedFarmsData, profileData] = await Promise.all([
+        fetchOwnedFarms(user.id),
+        fetchSharedFarms(user.id),
+        supabase.from('user_profiles').select('farm_name').eq('id', user.id).maybeSingle(),
+      ]);
+
+      setSharedFarms(sharedFarmsData);
+
+      let resolvedFarms = farms;
+
+      if (farms.length === 0) {
+        const defaultName = profileData.data?.farm_name || 'My Farm';
+        const { farm: newFarm } = await createFarm(user.id, defaultName);
+        if (newFarm) {
+          resolvedFarms = [newFarm];
+        }
+      }
+
+      setOwnedFarms(resolvedFarms);
+
+      if (resolvedFarms.length > 0) {
+        const firstFarm = resolvedFarms[0];
+        setOwnFarmById(user.id, firstFarm);
+        await loadSeasonsByFarm(firstFarm.id, user.id);
+      } else {
+        setOwnFarm(user.id, null, profileData.data?.farm_name ?? null);
+        setLoading(false);
+      }
+    } catch (error) {
+      console.error('Error loading initial data:', error);
+      setLoading(false);
+    }
   };
 
   const loadSharedFarms = async () => {
@@ -93,7 +119,7 @@ function AppContent() {
     setActivePage(page);
   };
 
-  const loadSeasons = async (forUserId: string) => {
+  const loadSeasonsByFarm = async (farmId: string, forUserId: string) => {
     setLoading(true);
     try {
       const timeoutPromise = new Promise((_, reject) =>
@@ -103,7 +129,7 @@ function AppContent() {
       const dataPromise = supabase
         .from('seasons')
         .select('*')
-        .eq('user_id', forUserId)
+        .eq('farm_id', farmId)
         .order('year', { ascending: false });
 
       const { data, error } = await Promise.race([dataPromise, timeoutPromise]) as any;
@@ -123,6 +149,35 @@ function AppContent() {
       setSeasons([]);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const loadSeasons = async (forUserId: string) => {
+    if (activeFarmId) {
+      await loadSeasonsByFarm(activeFarmId, forUserId);
+    } else {
+      setLoading(true);
+      try {
+        const { data, error } = await supabase
+          .from('seasons')
+          .select('*')
+          .eq('user_id', forUserId)
+          .order('year', { ascending: false });
+
+        if (error) throw error;
+        setSeasons(data || []);
+        if (data && data.length > 0) {
+          const active = data.find((s: Season) => s.is_active) || data[0];
+          setCurrentSeason(active);
+        } else {
+          setCurrentSeason(null);
+        }
+      } catch (error) {
+        console.error('Error loading seasons:', error);
+        setSeasons([]);
+      } finally {
+        setLoading(false);
+      }
     }
   };
 
@@ -152,14 +207,20 @@ function AppContent() {
     try {
       const name = seasonFormData.name || `${seasonFormData.year} Growing Season`;
 
+      const insertData: any = {
+        user_id: user.id,
+        year: seasonFormData.year,
+        name,
+        is_active: seasons.length === 0,
+      };
+
+      if (activeFarmId) {
+        insertData.farm_id = activeFarmId;
+      }
+
       const { data, error } = await supabase
         .from('seasons')
-        .insert({
-          user_id: user.id,
-          year: seasonFormData.year,
-          name,
-          is_active: seasons.length === 0,
-        })
+        .insert(insertData)
         .select()
         .single();
 
@@ -189,7 +250,11 @@ function AppContent() {
       } else {
         setSeasonFormData({ year: new Date().getFullYear(), name: '', importFromSeason: '' });
         setShowSeasonForm(false);
-        await loadSeasons(user.id);
+        if (activeFarmId) {
+          await loadSeasonsByFarm(activeFarmId, user.id);
+        } else {
+          await loadSeasons(user.id);
+        }
         setCurrentSeason(data as Season);
       }
     } catch (error) {
@@ -202,7 +267,13 @@ function AppContent() {
     setShowImportWizard(false);
     setPendingSeasonId(null);
     setSeasonFormData({ year: new Date().getFullYear(), name: '', importFromSeason: '' });
-    if (user) await loadSeasons(user.id);
+    if (user) {
+      if (activeFarmId) {
+        await loadSeasonsByFarm(activeFarmId, user.id);
+      } else {
+        await loadSeasons(user.id);
+      }
+    }
     if (pendingSeasonId) {
       const season = seasons.find((s) => s.id === pendingSeasonId);
       if (season) setCurrentSeason(season);
@@ -213,7 +284,13 @@ function AppContent() {
     setShowImportWizard(false);
     setPendingSeasonId(null);
     setSeasonFormData({ year: new Date().getFullYear(), name: '', importFromSeason: '' });
-    if (user) loadSeasons(user.id);
+    if (user) {
+      if (activeFarmId) {
+        loadSeasonsByFarm(activeFarmId, user.id);
+      } else {
+        loadSeasons(user.id);
+      }
+    }
   };
 
   const handleDeleteSeason = (season: Season) => {
@@ -236,7 +313,11 @@ function AppContent() {
         setCurrentSeason(null);
       }
 
-      await loadSeasons(user.id);
+      if (activeFarmId) {
+        await loadSeasonsByFarm(activeFarmId, user.id);
+      } else {
+        await loadSeasons(user.id);
+      }
     } catch (error) {
       console.error('Error deleting season:', error);
       alert('Error deleting season. Please try again.');
@@ -258,18 +339,62 @@ function AppContent() {
     handleNavigate('fields');
   };
 
-  const handleSwitchToFarm = useCallback(async (farm: SharedFarm) => {
-    setSharedFarm(farm);
-    await loadSeasons(farm.ownerId);
+  const handleSwitchToOwnedFarm = useCallback(async (farm: Farm) => {
+    if (!user) return;
+    setOwnFarmById(user.id, farm);
+    await loadSeasonsByFarm(farm.id, user.id);
+    handleNavigate('dashboard');
+  }, [user, setOwnFarmById]);
+
+  const handleSwitchToSharedFarm = useCallback(async (farm: SharedFarm) => {
+    setSharedFarm({
+      farmId: farm.farmId,
+      ownerId: farm.ownerId,
+      ownerName: farm.ownerName,
+      farmName: farm.farmName,
+      role: farm.role,
+    });
+    if (farm.farmId) {
+      await loadSeasonsByFarm(farm.farmId, farm.ownerId);
+    } else {
+      await loadSeasons(farm.ownerId);
+    }
     handleNavigate('dashboard');
   }, [setSharedFarm]);
 
   const handleSwitchToOwnFarm = useCallback(async () => {
     if (!user) return;
-    setOwnFarm(user.id, farmName);
-    await loadSeasons(user.id);
+    const farms = ownedFarms.length > 0 ? ownedFarms : await fetchOwnedFarms(user.id);
+    if (farms.length > 0) {
+      setOwnFarmById(user.id, farms[0]);
+      await loadSeasonsByFarm(farms[0].id, user.id);
+    } else {
+      setOwnFarm(user.id, null, null);
+      await loadSeasons(user.id);
+    }
     handleNavigate('dashboard');
-  }, [user, farmName, setOwnFarm]);
+  }, [user, ownedFarms, setOwnFarmById, setOwnFarm]);
+
+  const handleFarmCreated = useCallback(async (newFarm: Farm) => {
+    if (!user) return;
+    const updatedFarms = [...ownedFarms, newFarm];
+    setOwnedFarms(updatedFarms);
+    setOwnFarmById(user.id, newFarm);
+    await loadSeasonsByFarm(newFarm.id, user.id);
+    handleNavigate('dashboard');
+  }, [user, ownedFarms, setOwnedFarms, setOwnFarmById]);
+
+  const handleFarmsUpdated = useCallback(async () => {
+    if (!user) return;
+    const farms = await fetchOwnedFarms(user.id);
+    setOwnedFarms(farms);
+    if (activeFarm?.isOwn && activeFarm.farmId) {
+      const updated = farms.find(f => f.id === activeFarm.farmId);
+      if (updated) {
+        setOwnFarmById(user.id, updated);
+      }
+    }
+  }, [user, ownedFarms, activeFarm, setOwnedFarms, setOwnFarmById]);
 
   const handleInviteAccepted = useCallback(async () => {
     await loadSharedFarms();
@@ -308,7 +433,11 @@ function AppContent() {
             <Plus className="w-8 h-8 text-green-600" />
           </div>
           <h2 className="text-2xl font-bold text-gray-900 mb-3">Welcome to Crop Tracker!</h2>
-          <p className="text-gray-600 mb-6">Let's create your first growing season to get started tracking costs</p>
+          <p className="text-gray-600 mb-6">
+            {activeFarm?.farmName
+              ? `Let's create the first growing season for ${activeFarm.farmName}`
+              : "Let's create your first growing season to get started tracking costs"}
+          </p>
 
           <form onSubmit={handleCreateSeason} className="space-y-4 text-left">
             <div>
@@ -478,7 +607,11 @@ function AppContent() {
       onCreateSeason={isOwnFarm ? () => setShowSeasonForm(true) : undefined}
       onDeleteSeason={isOwnFarm ? handleDeleteSeason : undefined}
       activeFarmContext={activeFarm}
+      sharedFarms={sharedFarms}
+      onSwitchToOwnedFarm={handleSwitchToOwnedFarm}
+      onSwitchToSharedFarm={handleSwitchToSharedFarm}
       onSwitchToOwnFarm={handleSwitchToOwnFarm}
+      onFarmCreated={handleFarmCreated}
       onInviteAccepted={handleInviteAccepted}
       activeRole={activeRole}
     >
@@ -495,10 +628,13 @@ function AppContent() {
       {activePage === 'yields' && <Yields seasonId={currentSeason?.id || null} readOnly={activeRole === 'viewer'} />}
       {activePage === 'sales' && <SalesTracking seasonId={currentSeason?.id || null} readOnly={activeRole === 'viewer'} />}
       {activePage === 'reports' && <Reports currentSeasonId={currentSeason?.id || null} />}
-      {activePage === 'settings' && isOwnFarm && <Settings />}
+      {activePage === 'account-settings' && isOwnFarm && <AccountSettings />}
+      {activePage === 'farm-settings' && isOwnFarm && (
+        <FarmSettings onFarmsUpdated={handleFarmsUpdated} />
+      )}
       {activePage === 'team' && isOwnFarm && (
         <Team
-          onSwitchToFarm={handleSwitchToFarm}
+          onSwitchToFarm={handleSwitchToSharedFarm}
           onSwitchToOwnFarm={handleSwitchToOwnFarm}
           sharedFarms={sharedFarms}
           onRefreshSharedFarms={loadSharedFarms}

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import { supabase } from '../lib/supabase';
+import { useFarm } from '../contexts/FarmContext';
 import {
   sendInvitation,
   fetchSentInvitations,
@@ -19,6 +19,7 @@ import {
   Clock,
   X,
   ChevronDown,
+  Tractor,
 } from 'lucide-react';
 
 interface TeamProps {
@@ -40,6 +41,7 @@ const roleDescriptions: Record<TeamRole, string> = {
 
 export function Team({ onSwitchToFarm, onSwitchToOwnFarm, sharedFarms, onRefreshSharedFarms }: TeamProps) {
   const { user } = useAuth();
+  const { activeFarm } = useFarm();
   const [invitations, setInvitations] = useState<TeamMember[]>([]);
   const [inviteEmail, setInviteEmail] = useState('');
   const [inviteRole, setInviteRole] = useState<TeamRole>('viewer');
@@ -48,26 +50,20 @@ export function Team({ onSwitchToFarm, onSwitchToOwnFarm, sharedFarms, onRefresh
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
   const [revokeConfirm, setRevokeConfirm] = useState<string | null>(null);
-  const [farmName, setFarmName] = useState<string | null>(null);
   const [showRoleDropdown, setShowRoleDropdown] = useState(false);
 
+  const activeFarmId = activeFarm?.farmId ?? null;
+  const activeFarmName = activeFarm?.farmName ?? null;
+
   useEffect(() => {
-    if (!user) return;
+    if (!user || !activeFarmId) return;
     loadData();
-    supabase
-      .from('user_profiles')
-      .select('farm_name')
-      .eq('id', user.id)
-      .maybeSingle()
-      .then(({ data }) => {
-        setFarmName(data?.farm_name ?? null);
-      });
-  }, [user]);
+  }, [user, activeFarmId]);
 
   const loadData = async () => {
-    if (!user) return;
+    if (!user || !activeFarmId) return;
     setLoading(true);
-    const data = await fetchSentInvitations(user.id);
+    const data = await fetchSentInvitations(user.id, activeFarmId);
     setInvitations(data);
     onRefreshSharedFarms();
     setLoading(false);
@@ -75,23 +71,18 @@ export function Team({ onSwitchToFarm, onSwitchToOwnFarm, sharedFarms, onRefresh
 
   const handleInvite = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!user || !inviteEmail.trim()) return;
+    if (!user || !inviteEmail.trim() || !activeFarmId) return;
 
     setSubmitting(true);
     setError(null);
     setSuccess(null);
 
-    const { data: profile } = await supabase
-      .from('user_profiles')
-      .select('farm_name, email')
-      .eq('id', user.id)
-      .maybeSingle();
-
     const { error: err } = await sendInvitation(
       user.id,
-      profile?.farm_name ?? user.email ?? 'Unknown',
+      activeFarmName ?? user.email ?? 'Unknown',
       user.email ?? '',
-      profile?.farm_name ?? null,
+      activeFarmId,
+      activeFarmName,
       inviteEmail.trim(),
       inviteRole
     );
@@ -154,10 +145,14 @@ export function Team({ onSwitchToFarm, onSwitchToOwnFarm, sharedFarms, onRefresh
             <UserPlus className="w-5 h-5 text-green-600" />
             <h2 className="text-base font-semibold text-gray-900">Invite Collaborator</h2>
           </div>
-          {farmName && (
+          {activeFarmName && (
             <p className="text-xs text-gray-500 mt-0.5">
-              Inviting access to <span className="font-medium text-gray-700">{farmName}</span>
+              Granting access to all seasons in{' '}
+              <span className="font-medium text-gray-700">{activeFarmName}</span>
             </p>
+          )}
+          {!activeFarmId && (
+            <p className="text-xs text-amber-600 mt-1">Select a farm first to manage collaborators.</p>
           )}
         </div>
 
@@ -170,6 +165,7 @@ export function Team({ onSwitchToFarm, onSwitchToOwnFarm, sharedFarms, onRefresh
               placeholder="collaborator@example.com"
               className="flex-1 px-4 py-2.5 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-green-500 focus:border-transparent"
               required
+              disabled={!activeFarmId}
             />
 
             <div className="relative">
@@ -177,6 +173,7 @@ export function Team({ onSwitchToFarm, onSwitchToOwnFarm, sharedFarms, onRefresh
                 type="button"
                 onClick={() => setShowRoleDropdown((v) => !v)}
                 className="flex items-center gap-2 px-4 py-2.5 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 transition-colors"
+                disabled={!activeFarmId}
               >
                 {roleLabels[inviteRole]}
                 <ChevronDown className="w-4 h-4 text-gray-400" />
@@ -205,7 +202,7 @@ export function Team({ onSwitchToFarm, onSwitchToOwnFarm, sharedFarms, onRefresh
 
             <button
               type="submit"
-              disabled={submitting}
+              disabled={submitting || !activeFarmId}
               className="px-5 py-2.5 bg-green-600 hover:bg-green-700 text-white text-sm font-medium rounded-lg transition-colors disabled:opacity-50"
             >
               {submitting ? 'Sending...' : 'Send Invite'}
@@ -223,10 +220,20 @@ export function Team({ onSwitchToFarm, onSwitchToOwnFarm, sharedFarms, onRefresh
             <Users className="w-5 h-5 text-gray-600" />
             <h2 className="text-base font-semibold text-gray-900">People With Access</h2>
           </div>
+          {activeFarmName && (
+            <p className="text-xs text-gray-500 mt-0.5">
+              Access to all seasons in <span className="font-medium text-gray-700">{activeFarmName}</span>
+            </p>
+          )}
         </div>
 
         {loading ? (
           <div className="px-6 py-8 text-center text-sm text-gray-400">Loading...</div>
+        ) : !activeFarmId ? (
+          <div className="px-6 py-8 text-center">
+            <Tractor className="w-10 h-10 text-gray-300 mx-auto mb-2" />
+            <p className="text-sm text-gray-400">Select a farm to manage its collaborators.</p>
+          </div>
         ) : invitations.length === 0 ? (
           <div className="px-6 py-8 text-center">
             <Users className="w-10 h-10 text-gray-300 mx-auto mb-2" />

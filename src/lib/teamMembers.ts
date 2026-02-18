@@ -15,6 +15,7 @@ export interface TeamMember {
 
 export interface SharedFarm {
   invitationId: string;
+  farmId: string;
   ownerId: string;
   ownerName: string | null;
   ownerEmail: string;
@@ -35,6 +36,7 @@ export async function sendInvitation(
   ownerUserId: string,
   ownerName: string,
   ownerEmail: string,
+  farmId: string,
   farmName: string | null,
   invitedEmail: string,
   role: TeamRole
@@ -45,12 +47,13 @@ export async function sendInvitation(
     .from('team_members')
     .select('id, status')
     .eq('user_id', ownerUserId)
+    .eq('farm_id', farmId)
     .eq('email', trimmedEmail)
     .maybeSingle();
 
   if (existingMember) {
     if ((existingMember.status as InvitationStatus) === 'accepted') {
-      return { error: 'This person already has access to your farm.' };
+      return { error: 'This person already has access to this farm.' };
     }
     if ((existingMember.status as InvitationStatus) === 'pending') {
       return { error: 'An invitation is already pending for this email.' };
@@ -61,6 +64,7 @@ export async function sendInvitation(
     .from('team_members')
     .insert({
       user_id: ownerUserId,
+      farm_id: farmId,
       email: trimmedEmail,
       role,
       status: 'pending' as InvitationStatus,
@@ -93,6 +97,7 @@ export async function sendInvitation(
         type: 'team_invite',
         payload: {
           invitation_id: inviteRecord.id,
+          farm_id: farmId,
           owner_name: ownerName || ownerEmail,
           owner_email: ownerEmail,
           farm_name: farmName,
@@ -105,11 +110,12 @@ export async function sendInvitation(
   return { error: null };
 }
 
-export async function fetchSentInvitations(ownerUserId: string): Promise<TeamMember[]> {
+export async function fetchSentInvitations(ownerUserId: string, farmId: string): Promise<TeamMember[]> {
   const { data, error } = await (supabase as any)
     .from('team_members')
     .select('id, email, role, status, invited_at, accepted_at, invited_user_id')
     .eq('user_id', ownerUserId)
+    .eq('farm_id', farmId)
     .order('invited_at', { ascending: false });
 
   if (error) {
@@ -139,7 +145,7 @@ export async function fetchSharedFarms(userId: string): Promise<SharedFarm[]> {
 
   const { data, error } = await (supabase as any)
     .from('team_members')
-    .select('id, user_id, role, farm_name_snapshot:user_profiles!team_members_user_id_fkey(farm_name, email)')
+    .select('id, user_id, role, farm_id, farms(farm_name), owner_profile:user_profiles!team_members_user_id_fkey(email)')
     .eq('email', profileData.email)
     .eq('status', 'accepted' as InvitationStatus);
 
@@ -150,10 +156,11 @@ export async function fetchSharedFarms(userId: string): Promise<SharedFarm[]> {
 
   return (data || []).map((row: any) => ({
     invitationId: row.id,
+    farmId: row.farm_id ?? '',
     ownerId: row.user_id,
     ownerName: null,
-    ownerEmail: row.farm_name_snapshot?.email ?? '',
-    farmName: row.farm_name_snapshot?.farm_name ?? null,
+    ownerEmail: row.owner_profile?.email ?? '',
+    farmName: row.farms?.farm_name ?? null,
     role: row.role as TeamRole,
   }));
 }

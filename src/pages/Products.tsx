@@ -2,16 +2,20 @@ import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import { useNotifications } from '../contexts/NotificationContext';
-import { Plus, Edit2, Trash2, Package, Droplet, FlaskConical, Layers } from 'lucide-react';
+import { Plus, Edit2, Trash2, Package, Droplet, FlaskConical, Layers, Copy } from 'lucide-react';
 import type { CropType } from '../lib/database.types';
 import { FertilizerPrograms } from '../components/FertilizerPrograms';
 import { ChemicalPrograms } from '../components/ChemicalPrograms';
 import { calculateCostWithConversion } from '../lib/unitConversions';
 import { queueCascadeTask } from '../lib/backgroundTasks';
 import { cascadeProductUpdateInSeason, cascadeChemicalUpdateInSeason } from '../lib/templateUtils';
+import { CrossFarmCopyModal } from '../components/CrossFarmCopyModal';
+import { SeasonImportWizard } from '../components/SeasonImportWizard';
+import { useFarm } from '../contexts/FarmContext';
 
 interface ProductsProps {
   seasonId: string | null;
+  readOnly?: boolean;
 }
 
 type ProductType = 'seeds' | 'fertilizers' | 'chemicals' | 'programs';
@@ -60,12 +64,15 @@ interface ChemicalProgram {
   }>;
 }
 
-export function Products({ seasonId }: ProductsProps) {
+export function Products({ seasonId, readOnly = false }: ProductsProps) {
   const { user } = useAuth();
+  const { ownedFarms } = useFarm();
   const [activeTab, setActiveTab] = useState<ProductType>('seeds');
   const [programType, setProgramType] = useState<'fertilizer' | 'chemical'>('fertilizer');
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
+  const [showCrossFarmModal, setShowCrossFarmModal] = useState(false);
+  const [crossFarmSourceSeasonId, setCrossFarmSourceSeasonId] = useState<string | null>(null);
 
   const [seeds, setSeeds] = useState<SeedVariety[]>([]);
   const [fertilizers, setFertilizers] = useState<FertilizerProduct[]>([]);
@@ -178,8 +185,8 @@ export function Products({ seasonId }: ProductsProps) {
         })}
       </div>
 
-      {activeTab !== 'programs' && (
-        <div className="mb-6">
+      {activeTab !== 'programs' && !readOnly && (
+        <div className="mb-6 flex items-center gap-3">
           <button
             onClick={() => setShowForm(true)}
             className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
@@ -187,6 +194,15 @@ export function Products({ seasonId }: ProductsProps) {
             <Plus className="w-5 h-5" />
             Add {activeTab === 'seeds' ? 'Seed Variety' : activeTab === 'fertilizers' ? 'Fertilizer' : 'Chemical'}
           </button>
+          {ownedFarms.length > 1 && seasonId && (
+            <button
+              onClick={() => setShowCrossFarmModal(true)}
+              className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors text-sm"
+            >
+              <Copy className="w-4 h-4" />
+              Copy from another farm
+            </button>
+          )}
         </div>
       )}
 
@@ -220,6 +236,32 @@ export function Products({ seasonId }: ProductsProps) {
 
           {programType === 'fertilizer' && seasonId && <FertilizerPrograms seasonId={seasonId} />}
           {programType === 'chemical' && seasonId && <ChemicalPrograms seasonId={seasonId} />}
+        </div>
+      )}
+
+      {showCrossFarmModal && seasonId && user && (
+        <CrossFarmCopyModal
+          currentSeasonId={seasonId}
+          onSelectSourceSeason={(sourceSeasonId) => {
+            setCrossFarmSourceSeasonId(sourceSeasonId);
+            setShowCrossFarmModal(false);
+          }}
+          onCancel={() => setShowCrossFarmModal(false)}
+        />
+      )}
+
+      {crossFarmSourceSeasonId && seasonId && user && (
+        <div className="fixed inset-0 z-50">
+          <SeasonImportWizard
+            sourceSeasonId={crossFarmSourceSeasonId}
+            newSeasonId={seasonId}
+            userId={user.id}
+            onComplete={() => {
+              setCrossFarmSourceSeasonId(null);
+              loadProducts();
+            }}
+            onCancel={() => setCrossFarmSourceSeasonId(null)}
+          />
         </div>
       )}
     </div>

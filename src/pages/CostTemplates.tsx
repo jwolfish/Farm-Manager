@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
+import { useFarm } from '../contexts/FarmContext';
 import {
   getTemplates,
   deleteTemplate,
@@ -7,6 +8,8 @@ import {
   type TemplateWithStats
 } from '../lib/templateUtils';
 import { TemplateForm } from '../components/TemplateForm';
+import { CrossFarmCopyModal } from '../components/CrossFarmCopyModal';
+import { SeasonImportWizard } from '../components/SeasonImportWizard';
 import {
   FileText,
   Plus,
@@ -14,21 +17,26 @@ import {
   Trash2,
   DollarSign,
   Users,
-  Calendar
+  Calendar,
+  Copy,
 } from 'lucide-react';
 
 interface CostTemplatesProps {
   seasonId: string | null;
+  readOnly?: boolean;
   onTemplateSelect?: (templateId: string) => void;
 }
 
-export function CostTemplates({ seasonId, onTemplateSelect }: CostTemplatesProps) {
+export function CostTemplates({ seasonId, readOnly = false, onTemplateSelect }: CostTemplatesProps) {
   const { user } = useAuth();
+  const { ownedFarms } = useFarm();
   const [templates, setTemplates] = useState<TemplateWithStats[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [selectedTemplate, setSelectedTemplate] = useState<TemplateWithStats | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState<string | null>(null);
+  const [showCrossFarmModal, setShowCrossFarmModal] = useState(false);
+  const [crossFarmSourceSeasonId, setCrossFarmSourceSeasonId] = useState<string | null>(null);
 
   useEffect(() => {
     if (seasonId && user) {
@@ -95,13 +103,26 @@ export function CostTemplates({ seasonId, onTemplateSelect }: CostTemplatesProps
             Create reusable cost configurations to quickly assign costs to multiple fields
           </p>
         </div>
-        <button
-          onClick={() => setShowCreateForm(true)}
-          className="inline-flex items-center px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
-        >
-          <Plus className="w-5 h-5 mr-2" />
-          Create Template
-        </button>
+        <div className="flex items-center gap-3">
+          {!readOnly && ownedFarms.length > 1 && seasonId && (
+            <button
+              onClick={() => setShowCrossFarmModal(true)}
+              className="inline-flex items-center px-4 py-2 bg-white border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors text-sm"
+            >
+              <Copy className="w-4 h-4 mr-2" />
+              Copy from another farm
+            </button>
+          )}
+          {!readOnly && (
+            <button
+              onClick={() => setShowCreateForm(true)}
+              className="inline-flex items-center px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+            >
+              <Plus className="w-5 h-5 mr-2" />
+              Create Template
+            </button>
+          )}
+        </div>
       </div>
 
       {templates.length === 0 ? (
@@ -228,6 +249,32 @@ export function CostTemplates({ seasonId, onTemplateSelect }: CostTemplatesProps
           }}
           onSuccess={loadTemplates}
         />
+      )}
+
+      {showCrossFarmModal && seasonId && user && (
+        <CrossFarmCopyModal
+          currentSeasonId={seasonId}
+          onSelectSourceSeason={(sourceSeasonId) => {
+            setCrossFarmSourceSeasonId(sourceSeasonId);
+            setShowCrossFarmModal(false);
+          }}
+          onCancel={() => setShowCrossFarmModal(false)}
+        />
+      )}
+
+      {crossFarmSourceSeasonId && seasonId && user && (
+        <div className="fixed inset-0 z-50">
+          <SeasonImportWizard
+            sourceSeasonId={crossFarmSourceSeasonId}
+            newSeasonId={seasonId}
+            userId={user.id}
+            onComplete={() => {
+              setCrossFarmSourceSeasonId(null);
+              loadTemplates();
+            }}
+            onCancel={() => setCrossFarmSourceSeasonId(null)}
+          />
+        </div>
       )}
     </div>
   );
