@@ -94,7 +94,7 @@ export function ChemicalPrograms({ seasonId }: ChemicalProgramsProps) {
       if (error) throw error;
       const normalizedData = (data || []).map(program => ({
         ...program,
-        items: program.chemical_program_items
+        items: program.chemical_program_items,
       }));
       setPrograms(normalizedData);
     } catch (error) {
@@ -128,10 +128,14 @@ export function ChemicalPrograms({ seasonId }: ChemicalProgramsProps) {
         .eq('program_id', programId);
 
       if (error) throw error;
-      return data || [];
+
+      const program = programs.find((p) => p.id === programId);
+      if (program) {
+        program.items = data || [];
+        setPrograms([...programs]);
+      }
     } catch (error) {
       console.error('Error loading program items:', error);
-      return [];
     }
   };
 
@@ -144,13 +148,26 @@ export function ChemicalPrograms({ seasonId }: ChemicalProgramsProps) {
       notes: program.notes || '',
     });
 
-    const items = await loadProgramItems(program.id);
-    setProgramItems(items.map(item => ({
-      chemical_id: item.chemical_id,
-      application_rate: item.application_rate,
-      application_rate_unit: item.application_rate_unit || '',
-    })));
+    if (!program.items) {
+      await loadProgramItems(program.id);
+      const prog = programs.find(p => p.id === program.id);
+      if (prog?.items) {
+        setProgramItems(prog.items.map(item => ({
+          chemical_id: item.chemical_id,
+          application_rate: item.application_rate,
+          application_rate_unit: item.application_rate_unit || '',
+        })));
+      }
+    } else {
+      setProgramItems(program.items.map(item => ({
+        chemical_id: item.chemical_id,
+        application_rate: item.application_rate,
+        application_rate_unit: item.application_rate_unit || '',
+      })));
+    }
+
     setShowForm(true);
+    setExpandedProgram(null);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -240,13 +257,26 @@ export function ChemicalPrograms({ seasonId }: ChemicalProgramsProps) {
   };
 
   const handleDelete = async (id: string) => {
-    if (!confirm('Delete this chemical program?')) return;
+    if (!confirm('Are you sure you want to delete this program?')) return;
     try {
       const { error } = await supabase.from('chemical_programs').delete().eq('id', id);
       if (error) throw error;
       loadPrograms();
     } catch (error) {
       console.error('Error deleting chemical program:', error);
+      alert('Error deleting program. Please try again.');
+    }
+  };
+
+  const toggleExpand = async (programId: string) => {
+    if (expandedProgram === programId) {
+      setExpandedProgram(null);
+    } else {
+      setExpandedProgram(programId);
+      const program = programs.find((p) => p.id === programId);
+      if (program && !program.items) {
+        await loadProgramItems(programId);
+      }
     }
   };
 
@@ -267,26 +297,6 @@ export function ChemicalPrograms({ seasonId }: ChemicalProgramsProps) {
     setProgramItems(programItems.filter((_, i) => i !== index));
   };
 
-  const calculateProgramCost = (program: ChemicalProgram): number => {
-    if (!program.items || program.items.length === 0) return program.application_cost || 0;
-
-    const productCosts = program.items.reduce((sum, item) => {
-      const chemical = chemicals.find(c => c.id === item.chemical_id);
-      if (!chemical) return sum;
-
-      const applicationUnit = item.application_rate_unit || chemical.unit_type;
-      const cost = calculateCostWithConversion(
-        item.application_rate,
-        applicationUnit,
-        chemical.price_per_unit,
-        chemical.unit_type
-      );
-      return sum + cost;
-    }, 0);
-
-    return productCosts + (program.application_cost || 0);
-  };
-
   const handleChemicalChange = (index: number, chemicalId: string) => {
     const chemical = chemicals.find(c => c.id === chemicalId);
     const updated = [...programItems];
@@ -299,25 +309,57 @@ export function ChemicalPrograms({ seasonId }: ChemicalProgramsProps) {
     setProgramItems(updated);
   };
 
+  const calculateProductCost = (program: ChemicalProgram): number => {
+    if (!program.items || program.items.length === 0) return 0;
+
+    return program.items.reduce((sum, item) => {
+      const chemical = chemicals.find(c => c.id === item.chemical_id);
+      if (!chemical) return sum;
+
+      const applicationUnit = item.application_rate_unit || chemical.unit_type;
+      const cost = calculateCostWithConversion(
+        item.application_rate,
+        applicationUnit,
+        chemical.price_per_unit,
+        chemical.unit_type
+      );
+      return sum + cost;
+    }, 0);
+  };
+
+  const calculateProgramCost = (program: ChemicalProgram): number => {
+    return calculateProductCost(program) + (program.application_cost || 0);
+  };
+
   return (
     <div>
-      <div className="mb-6">
+      <div className="flex items-center justify-between mb-6">
+        <div className="flex items-center gap-3">
+          <FlaskConical className="w-6 h-6 text-green-600" />
+          <h2 className="text-2xl font-bold text-gray-900">Chemical Programs</h2>
+        </div>
         <button
-          onClick={() => setShowForm(true)}
-          className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+          onClick={() => {
+            if (showForm || editingId) {
+              handleCancel();
+            } else {
+              setShowForm(true);
+            }
+          }}
+          className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors flex items-center gap-2"
         >
-          <Plus className="w-5 h-5" />
-          Add Chemical Program
+          <Plus className="w-4 h-4" />
+          {showForm || editingId ? 'Cancel' : 'New Program'}
         </button>
       </div>
 
       {(showForm || editingId) && (
         <div className="mb-6 bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-          <h2 className="text-lg font-semibold text-gray-900 mb-4">
+          <h3 className="text-lg font-semibold text-gray-900 mb-4">
             {editingId ? 'Edit' : 'New'} Chemical Program
-          </h2>
+          </h3>
           <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">Program Name</label>
                 <input
@@ -329,6 +371,21 @@ export function ChemicalPrograms({ seasonId }: ChemicalProgramsProps) {
                   required
                 />
               </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Application Cost ($/acre)</label>
+                <input
+                  type="number"
+                  step="0.01"
+                  value={formData.application_cost}
+                  onChange={(e) => setFormData({ ...formData, application_cost: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                  placeholder="0.00"
+                  required
+                />
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">Crop Type</label>
                 <select
@@ -342,40 +399,25 @@ export function ChemicalPrograms({ seasonId }: ChemicalProgramsProps) {
                   <option value="wheat">Wheat</option>
                 </select>
               </div>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Application Cost ($/acre)
-              </label>
-              <input
-                type="number"
-                step="0.01"
-                value={formData.application_cost}
-                onChange={(e) => setFormData({ ...formData, application_cost: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                placeholder="0.00"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Notes</label>
-              <textarea
-                value={formData.notes}
-                onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                rows={2}
-                placeholder="Optional notes"
-              />
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">Notes (optional)</label>
+                <input
+                  type="text"
+                  value={formData.notes}
+                  onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                  placeholder="Additional information"
+                />
+              </div>
             </div>
 
             <div>
               <div className="flex items-center justify-between mb-3">
-                <label className="block text-sm font-medium text-gray-700">Chemicals</label>
+                <label className="block text-sm font-medium text-gray-700">Chemicals in Program</label>
                 <button
                   type="button"
                   onClick={addProgramItem}
-                  className="flex items-center gap-1 px-3 py-1 bg-green-50 text-green-700 rounded-lg hover:bg-green-100 transition-colors text-sm font-medium"
+                  className="text-sm text-green-600 hover:text-green-700 font-medium flex items-center gap-1"
                 >
                   <Plus className="w-4 h-4" />
                   Add Chemical
@@ -384,14 +426,14 @@ export function ChemicalPrograms({ seasonId }: ChemicalProgramsProps) {
 
               {chemicals.length === 0 ? (
                 <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4 text-center">
-                  <p className="text-yellow-800">
-                    No chemicals available. Add chemicals first.
-                  </p>
+                  <p className="text-yellow-800">No chemicals available. Add chemicals first.</p>
                 </div>
+              ) : programItems.length === 0 ? (
+                <p className="text-sm text-gray-500">No chemicals added yet. Click "Add Chemical" to add products.</p>
               ) : (
                 <div className="space-y-3">
                   {programItems.map((item, index) => (
-                    <div key={index} className="flex gap-3 items-start bg-gray-50 p-3 rounded-lg">
+                    <div key={index} className="flex gap-3 items-end">
                       <div className="flex-1">
                         <select
                           value={item.chemical_id}
@@ -399,10 +441,10 @@ export function ChemicalPrograms({ seasonId }: ChemicalProgramsProps) {
                           className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
                           required
                         >
-                          <option value="">Select chemical</option>
+                          <option value="">Select chemical...</option>
                           {chemicals.map((chem) => (
                             <option key={chem.id} value={chem.id}>
-                              {chem.chemical_name} (${chem.price_per_unit}/{chem.unit_type})
+                              {chem.chemical_name} - ${chem.price_per_unit}/{chem.unit_type}
                             </option>
                           ))}
                         </select>
@@ -411,7 +453,7 @@ export function ChemicalPrograms({ seasonId }: ChemicalProgramsProps) {
                         <input
                           type="number"
                           step="0.01"
-                          value={item.application_rate}
+                          value={item.application_rate || ''}
                           onChange={(e) =>
                             updateProgramItem(index, 'application_rate', parseFloat(e.target.value) || 0)
                           }
@@ -425,7 +467,6 @@ export function ChemicalPrograms({ seasonId }: ChemicalProgramsProps) {
                           value={item.application_rate_unit}
                           onChange={(e) => updateProgramItem(index, 'application_rate_unit', e.target.value)}
                           className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                          required
                         >
                           <option value="gal">Gallons</option>
                           <option value="qt">Quarts</option>
@@ -468,87 +509,93 @@ export function ChemicalPrograms({ seasonId }: ChemicalProgramsProps) {
       )}
 
       {programs.length === 0 ? (
-        <div className="bg-gray-50 border-2 border-dashed border-gray-300 rounded-lg p-12 text-center">
-          <FlaskConical className="w-12 h-12 text-gray-400 mx-auto mb-4" />
-          <h3 className="text-lg font-medium text-gray-900 mb-2">No chemical programs yet</h3>
-          <p className="text-gray-600">Create your first program to get started</p>
+        <div className="bg-gray-50 border border-gray-200 rounded-lg p-8 text-center">
+          <p className="text-gray-600">No chemical programs yet. Create your first program to get started.</p>
         </div>
       ) : (
-        <div className="space-y-4">
+        <div className="space-y-3">
           {programs.map((program) => (
-            <div key={program.id} className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
-              <div className="p-4">
+            <div key={program.id} className="bg-white rounded-lg shadow-sm border border-gray-200">
+              <div
+                className="p-4 cursor-pointer hover:bg-gray-50 transition-colors"
+                onClick={() => toggleExpand(program.id)}
+              >
                 <div className="flex items-center justify-between">
-                  <div className="flex-1">
+                  <div>
                     <h3 className="text-lg font-semibold text-gray-900">{program.program_name}</h3>
-                    <p className="text-sm text-gray-600 capitalize mt-1">Crop: {program.crop_type}</p>
-                    <p className="text-sm font-medium text-green-600 mt-1">
-                      ${calculateProgramCost(program).toFixed(2)}/acre
-                    </p>
-                    {program.notes && (
-                      <p className="text-sm text-gray-600 mt-2">{program.notes}</p>
-                    )}
+                    <p className="text-sm text-gray-500 capitalize mt-0.5">{program.crop_type}</p>
+                    {program.notes && <p className="text-sm text-gray-600 mt-1">{program.notes}</p>}
                   </div>
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={() => setExpandedProgram(expandedProgram === program.id ? null : program.id)}
-                      className="px-3 py-1 text-sm text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-                    >
-                      {expandedProgram === program.id ? 'Hide' : 'Show'} Details
-                    </button>
-                    <button
-                      onClick={() => handleEdit(program)}
-                      className="p-2 text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-                    >
-                      <Edit2 className="w-4 h-4" />
-                    </button>
-                    <button
-                      onClick={() => handleDelete(program.id)}
-                      className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
+                  <div className="flex items-center gap-4">
+                    <div className="text-right">
+                      <p className="text-sm text-gray-600">Product Cost</p>
+                      <p className="text-base font-semibold text-gray-900">${calculateProductCost(program).toFixed(2)}/acre</p>
+                      <p className="text-sm text-gray-600 mt-1">Application Cost</p>
+                      <p className="text-base font-semibold text-gray-900">${program.application_cost.toFixed(2)}/acre</p>
+                      <p className="text-sm text-gray-600 mt-2 font-medium">Total Cost</p>
+                      <p className="text-xl font-bold text-green-600">${calculateProgramCost(program).toFixed(2)}/acre</p>
+                    </div>
+                    <div className="flex flex-col gap-2">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleEdit(program);
+                        }}
+                        className="text-blue-600 hover:text-blue-700 text-sm font-medium flex items-center gap-1"
+                      >
+                        <Edit2 className="w-4 h-4" />
+                        Edit
+                      </button>
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDelete(program.id);
+                        }}
+                        className="text-red-600 hover:text-red-700 text-sm font-medium flex items-center gap-1"
+                      >
+                        <Trash2 className="w-4 h-4" />
+                        Delete
+                      </button>
+                    </div>
                   </div>
                 </div>
+              </div>
 
-                {expandedProgram === program.id && program.items && program.items.length > 0 && (
-                  <div className="mt-4 border-t border-gray-200 pt-4">
-                    <h4 className="text-sm font-medium text-gray-700 mb-3">Chemicals in this program:</h4>
+              {expandedProgram === program.id && program.items && (
+                <div className="border-t border-gray-200 p-4 bg-gray-50">
+                  <h4 className="text-sm font-semibold text-gray-700 mb-3">Program Contents:</h4>
+                  {program.items.length === 0 ? (
+                    <p className="text-sm text-gray-500">No chemicals in this program</p>
+                  ) : (
                     <div className="space-y-2">
                       {program.items.map((item) => {
                         const chemical = chemicals.find(c => c.id === item.chemical_id);
-                        if (!chemical) return null;
-
-                        const applicationUnit = item.application_rate_unit || chemical.unit_type;
-                        const cost = calculateCostWithConversion(
+                        const applicationUnit = item.application_rate_unit || chemical?.unit_type || '';
+                        const cost = chemical ? calculateCostWithConversion(
                           item.application_rate,
                           applicationUnit,
                           chemical.price_per_unit,
                           chemical.unit_type
-                        );
-
+                        ) : 0;
                         return (
-                          <div key={item.id} className="flex items-center justify-between bg-gray-50 p-3 rounded-lg">
-                            <div>
-                              <p className="font-medium text-gray-900">{chemical.chemical_name}</p>
-                              <p className="text-sm text-gray-600">
-                                {item.application_rate} {applicationUnit}/acre
-                              </p>
-                            </div>
-                            <p className="font-medium text-gray-900">${cost.toFixed(2)}/acre</p>
+                          <div key={item.id} className="flex items-center justify-between text-sm bg-white p-3 rounded border border-gray-200">
+                            <span className="font-medium text-gray-900">
+                              {chemical?.chemical_name || 'Unknown Chemical'}
+                            </span>
+                            <span className="text-gray-600">
+                              {item.application_rate} {applicationUnit}/acre @ ${chemical?.price_per_unit}/{chemical?.unit_type} = ${cost.toFixed(2)}/acre
+                            </span>
                           </div>
                         );
                       })}
-                      {program.application_cost > 0 && (
-                        <div className="flex items-center justify-between bg-gray-50 p-3 rounded-lg">
-                          <p className="font-medium text-gray-900">Application Cost</p>
-                          <p className="font-medium text-gray-900">${program.application_cost.toFixed(2)}/acre</p>
-                        </div>
-                      )}
+                      <div className="flex items-center justify-between text-sm font-semibold pt-2 border-t border-gray-300">
+                        <span>Total Cost per Acre:</span>
+                        <span className="text-green-600">${calculateProgramCost(program).toFixed(2)}</span>
+                      </div>
                     </div>
-                  </div>
-                )}
-              </div>
+                  )}
+                </div>
+              )}
             </div>
           ))}
         </div>
