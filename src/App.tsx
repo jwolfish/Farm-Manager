@@ -1,0 +1,531 @@
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { AuthProvider, useAuth } from './contexts/AuthContext';
+import { NotificationProvider, useNotifications } from './contexts/NotificationContext';
+import { FarmProvider, useFarm } from './contexts/FarmContext';
+import { ToastContainer } from './components/Toast';
+import { Auth } from './pages/Auth';
+import { Dashboard } from './pages/Dashboard';
+import { Fields } from './pages/Fields';
+import { FieldDetail } from './pages/FieldDetail';
+import { Products } from './pages/Products';
+import { CostTemplates } from './pages/CostTemplates';
+import { Yields } from './pages/Yields';
+import { SalesTracking } from './pages/SalesTracking';
+import { Reports } from './pages/Reports';
+import { Settings } from './pages/Settings';
+import { Team } from './pages/Team';
+import { DashboardLayout } from './components/DashboardLayout';
+import { SeasonImportWizard } from './components/SeasonImportWizard';
+import { supabase } from './lib/supabase';
+import { fetchSharedFarms, SharedFarm } from './lib/teamMembers';
+import { Plus } from 'lucide-react';
+import { setNotificationCallback } from './lib/backgroundTasks';
+
+interface Season {
+  id: string;
+  year: number;
+  name: string;
+  is_active: boolean;
+}
+
+function AppContent() {
+  const { user, loading: authLoading } = useAuth();
+  const { addNotification } = useNotifications();
+  const { activeFarm, setOwnFarm, setSharedFarm } = useFarm();
+  const wasAuthenticated = useRef(false);
+  const [activePage, setActivePage] = useState<string>(() => {
+    return sessionStorage.getItem('activePage') || 'dashboard';
+  });
+  const [seasons, setSeasons] = useState<Season[]>([]);
+  const [currentSeason, setCurrentSeason] = useState<Season | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [showSeasonForm, setShowSeasonForm] = useState(false);
+  const [seasonFormData, setSeasonFormData] = useState({
+    year: new Date().getFullYear(),
+    name: '',
+    importFromSeason: '',
+  });
+  const [showImportWizard, setShowImportWizard] = useState(false);
+  const [pendingSeasonId, setPendingSeasonId] = useState<string | null>(null);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [seasonToDelete, setSeasonToDelete] = useState<Season | null>(null);
+  const [selectedFieldId, setSelectedFieldId] = useState<string | null>(null);
+  const [sharedFarms, setSharedFarms] = useState<SharedFarm[]>([]);
+  const [farmName, setFarmName] = useState<string | null>(null);
+
+  useEffect(() => {
+    setNotificationCallback((message, type) => {
+      addNotification(message, type);
+    });
+  }, [addNotification]);
+
+  useEffect(() => {
+    if (user) {
+      wasAuthenticated.current = true;
+      loadUserProfile();
+      loadSeasons(user.id);
+      loadSharedFarms();
+    } else if (!authLoading) {
+      setLoading(false);
+    }
+  }, [user, authLoading]);
+
+  const loadUserProfile = async () => {
+    if (!user) return;
+    const { data } = await supabase
+      .from('user_profiles')
+      .select('farm_name')
+      .eq('id', user.id)
+      .maybeSingle();
+    const name = data?.farm_name ?? null;
+    setFarmName(name);
+    setOwnFarm(user.id, name);
+  };
+
+  const loadSharedFarms = async () => {
+    if (!user) return;
+    const farms = await fetchSharedFarms(user.id);
+    setSharedFarms(farms);
+  };
+
+  const handleNavigate = (page: string) => {
+    sessionStorage.setItem('activePage', page);
+    setActivePage(page);
+  };
+
+  const loadSeasons = async (forUserId: string) => {
+    setLoading(true);
+    try {
+      const timeoutPromise = new Promise((_, reject) =>
+        setTimeout(() => reject(new Error('Request timeout')), 10000)
+      );
+
+      const dataPromise = supabase
+        .from('seasons')
+        .select('*')
+        .eq('user_id', forUserId)
+        .order('year', { ascending: false });
+
+      const { data, error } = await Promise.race([dataPromise, timeoutPromise]) as any;
+
+      if (error) throw error;
+
+      setSeasons(data || []);
+
+      if (data && data.length > 0) {
+        const active = data.find((s: Season) => s.is_active) || data[0];
+        setCurrentSeason(active);
+      } else {
+        setCurrentSeason(null);
+      }
+    } catch (error) {
+      console.error('Error loading seasons:', error);
+      setSeasons([]);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleSeasonChange = async (seasonId: string) => {
+    const season = seasons.find((s) => s.id === seasonId);
+    if (season) {
+      setCurrentSeason(season);
+
+      if (user && activeFarm?.isOwn !== false) {
+        await supabase
+          .from('seasons')
+          .update({ is_active: false })
+          .eq('user_id', user.id);
+
+        await supabase
+          .from('seasons')
+          .update({ is_active: true })
+          .eq('id', seasonId);
+      }
+    }
+  };
+
+  const handleCreateSeason = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!user) return;
+
+    try {
+      const name = seasonFormData.name || `${seasonFormData.year} Growing Season`;
+
+      const { data, error } = await supabase
+        .from('seasons')
+        .insert({
+          user_id: user.id,
+          year: seasonFormData.year,
+          name,
+          is_active: seasons.length === 0,
+        })
+        .select()
+        .single();
+
+      if (error) throw error;
+
+      const defaultEquipmentRates = [
+        { crop_type: 'corn', rate_per_acre: 185.0 },
+        { crop_type: 'soybeans', rate_per_acre: 155.0 },
+        { crop_type: 'wheat', rate_per_acre: 145.0 },
+      ];
+
+      for (const rate of defaultEquipmentRates) {
+        await supabase.from('equipment_rates').insert({
+          season_id: data.id,
+          user_id: user.id,
+          crop_type: rate.crop_type as 'corn' | 'soybeans' | 'wheat',
+          rate_per_acre: rate.rate_per_acre,
+          source: 'Iowa Custom Rate Survey 2026',
+          is_overridden: false,
+        });
+      }
+
+      if (seasonFormData.importFromSeason) {
+        setPendingSeasonId(data.id);
+        setShowImportWizard(true);
+        setShowSeasonForm(false);
+      } else {
+        setSeasonFormData({ year: new Date().getFullYear(), name: '', importFromSeason: '' });
+        setShowSeasonForm(false);
+        await loadSeasons(user.id);
+        setCurrentSeason(data as Season);
+      }
+    } catch (error) {
+      console.error('Error creating season:', error);
+      alert('Error creating season. Please try again.');
+    }
+  };
+
+  const handleImportComplete = async () => {
+    setShowImportWizard(false);
+    setPendingSeasonId(null);
+    setSeasonFormData({ year: new Date().getFullYear(), name: '', importFromSeason: '' });
+    if (user) await loadSeasons(user.id);
+    if (pendingSeasonId) {
+      const season = seasons.find((s) => s.id === pendingSeasonId);
+      if (season) setCurrentSeason(season);
+    }
+  };
+
+  const handleImportCancel = () => {
+    setShowImportWizard(false);
+    setPendingSeasonId(null);
+    setSeasonFormData({ year: new Date().getFullYear(), name: '', importFromSeason: '' });
+    if (user) loadSeasons(user.id);
+  };
+
+  const handleDeleteSeason = (season: Season) => {
+    setSeasonToDelete(season);
+    setShowDeleteConfirm(true);
+  };
+
+  const confirmDeleteSeason = async () => {
+    if (!seasonToDelete || !user) return;
+
+    try {
+      const { error } = await supabase.from('seasons').delete().eq('id', seasonToDelete.id).eq('user_id', user.id);
+
+      if (error) throw error;
+
+      setShowDeleteConfirm(false);
+      setSeasonToDelete(null);
+
+      if (currentSeason?.id === seasonToDelete.id) {
+        setCurrentSeason(null);
+      }
+
+      await loadSeasons(user.id);
+    } catch (error) {
+      console.error('Error deleting season:', error);
+      alert('Error deleting season. Please try again.');
+    }
+  };
+
+  const cancelDeleteSeason = () => {
+    setShowDeleteConfirm(false);
+    setSeasonToDelete(null);
+  };
+
+  const handleViewFieldDetail = (fieldId: string) => {
+    setSelectedFieldId(fieldId);
+    handleNavigate('field-detail');
+  };
+
+  const handleBackFromFieldDetail = () => {
+    setSelectedFieldId(null);
+    handleNavigate('fields');
+  };
+
+  const handleSwitchToFarm = useCallback(async (farm: SharedFarm) => {
+    setSharedFarm(farm);
+    await loadSeasons(farm.ownerId);
+    handleNavigate('dashboard');
+  }, [setSharedFarm]);
+
+  const handleSwitchToOwnFarm = useCallback(async () => {
+    if (!user) return;
+    setOwnFarm(user.id, farmName);
+    await loadSeasons(user.id);
+    handleNavigate('dashboard');
+  }, [user, farmName, setOwnFarm]);
+
+  const handleInviteAccepted = useCallback(async () => {
+    await loadSharedFarms();
+  }, [user]);
+
+  if (authLoading || loading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="text-center">
+          <div className="text-gray-600 mb-2">Loading...</div>
+          <div className="text-xs text-gray-400">
+            Auth: {authLoading ? 'checking' : 'ready'} | Data: {loading ? 'loading' : 'ready'} | User: {user ? 'logged in' : 'none'}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (!user && !wasAuthenticated.current) {
+    return <Auth />;
+  }
+
+  if (!user && wasAuthenticated.current) {
+    sessionStorage.removeItem('activePage');
+    return <Auth />;
+  }
+
+  const isOwnFarm = activeFarm?.isOwn !== false;
+  const activeRole = activeFarm?.role ?? 'admin';
+
+  if (isOwnFarm && seasons.length === 0 && !showSeasonForm) {
+    return (
+      <div className="min-h-screen bg-gradient-to-br from-green-50 to-blue-50 flex items-center justify-center p-4">
+        <div className="w-full max-w-md bg-white rounded-2xl shadow-xl p-8 text-center">
+          <div className="bg-green-100 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-6">
+            <Plus className="w-8 h-8 text-green-600" />
+          </div>
+          <h2 className="text-2xl font-bold text-gray-900 mb-3">Welcome to Crop Tracker!</h2>
+          <p className="text-gray-600 mb-6">Let's create your first growing season to get started tracking costs</p>
+
+          <form onSubmit={handleCreateSeason} className="space-y-4 text-left">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Year</label>
+              <input
+                type="number"
+                value={seasonFormData.year}
+                onChange={(e) => setSeasonFormData({ ...seasonFormData, year: parseInt(e.target.value) })}
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                required
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Season Name (Optional)</label>
+              <input
+                type="text"
+                value={seasonFormData.name}
+                onChange={(e) => setSeasonFormData({ ...seasonFormData, name: e.target.value })}
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                placeholder={`${seasonFormData.year} Growing Season`}
+              />
+            </div>
+            <button
+              type="submit"
+              className="w-full bg-green-600 text-white py-3 px-4 rounded-lg font-medium hover:bg-green-700 transition-colors"
+            >
+              Create Season
+            </button>
+          </form>
+        </div>
+      </div>
+    );
+  }
+
+  if (showSeasonForm) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
+        <div className="w-full max-w-md bg-white rounded-2xl shadow-xl p-8">
+          <h2 className="text-2xl font-bold text-gray-900 mb-6">Create New Season</h2>
+
+          <form onSubmit={handleCreateSeason} className="space-y-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Year</label>
+              <input
+                type="number"
+                value={seasonFormData.year}
+                onChange={(e) => setSeasonFormData({ ...seasonFormData, year: parseInt(e.target.value) })}
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                required
+              />
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">Season Name (Optional)</label>
+              <input
+                type="text"
+                value={seasonFormData.name}
+                onChange={(e) => setSeasonFormData({ ...seasonFormData, name: e.target.value })}
+                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                placeholder={`${seasonFormData.year} Growing Season`}
+              />
+            </div>
+            {seasons.length > 0 && (
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Import Data from Previous Season (Optional)
+                </label>
+                <select
+                  value={seasonFormData.importFromSeason}
+                  onChange={(e) => setSeasonFormData({ ...seasonFormData, importFromSeason: e.target.value })}
+                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                >
+                  <option value="">Start with empty season</option>
+                  {seasons.map((season) => (
+                    <option key={season.id} value={season.id}>
+                      {season.name}
+                    </option>
+                  ))}
+                </select>
+                {seasonFormData.importFromSeason && (
+                  <p className="text-xs text-gray-500 mt-2">
+                    You'll be able to select which items to import and update prices in the next step
+                  </p>
+                )}
+              </div>
+            )}
+            <div className="flex gap-3">
+              <button
+                type="submit"
+                className="flex-1 bg-green-600 text-white py-3 px-4 rounded-lg font-medium hover:bg-green-700 transition-colors"
+              >
+                {seasonFormData.importFromSeason ? 'Continue to Import' : 'Create Season'}
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setShowSeasonForm(false);
+                  setSeasonFormData({ year: new Date().getFullYear(), name: '', importFromSeason: '' });
+                }}
+                className="flex-1 bg-gray-100 text-gray-700 py-3 px-4 rounded-lg font-medium hover:bg-gray-200 transition-colors"
+              >
+                Cancel
+              </button>
+            </div>
+          </form>
+        </div>
+      </div>
+    );
+  }
+
+  if (showImportWizard && pendingSeasonId && seasonFormData.importFromSeason && user) {
+    return (
+      <SeasonImportWizard
+        sourceSeasonId={seasonFormData.importFromSeason}
+        newSeasonId={pendingSeasonId}
+        userId={user.id}
+        onComplete={handleImportComplete}
+        onCancel={handleImportCancel}
+      />
+    );
+  }
+
+  if (showDeleteConfirm && seasonToDelete) {
+    return (
+      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+        <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-6">
+          <h2 className="text-xl font-bold text-gray-900 mb-4">Delete Season</h2>
+          <p className="text-gray-600 mb-6">
+            Are you sure you want to delete <strong>{seasonToDelete.name}</strong>? This will permanently delete all
+            associated fields, products, programs, and yields. This action cannot be undone.
+          </p>
+          <div className="flex gap-3">
+            <button
+              onClick={confirmDeleteSeason}
+              className="flex-1 bg-red-600 text-white py-3 px-4 rounded-lg font-medium hover:bg-red-700 transition-colors"
+            >
+              Delete Season
+            </button>
+            <button
+              onClick={cancelDeleteSeason}
+              className="flex-1 bg-gray-100 text-gray-700 py-3 px-4 rounded-lg font-medium hover:bg-gray-200 transition-colors"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  if (activePage === 'field-detail' && selectedFieldId && currentSeason?.id) {
+    return (
+      <FieldDetail
+        fieldId={selectedFieldId}
+        seasonId={currentSeason.id}
+        onBack={handleBackFromFieldDetail}
+      />
+    );
+  }
+
+  return (
+    <DashboardLayout
+      activePage={activePage}
+      onNavigate={handleNavigate}
+      currentSeason={currentSeason}
+      seasons={seasons}
+      onSeasonChange={handleSeasonChange}
+      onCreateSeason={isOwnFarm ? () => setShowSeasonForm(true) : undefined}
+      onDeleteSeason={isOwnFarm ? handleDeleteSeason : undefined}
+      activeFarmContext={activeFarm}
+      onSwitchToOwnFarm={handleSwitchToOwnFarm}
+      onInviteAccepted={handleInviteAccepted}
+      activeRole={activeRole}
+    >
+      {activePage === 'dashboard' && <Dashboard seasonId={currentSeason?.id || null} />}
+      {activePage === 'fields' && (
+        <Fields
+          seasonId={currentSeason?.id || null}
+          onViewFieldDetail={handleViewFieldDetail}
+          readOnly={activeRole === 'viewer'}
+        />
+      )}
+      {activePage === 'products' && <Products seasonId={currentSeason?.id || null} readOnly={activeRole === 'viewer'} />}
+      {activePage === 'templates' && <CostTemplates seasonId={currentSeason?.id || null} readOnly={activeRole === 'viewer'} />}
+      {activePage === 'yields' && <Yields seasonId={currentSeason?.id || null} readOnly={activeRole === 'viewer'} />}
+      {activePage === 'sales' && <SalesTracking seasonId={currentSeason?.id || null} readOnly={activeRole === 'viewer'} />}
+      {activePage === 'reports' && <Reports currentSeasonId={currentSeason?.id || null} />}
+      {activePage === 'settings' && isOwnFarm && <Settings />}
+      {activePage === 'team' && isOwnFarm && (
+        <Team
+          onSwitchToFarm={handleSwitchToFarm}
+          onSwitchToOwnFarm={handleSwitchToOwnFarm}
+          sharedFarms={sharedFarms}
+          onRefreshSharedFarms={loadSharedFarms}
+        />
+      )}
+    </DashboardLayout>
+  );
+}
+
+function AppWithFarm() {
+  const { user } = useAuth();
+  return (
+    <FarmProvider currentUserId={user?.id ?? null}>
+      <AppContent />
+    </FarmProvider>
+  );
+}
+
+function App() {
+  return (
+    <AuthProvider>
+      <NotificationProvider>
+        <AppWithFarm />
+        <ToastContainer />
+      </NotificationProvider>
+    </AuthProvider>
+  );
+}
+
+export default App;
