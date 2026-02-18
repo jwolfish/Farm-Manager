@@ -19,6 +19,8 @@ export function NotificationBell({ onInviteAccepted }: NotificationBellProps) {
   const [open, setOpen] = useState(false);
   const [processing, setProcessing] = useState<string | null>(null);
   const panelRef = useRef<HTMLDivElement>(null);
+  const buttonRef = useRef<HTMLButtonElement>(null);
+  const [dropdownStyle, setDropdownStyle] = useState<React.CSSProperties>({});
 
   const load = async () => {
     if (!user) return;
@@ -34,13 +36,36 @@ export function NotificationBell({ onInviteAccepted }: NotificationBellProps) {
 
   useEffect(() => {
     const handleClick = (e: MouseEvent) => {
-      if (panelRef.current && !panelRef.current.contains(e.target as Node)) {
+      if (
+        panelRef.current && !panelRef.current.contains(e.target as Node) &&
+        buttonRef.current && !buttonRef.current.contains(e.target as Node)
+      ) {
         setOpen(false);
       }
     };
     if (open) document.addEventListener('mousedown', handleClick);
     return () => document.removeEventListener('mousedown', handleClick);
   }, [open]);
+
+  const handleOpen = () => {
+    if (!open && buttonRef.current) {
+      const rect = buttonRef.current.getBoundingClientRect();
+      const dropdownWidth = 320;
+      const viewportWidth = window.innerWidth;
+      const spaceOnRight = viewportWidth - rect.right;
+      const left = spaceOnRight >= dropdownWidth
+        ? rect.left
+        : Math.max(8, rect.right - dropdownWidth);
+      setDropdownStyle({
+        position: 'fixed',
+        top: rect.bottom + 8,
+        left,
+        width: dropdownWidth,
+        zIndex: 9999,
+      });
+    }
+    setOpen((v) => !v);
+  };
 
   const handleAccept = async (notification: AppNotification) => {
     if (!user) return;
@@ -70,9 +95,10 @@ export function NotificationBell({ onInviteAccepted }: NotificationBellProps) {
   const unreadCount = notifications.length;
 
   return (
-    <div className="relative" ref={panelRef}>
+    <div className="relative">
       <button
-        onClick={() => setOpen((v) => !v)}
+        ref={buttonRef}
+        onClick={handleOpen}
         className="relative p-1.5 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
         title="Notifications"
       >
@@ -85,7 +111,11 @@ export function NotificationBell({ onInviteAccepted }: NotificationBellProps) {
       </button>
 
       {open && (
-        <div className="absolute right-0 mt-2 w-80 bg-white rounded-xl shadow-xl border border-gray-200 z-50 overflow-hidden">
+        <div
+          ref={panelRef}
+          className="bg-white rounded-xl shadow-xl border border-gray-200 overflow-hidden"
+          style={dropdownStyle}
+        >
           <div className="px-4 py-3 border-b border-gray-100">
             <h3 className="text-sm font-semibold text-gray-900">Notifications</h3>
           </div>

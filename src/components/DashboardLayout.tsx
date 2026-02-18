@@ -121,25 +121,26 @@ export function DashboardLayout({
 
       <div className="flex flex-1 overflow-hidden">
         <aside className="w-64 bg-white border-r border-gray-200 flex flex-col flex-shrink-0">
-          <div className="p-6 border-b border-gray-200">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-3 min-w-0">
-                <div className={`p-2 rounded-lg flex-shrink-0 ${isSharedFarm ? 'bg-amber-500' : 'bg-green-600'}`}>
-                  <Wheat className="w-6 h-6 text-white" />
+          <div className="px-5 pt-5 pb-4 border-b border-gray-200">
+            <div className="flex items-center justify-between mb-3">
+              <div className="flex items-center gap-2.5">
+                <div className={`p-1.5 rounded-lg flex-shrink-0 ${isSharedFarm ? 'bg-amber-500' : 'bg-green-600'}`}>
+                  <Wheat className="w-5 h-5 text-white" />
                 </div>
-                <div className="min-w-0">
-                  <h1 className="font-bold text-gray-900 text-lg leading-tight">Crop Tracker</h1>
-                  {displayFarmName ? (
-                    <p className={`text-xs font-medium truncate ${isSharedFarm ? 'text-amber-600' : 'text-green-600'}`}>
-                      {displayFarmName}
-                    </p>
-                  ) : (
-                    <p className="text-xs text-gray-400">Cost Management</p>
-                  )}
-                </div>
+                <h1 className="font-bold text-gray-900 text-base leading-tight">Crop Tracker</h1>
               </div>
               <NotificationBell onInviteAccepted={onInviteAccepted ?? (() => {})} />
             </div>
+            {displayFarmName ? (
+              <div className={`rounded-lg px-3 py-2 ${isSharedFarm ? 'bg-amber-50 border border-amber-200' : 'bg-green-50 border border-green-200'}`}>
+                <p className={`text-xs font-semibold uppercase tracking-wide mb-0.5 ${isSharedFarm ? 'text-amber-500' : 'text-green-500'}`}>Farm</p>
+                <p className={`text-sm font-bold leading-snug break-words ${isSharedFarm ? 'text-amber-800' : 'text-green-800'}`}>
+                  {displayFarmName}
+                </p>
+              </div>
+            ) : (
+              <p className="text-xs text-gray-400 px-1">Cost Management</p>
+            )}
           </div>
 
           <div className="p-4 border-b border-gray-200 relative">
