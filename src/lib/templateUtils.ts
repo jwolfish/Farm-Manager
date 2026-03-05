@@ -17,28 +17,25 @@ export interface TemplateWithStats extends CostTemplate {
 }
 
 export async function getTemplates(seasonId: string): Promise<TemplateWithStats[]> {
-  const { data, error } = await supabase
-    .from('cost_templates')
-    .select('*')
-    .eq('season_id', seasonId)
-    .order('name');
+  const [templatesResult, usageResult] = await Promise.all([
+    supabase.from('cost_templates').select('*').eq('season_id', seasonId).order('name'),
+    supabase.from('field_costs').select('template_id').not('template_id', 'is', null),
+  ]);
 
-  if (error) throw error;
+  if (templatesResult.error) throw templatesResult.error;
 
-  const templatesWithStats = await Promise.all(
-    (data || []).map(async (template) => {
-      const fieldsCount = await getFieldsUsingTemplate(template.id);
-      const totalCost = calculateTemplateCost(template);
+  const usageCounts = new Map<string, number>();
+  for (const row of usageResult.data || []) {
+    if (row.template_id) {
+      usageCounts.set(row.template_id, (usageCounts.get(row.template_id) || 0) + 1);
+    }
+  }
 
-      return {
-        ...template,
-        fields_using_count: fieldsCount.length,
-        total_cost_per_acre: totalCost
-      };
-    })
-  );
-
-  return templatesWithStats;
+  return (templatesResult.data || []).map((template) => ({
+    ...template,
+    fields_using_count: usageCounts.get(template.id) || 0,
+    total_cost_per_acre: calculateTemplateCost(template),
+  }));
 }
 
 export async function getTemplate(templateId: string): Promise<TemplateWithStats | null> {
@@ -255,87 +252,92 @@ export async function cascadeTemplateUpdate(
     errors: []
   };
 
+  if (fieldsUsingTemplate.length === 0) return result;
+
+  const fieldIds = fieldsUsingTemplate.map((f) => f.field_id);
+
+  const [overridesResult, fieldCostsResult] = await Promise.all([
+    supabase.from('field_cost_overrides').select('*').in('field_id', fieldIds),
+    supabase.from('field_costs').select('*').in('field_id', fieldIds),
+  ]);
+
+  const overridesByField = new Map<string, Map<string, boolean>>();
+  for (const override of overridesResult.data || []) {
+    if (!overridesByField.has(override.field_id)) {
+      overridesByField.set(override.field_id, new Map());
+    }
+    overridesByField.get(override.field_id)!.set(override.cost_item_name, true);
+  }
+
+  const fieldCostsByField = new Map<string, any>();
+  for (const fc of fieldCostsResult.data || []) {
+    fieldCostsByField.set(fc.field_id, fc);
+  }
+
+  const costFields = [
+    'tillage_cost_per_acre',
+    'planting_cost_per_acre',
+    'harvest_cost_per_acre',
+    'equipment_cost_per_acre',
+    'custom_services_cost_per_acre',
+    'labor_cost_per_acre',
+    'crop_insurance_cost_per_acre',
+    'drying_storage_cost_per_acre',
+    'hauling_cost_per_acre',
+    'other_expenses_per_acre'
+  ];
+
+  const fertilizerCost = Array.isArray(updatedTemplate.fertilizer_programs)
+    ? (updatedTemplate.fertilizer_programs as ProgramReference[]).reduce((sum, p) => sum + (p.cost_per_acre || 0), 0)
+    : 0;
+
+  const chemicalCost = Array.isArray(updatedTemplate.chemical_programs)
+    ? (updatedTemplate.chemical_programs as ProgramReference[]).reduce((sum, p) => sum + (p.cost_per_acre || 0), 0)
+    : 0;
+
+  const updatePromises: Promise<void>[] = [];
+
   for (const fieldData of fieldsUsingTemplate) {
     try {
       const fieldId = fieldData.field_id;
-      const overrides = await getFieldOverrides(fieldId);
+      const overrideMap = overridesByField.get(fieldId) || new Map<string, boolean>();
+      const currentFieldCost = fieldCostsByField.get(fieldId);
 
-      const hasOverrides = overrides.length > 0;
-
-      if (hasOverrides) {
+      if (overrideMap.size > 0) {
         result.partiallyUpdatedFields++;
       } else {
         result.fullyUpdatedFields++;
       }
 
-      const overrideMap = new Map(
-        overrides.map(o => [o.cost_item_name, true])
-      );
-
       const updates: any = {};
 
       if (!overrideMap.has('fertilizer_programs')) {
-        updates.fertilizer_cost_per_acre = Array.isArray(updatedTemplate.fertilizer_programs)
-          ? (updatedTemplate.fertilizer_programs as ProgramReference[]).reduce(
-              (sum, p) => sum + (p.cost_per_acre || 0),
-              0
-            )
-          : 0;
+        updates.fertilizer_cost_per_acre = fertilizerCost;
       }
-
       if (!overrideMap.has('chemical_programs')) {
-        updates.chemical_cost_per_acre = Array.isArray(updatedTemplate.chemical_programs)
-          ? (updatedTemplate.chemical_programs as ProgramReference[]).reduce(
-              (sum, p) => sum + (p.cost_per_acre || 0),
-              0
-            )
-          : 0;
+        updates.chemical_cost_per_acre = chemicalCost;
       }
-
-      const costFields = [
-        'tillage_cost_per_acre',
-        'planting_cost_per_acre',
-        'harvest_cost_per_acre',
-        'equipment_cost_per_acre',
-        'custom_services_cost_per_acre',
-        'labor_cost_per_acre',
-        'crop_insurance_cost_per_acre',
-        'drying_storage_cost_per_acre',
-        'hauling_cost_per_acre',
-        'other_expenses_per_acre'
-      ];
-
       for (const field of costFields) {
         if (!overrideMap.has(field)) {
           updates[field] = updatedTemplate[field as keyof CostTemplate] || 0;
         }
       }
 
-      const { data: currentFieldCost } = await supabase
-        .from('field_costs')
-        .select('*')
-        .eq('field_id', fieldId)
-        .maybeSingle();
-
       if (currentFieldCost) {
-        const totalCost = calculateFieldTotalCost({
-          ...currentFieldCost,
-          ...updates
-        });
-        updates.total_cost_per_acre = totalCost;
+        updates.total_cost_per_acre = calculateFieldTotalCost({ ...currentFieldCost, ...updates });
       }
 
-      const { error } = await supabase
-        .from('field_costs')
-        .update(updates)
-        .eq('field_id', fieldId);
-
-      if (error) {
-        result.errors.push({
-          fieldId,
-          error: error.message
-        });
-      }
+      updatePromises.push(
+        supabase
+          .from('field_costs')
+          .update(updates)
+          .eq('field_id', fieldId)
+          .then(({ error }) => {
+            if (error) {
+              result.errors.push({ fieldId, error: error.message });
+            }
+          })
+      );
     } catch (err) {
       result.errors.push({
         fieldId: fieldData.field_id,
@@ -343,6 +345,8 @@ export async function cascadeTemplateUpdate(
       });
     }
   }
+
+  await Promise.all(updatePromises);
 
   return result;
 }
@@ -399,56 +403,48 @@ export async function applyTemplateToFields(
     seedAssignments.map(sa => [sa.fieldId, sa])
   );
 
+  const { data: fieldsData } = await supabase
+    .from('fields')
+    .select('id, user_id')
+    .in('id', fieldIds);
+
+  const fieldOwnershipMap = new Map<string, string>(
+    (fieldsData || []).map((f) => [f.id, f.user_id])
+  );
+
+  const fertilizerCost = Array.isArray(template.fertilizer_programs)
+    ? (template.fertilizer_programs as ProgramReference[]).reduce((sum, p) => sum + (p.cost_per_acre || 0), 0)
+    : 0;
+
+  const chemicalCost = Array.isArray(template.chemical_programs)
+    ? (template.chemical_programs as ProgramReference[]).reduce((sum, p) => sum + (p.cost_per_acre || 0), 0)
+    : 0;
+
+  const fieldCostUpserts: any[] = [];
+  const deleteOverridePromises: Promise<void>[] = [];
+
   for (const fieldId of fieldIds) {
     try {
       const seedAssignment = seedAssignmentMap.get(fieldId);
       if (!seedAssignment) {
-        result.errors.push({
-          fieldId,
-          error: 'Missing seed variety assignment'
-        });
+        result.errors.push({ fieldId, error: 'Missing seed variety assignment' });
         continue;
       }
 
-      const { data: field } = await supabase
-        .from('fields')
-        .select('user_id')
-        .eq('id', fieldId)
-        .maybeSingle();
-
-      if (!field) {
-        result.errors.push({
-          fieldId,
-          error: 'Field not found'
-        });
+      const fieldUserId = fieldOwnershipMap.get(fieldId);
+      if (!fieldUserId) {
+        result.errors.push({ fieldId, error: 'Field not found' });
         continue;
       }
 
-      if (field.user_id !== authenticatedUserId) {
-        result.errors.push({
-          fieldId,
-          error: 'Not authorized to modify this field'
-        });
+      if (fieldUserId !== authenticatedUserId) {
+        result.errors.push({ fieldId, error: 'Not authorized to modify this field' });
         continue;
       }
-
-      const fertilizerCost = Array.isArray(template.fertilizer_programs)
-        ? (template.fertilizer_programs as ProgramReference[]).reduce(
-            (sum, p) => sum + (p.cost_per_acre || 0),
-            0
-          )
-        : 0;
-
-      const chemicalCost = Array.isArray(template.chemical_programs)
-        ? (template.chemical_programs as ProgramReference[]).reduce(
-            (sum, p) => sum + (p.cost_per_acre || 0),
-            0
-          )
-        : 0;
 
       const fieldCostData = {
         field_id: fieldId,
-        user_id: field.user_id,
+        user_id: fieldUserId,
         template_id: templateId,
         seed_variety_id: seedAssignment.seedVarietyId,
         seeding_rate_override: seedAssignment.seedingRateOverride || null,
@@ -467,32 +463,35 @@ export async function applyTemplateToFields(
         hauling_per_bushel: template.hauling_per_bushel,
         hauling_cost_per_acre: template.hauling_cost_per_acre || 0,
         other_expenses_per_acre: template.other_expenses_per_acre || 0,
-        total_cost_per_acre: 0
+        total_cost_per_acre: 0,
       };
-
       fieldCostData.total_cost_per_acre = calculateFieldTotalCost(fieldCostData);
+      fieldCostUpserts.push(fieldCostData);
 
-      await deleteAllOverrides(fieldId);
-
-      const { error } = await supabase
-        .from('field_costs')
-        .upsert(fieldCostData, {
-          onConflict: 'field_id'
-        });
-
-      if (error) {
-        result.errors.push({
-          fieldId,
-          error: error.message
-        });
-      } else {
-        result.appliedFields.push(fieldId);
-      }
+      deleteOverridePromises.push(deleteAllOverrides(fieldId));
+      result.appliedFields.push(fieldId);
     } catch (err) {
       result.errors.push({
         fieldId,
         error: err instanceof Error ? err.message : 'Unknown error'
       });
+    }
+  }
+
+  if (deleteOverridePromises.length > 0) {
+    await Promise.all(deleteOverridePromises);
+  }
+
+  if (fieldCostUpserts.length > 0) {
+    const { error } = await supabase
+      .from('field_costs')
+      .upsert(fieldCostUpserts, { onConflict: 'field_id' });
+
+    if (error) {
+      for (const row of fieldCostUpserts) {
+        result.appliedFields = result.appliedFields.filter((id) => id !== row.field_id);
+        result.errors.push({ fieldId: row.field_id, error: error.message });
+      }
     }
   }
 

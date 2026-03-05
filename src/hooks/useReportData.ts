@@ -283,48 +283,58 @@ export function useReportData(userId: string | undefined) {
         return;
       }
 
+      const seasonIds = seasons.map((s) => s.id);
+
+      const [fieldsResults, salesResults] = await Promise.all([
+        Promise.all(
+          seasonIds.map((seasonId) =>
+            supabase
+              .from('fields')
+              .select(`
+                id, name, crop_type, acreage, land_rent_per_acre, property_tax_per_acre,
+                field_costs (
+                  seed_cost_per_acre, fertilizer_cost_per_acre, chemical_cost_per_acre,
+                  tillage_cost_per_acre, planting_cost_per_acre, harvest_cost_per_acre,
+                  equipment_cost_per_acre, custom_services_cost_per_acre, labor_cost_per_acre,
+                  crop_insurance_cost_per_acre, drying_storage_cost_per_acre, hauling_cost_per_acre,
+                  other_expenses_per_acre, total_cost_per_acre
+                ),
+                field_yields (
+                  yield_bushels_per_acre, total_yield_bushels
+                )
+              `)
+              .eq('season_id', seasonId)
+              .eq('user_id', userId)
+          )
+        ),
+        Promise.all(
+          seasonIds.map((seasonId) =>
+            supabase
+              .from('commodity_sales')
+              .select('id, crop_type, bushels_sold, price_per_bushel, total_revenue, sale_date, delivery_month, destination, notes')
+              .eq('season_id', seasonId)
+              .eq('user_id', userId)
+              .order('sale_date', { ascending: true })
+          )
+        ),
+      ]);
+
       const summaries: SeasonSummary[] = [];
       const allFields: FieldPerformanceSummary[] = [];
       const allSales: SaleRecord[] = [];
 
-      for (const season of seasons) {
-        const { data: fields, error: fieldsError } = await supabase
-          .from('fields')
-          .select(`
-            id, name, crop_type, acreage, land_rent_per_acre, property_tax_per_acre,
-            field_costs (
-              seed_cost_per_acre, fertilizer_cost_per_acre, chemical_cost_per_acre,
-              tillage_cost_per_acre, planting_cost_per_acre, harvest_cost_per_acre,
-              equipment_cost_per_acre, custom_services_cost_per_acre, labor_cost_per_acre,
-              crop_insurance_cost_per_acre, drying_storage_cost_per_acre, hauling_cost_per_acre,
-              other_expenses_per_acre, total_cost_per_acre
-            ),
-            field_yields (
-              yield_bushels_per_acre, total_yield_bushels
-            )
-          `)
-          .eq('season_id', season.id)
-          .eq('user_id', userId);
+      for (let i = 0; i < seasons.length; i++) {
+        const season = seasons[i];
+        const fieldsResult = fieldsResults[i];
+        const salesResult = salesResults[i];
 
-        if (fieldsError) throw fieldsError;
+        if (fieldsResult.error) throw fieldsResult.error;
+        if (salesResult.error) throw salesResult.error;
 
-        const { data: rawSales, error: salesError } = await supabase
-          .from('commodity_sales')
-          .select('id, crop_type, bushels_sold, price_per_bushel, total_revenue, sale_date, delivery_month, destination, notes')
-          .eq('season_id', season.id)
-          .eq('user_id', userId)
-          .order('sale_date', { ascending: true });
+        const typedFields = (fieldsResult.data || []) as unknown as RawField[];
+        const typedSales = (salesResult.data || []) as (RawSale & { id: string; sale_date: string; delivery_month: string; destination: string; notes: string | null })[];
 
-        if (salesError) throw salesError;
-
-        const typedFields = (fields || []) as unknown as RawField[];
-        const typedSales = (rawSales || []) as (RawSale & { id: string; sale_date: string; delivery_month: string; destination: string; notes: string | null })[];
-
-        const summary = buildSeasonSummary(
-          season as RawSeason,
-          typedFields,
-          typedSales
-        );
+        const summary = buildSeasonSummary(season as RawSeason, typedFields, typedSales);
         summaries.push(summary);
 
         const fieldSummaries = buildFieldPerformance(season as RawSeason, typedFields, typedSales);

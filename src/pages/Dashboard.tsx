@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import { Sprout, DollarSign, TrendingUp, TrendingDown, Truck } from 'lucide-react';
@@ -31,6 +31,7 @@ interface DashboardProps {
 
 export function Dashboard({ seasonId }: DashboardProps) {
   const { user } = useAuth();
+  const debounceTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [metrics, setMetrics] = useState<CropMetrics[]>([]);
   const [salesData, setSalesData] = useState<Record<CropType, SalesData>>({
     corn: { crop_type: 'corn', total_bushels_sold: 0, weighted_avg_price: 0, total_sales_revenue: 0, sale_count: 0 },
@@ -48,56 +49,23 @@ export function Dashboard({ seasonId }: DashboardProps) {
   useEffect(() => {
     if (!seasonId || !user) return;
 
+    const debouncedLoad = () => {
+      if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
+      debounceTimerRef.current = setTimeout(() => {
+        loadMetrics();
+      }, 300);
+    };
+
     const channel = supabase
       .channel('dashboard-updates')
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'fields',
-          filter: `season_id=eq.${seasonId}`
-        },
-        () => {
-          loadMetrics();
-        }
-      )
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'field_costs'
-        },
-        () => {
-          loadMetrics();
-        }
-      )
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'field_yields'
-        },
-        () => {
-          loadMetrics();
-        }
-      )
-      .on(
-        'postgres_changes',
-        {
-          event: '*',
-          schema: 'public',
-          table: 'commodity_sales'
-        },
-        () => {
-          loadMetrics();
-        }
-      )
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'fields', filter: `season_id=eq.${seasonId}` }, debouncedLoad)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'field_costs' }, debouncedLoad)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'field_yields' }, debouncedLoad)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'commodity_sales' }, debouncedLoad)
       .subscribe();
 
     return () => {
+      if (debounceTimerRef.current) clearTimeout(debounceTimerRef.current);
       supabase.removeChannel(channel);
     };
   }, [seasonId, user?.id]);

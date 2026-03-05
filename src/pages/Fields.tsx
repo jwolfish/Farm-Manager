@@ -2,12 +2,14 @@ import { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import { Plus, CreditCard as Edit2, Trash2, Sprout, FileText, Square, CheckSquare, Filter } from 'lucide-react';
-import { hasOverrides } from '../lib/templateUtils';
 import { TemplateSelector } from '../components/TemplateSelector';
 import { SeedVarietyAssignmentComponent } from '../components/SeedVarietyAssignment';
 import { TemplateApplicationPreview } from '../components/TemplateApplicationPreview';
+import { Pagination } from '../components/Pagination';
 import type { CropType } from '../lib/database.types';
 import type { SeedVarietyAssignment } from '../lib/templateUtils';
+
+const FIELDS_PAGE_SIZE = 24;
 
 interface Field {
   id: string;
@@ -49,6 +51,7 @@ export function Fields({ seasonId, onViewFieldDetail }: FieldsProps) {
   const [templateFilter, setTemplateFilter] = useState<string>('all');
   const [overrideFilter, setOverrideFilter] = useState<string>('all');
   const [cropFilter, setCropFilter] = useState<CropType | 'all'>('all');
+  const [currentPage, setCurrentPage] = useState(1);
 
   const [showTemplateSelector, setShowTemplateSelector] = useState(false);
   const [showSeedAssignment, setShowSeedAssignment] = useState(false);
@@ -101,19 +104,31 @@ export function Fields({ seasonId, onViewFieldDetail }: FieldsProps) {
         (costsData || []).map(c => [c.field_id, c])
       );
 
-      const fieldsWithOverrides = await Promise.all(
-        (fieldsData || []).map(async (field) => {
-          const costData = costsMap.get(field.id);
-          const hasOverridesFlag = costData ? await hasOverrides(field.id) : false;
+      const fieldIdsWithCosts = (fieldsData || [])
+        .filter(f => costsMap.has(f.id))
+        .map(f => f.id);
 
-          return {
-            ...field,
-            template_name: costData?.cost_templates?.name || null,
-            total_cost_per_acre: costData?.total_cost_per_acre || null,
-            has_overrides: hasOverridesFlag
-          } as FieldWithCosts;
-        })
-      );
+      let fieldsWithOverridesSet = new Set<string>();
+      if (fieldIdsWithCosts.length > 0) {
+        const { data: overridesData } = await supabase
+          .from('field_cost_overrides')
+          .select('field_id')
+          .in('field_id', fieldIdsWithCosts);
+
+        for (const row of overridesData || []) {
+          fieldsWithOverridesSet.add(row.field_id);
+        }
+      }
+
+      const fieldsWithOverrides = (fieldsData || []).map((field) => {
+        const costData = costsMap.get(field.id);
+        return {
+          ...field,
+          template_name: costData?.cost_templates?.name || null,
+          total_cost_per_acre: costData?.total_cost_per_acre || null,
+          has_overrides: fieldsWithOverridesSet.has(field.id),
+        } as FieldWithCosts;
+      });
 
       setFields(fieldsWithOverrides);
     } catch (error) {
@@ -313,6 +328,16 @@ export function Fields({ seasonId, onViewFieldDetail }: FieldsProps) {
       return true;
     });
   }, [fields, cropFilter, templateFilter, overrideFilter]);
+
+  const totalPages = Math.ceil(filteredFields.length / FIELDS_PAGE_SIZE);
+  const paginatedFields = useMemo(() => {
+    const start = (currentPage - 1) * FIELDS_PAGE_SIZE;
+    return filteredFields.slice(start, start + FIELDS_PAGE_SIZE);
+  }, [filteredFields, currentPage]);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [cropFilter, templateFilter, overrideFilter]);
 
   const uniqueTemplates = useMemo(() => {
     return Array.from(new Set(fields.map(f => f.template_name).filter(Boolean)));
@@ -569,7 +594,7 @@ export function Fields({ seasonId, onViewFieldDetail }: FieldsProps) {
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {filteredFields.map((field) => {
+              {paginatedFields.map((field) => {
                 const isSelected = selectedFields.has(field.id);
                 const statusColor = field.template_name
                   ? field.has_overrides
@@ -676,6 +701,15 @@ export function Fields({ seasonId, onViewFieldDetail }: FieldsProps) {
                 );
               })}
             </div>
+          )}
+          {filteredFields.length > FIELDS_PAGE_SIZE && (
+            <Pagination
+              currentPage={currentPage}
+              totalPages={totalPages}
+              onPageChange={setCurrentPage}
+              totalCount={filteredFields.length}
+              pageSize={FIELDS_PAGE_SIZE}
+            />
           )}
         </>
       )}

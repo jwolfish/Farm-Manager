@@ -1,7 +1,10 @@
 import { useState } from 'react';
 import { Plus, Pencil, Trash2, ChevronDown, ChevronUp } from 'lucide-react';
 import { SaleEntryForm } from './SaleEntryForm';
+import { Pagination } from './Pagination';
 import type { CropType } from '../lib/database.types';
+
+const SALES_PAGE_SIZE = 20;
 
 interface Sale {
   id: string;
@@ -107,7 +110,11 @@ export function SalesCommoditySection({
   const [expanded, setExpanded] = useState(true);
   const [showAddForm, setShowAddForm] = useState(false);
   const [editingSale, setEditingSale] = useState<Sale | null>(null);
+  const [currentPage, setCurrentPage] = useState(1);
   const config = cropConfig[cropType];
+
+  const totalPages = Math.ceil(sales.length / SALES_PAGE_SIZE);
+  const paginatedSales = sales.slice((currentPage - 1) * SALES_PAGE_SIZE, currentPage * SALES_PAGE_SIZE);
 
   const totalBushels = sales.reduce((sum, s) => sum + Number(s.bushels_sold), 0);
   const totalRevenue = sales.reduce((sum, s) => sum + Number(s.total_revenue), 0);
@@ -202,7 +209,7 @@ export function SalesCommoditySection({
                   </tr>
                 </thead>
                 <tbody>
-                  {sales.map((sale) => (
+                  {paginatedSales.map((sale) => (
                     <tr key={sale.id} className="border-b border-gray-100 hover:bg-gray-50 transition-colors">
                       <td className="py-3 px-3 text-gray-900">{formatDate(sale.sale_date)}</td>
                       <td className="py-3 px-3 text-gray-700">{formatDeliveryMonth(sale.delivery_month)}</td>
@@ -232,6 +239,15 @@ export function SalesCommoditySection({
                   ))}
                 </tbody>
               </table>
+              {sales.length > SALES_PAGE_SIZE && (
+                <Pagination
+                  currentPage={currentPage}
+                  totalPages={totalPages}
+                  onPageChange={setCurrentPage}
+                  totalCount={sales.length}
+                  pageSize={SALES_PAGE_SIZE}
+                />
+              )}
             </div>
           ) : (
             <div className="text-center py-8 text-gray-500">

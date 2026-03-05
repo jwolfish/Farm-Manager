@@ -276,92 +276,134 @@ export async function importSeasonData(
   }
 
   if (selectedItems.fertilizerPrograms.length > 0) {
-    for (const programId of selectedItems.fertilizerPrograms) {
-      const program = sourceData.fertilizerPrograms.find((p) => p.id === programId);
-      if (!program) continue;
-
-      const { data: newProgram, error: programError } = await supabase
-        .from('fertilizer_programs')
-        .insert({
+    const fertProgramsToInsert = selectedItems.fertilizerPrograms
+      .map((programId) => {
+        const program = sourceData.fertilizerPrograms.find((p) => p.id === programId);
+        if (!program) return null;
+        return {
+          _sourceId: programId,
           season_id: newSeasonId,
           user_id: userId,
           program_name: program.program_name,
           application_cost: priceUpdates.fertilizerPrograms[programId] ?? program.application_cost,
           notes: program.notes,
-        })
-        .select()
-        .single();
+        };
+      })
+      .filter((p): p is NonNullable<typeof p> => p !== null);
 
-      if (programError) throw programError;
+    if (fertProgramsToInsert.length > 0) {
+      const insertPayloads = fertProgramsToInsert.map(({ _sourceId: _, ...rest }) => rest);
+      const { data: insertedFertPrograms, error: fertProgramsError } = await supabase
+        .from('fertilizer_programs')
+        .insert(insertPayloads)
+        .select();
 
-      if (program.fertilizer_program_items.length > 0) {
-        const itemsToImport = program.fertilizer_program_items
-          .map((item) => {
-            const newProductId = productIdMap[item.fertilizer_product_id];
-            if (!newProductId) {
-              skippedItems.push(`product ID ${item.fertilizer_product_id} in fertilizer program "${program.program_name}"`);
-              return null;
-            }
+      if (fertProgramsError) throw fertProgramsError;
 
-            return {
-              program_id: newProgram.id,
-              fertilizer_product_id: newProductId,
-              application_rate: item.application_rate,
-              application_rate_unit: item.application_rate_unit,
-            };
-          })
-          .filter((item) => item !== null);
+      const fertProgramIdMap: Record<string, string> = {};
+      if (insertedFertPrograms) {
+        insertedFertPrograms.forEach((newProg, index) => {
+          fertProgramIdMap[fertProgramsToInsert[index]._sourceId] = newProg.id;
+        });
+      }
 
-        if (itemsToImport.length > 0) {
-          const { error: itemsError } = await supabase.from('fertilizer_program_items').insert(itemsToImport);
-          if (itemsError) throw itemsError;
+      const allFertItems: Array<{
+        program_id: string;
+        fertilizer_product_id: string;
+        application_rate: number;
+        application_rate_unit: string;
+      }> = [];
+
+      for (const programId of selectedItems.fertilizerPrograms) {
+        const program = sourceData.fertilizerPrograms.find((p) => p.id === programId);
+        const newProgramId = fertProgramIdMap[programId];
+        if (!program || !newProgramId) continue;
+
+        for (const item of program.fertilizer_program_items) {
+          const newProductId = productIdMap[item.fertilizer_product_id];
+          if (!newProductId) {
+            skippedItems.push(`product ID ${item.fertilizer_product_id} in fertilizer program "${program.program_name}"`);
+            continue;
+          }
+          allFertItems.push({
+            program_id: newProgramId,
+            fertilizer_product_id: newProductId,
+            application_rate: item.application_rate,
+            application_rate_unit: item.application_rate_unit,
+          });
         }
+      }
+
+      if (allFertItems.length > 0) {
+        const { error: itemsError } = await supabase.from('fertilizer_program_items').insert(allFertItems);
+        if (itemsError) throw itemsError;
       }
     }
   }
 
   if (selectedItems.chemicalPrograms.length > 0) {
-    for (const programId of selectedItems.chemicalPrograms) {
-      const program = sourceData.chemicalPrograms.find((p) => p.id === programId);
-      if (!program) continue;
-
-      const { data: newProgram, error: programError } = await supabase
-        .from('chemical_programs')
-        .insert({
+    const chemProgramsToInsert = selectedItems.chemicalPrograms
+      .map((programId) => {
+        const program = sourceData.chemicalPrograms.find((p) => p.id === programId);
+        if (!program) return null;
+        return {
+          _sourceId: programId,
           season_id: newSeasonId,
           user_id: userId,
           program_name: program.program_name,
           crop_type: (cropTypeUpdates.chemicalPrograms[programId] || program.crop_type) as CropType,
           application_cost: priceUpdates.chemicalPrograms[programId] ?? program.application_cost,
           notes: program.notes,
-        })
-        .select()
-        .single();
+        };
+      })
+      .filter((p): p is NonNullable<typeof p> => p !== null);
 
-      if (programError) throw programError;
+    if (chemProgramsToInsert.length > 0) {
+      const insertPayloads = chemProgramsToInsert.map(({ _sourceId: _, ...rest }) => rest);
+      const { data: insertedChemPrograms, error: chemProgramsError } = await supabase
+        .from('chemical_programs')
+        .insert(insertPayloads)
+        .select();
 
-      if (program.chemical_program_items.length > 0) {
-        const itemsToImport = program.chemical_program_items
-          .map((item) => {
-            const newChemicalId = productIdMap[item.chemical_id];
-            if (!newChemicalId) {
-              skippedItems.push(`chemical ID ${item.chemical_id} in chemical program "${program.program_name}"`);
-              return null;
-            }
+      if (chemProgramsError) throw chemProgramsError;
 
-            return {
-              program_id: newProgram.id,
-              chemical_id: newChemicalId,
-              application_rate: item.application_rate,
-              application_rate_unit: item.application_rate_unit,
-            };
-          })
-          .filter((item) => item !== null);
+      const chemProgramIdMap: Record<string, string> = {};
+      if (insertedChemPrograms) {
+        insertedChemPrograms.forEach((newProg, index) => {
+          chemProgramIdMap[chemProgramsToInsert[index]._sourceId] = newProg.id;
+        });
+      }
 
-        if (itemsToImport.length > 0) {
-          const { error: itemsError } = await supabase.from('chemical_program_items').insert(itemsToImport);
-          if (itemsError) throw itemsError;
+      const allChemItems: Array<{
+        program_id: string;
+        chemical_id: string;
+        application_rate: number;
+        application_rate_unit: string;
+      }> = [];
+
+      for (const programId of selectedItems.chemicalPrograms) {
+        const program = sourceData.chemicalPrograms.find((p) => p.id === programId);
+        const newProgramId = chemProgramIdMap[programId];
+        if (!program || !newProgramId) continue;
+
+        for (const item of program.chemical_program_items) {
+          const newChemicalId = productIdMap[item.chemical_id];
+          if (!newChemicalId) {
+            skippedItems.push(`chemical ID ${item.chemical_id} in chemical program "${program.program_name}"`);
+            continue;
+          }
+          allChemItems.push({
+            program_id: newProgramId,
+            chemical_id: newChemicalId,
+            application_rate: item.application_rate,
+            application_rate_unit: item.application_rate_unit,
+          });
         }
+      }
+
+      if (allChemItems.length > 0) {
+        const { error: itemsError } = await supabase.from('chemical_program_items').insert(allChemItems);
+        if (itemsError) throw itemsError;
       }
     }
   }

@@ -75,11 +75,19 @@ function AppContent() {
     if (!user) return;
     setLoading(true);
     try {
-      const [farms, sharedFarmsData, profileData] = await Promise.all([
+      const [farmsResult, sharedFarmsResult, profileResult] = await Promise.allSettled([
         fetchOwnedFarms(user.id),
         fetchSharedFarms(user.id),
         supabase.from('user_profiles').select('farm_name').eq('id', user.id).maybeSingle(),
       ]);
+
+      const farms = farmsResult.status === 'fulfilled' ? farmsResult.value : [];
+      const sharedFarmsData = sharedFarmsResult.status === 'fulfilled' ? sharedFarmsResult.value : [];
+      const profileData = profileResult.status === 'fulfilled' ? profileResult.value : { data: null };
+
+      if (farmsResult.status === 'rejected') console.error('Error loading owned farms:', farmsResult.reason);
+      if (sharedFarmsResult.status === 'rejected') console.error('Error loading shared farms:', sharedFarmsResult.reason);
+      if (profileResult.status === 'rejected') console.error('Error loading profile:', profileResult.reason);
 
       setSharedFarms(sharedFarmsData);
 

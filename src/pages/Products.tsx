@@ -2,7 +2,10 @@ import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import { Plus, CreditCard as Edit2, Trash2, Package, Droplet, FlaskConical, Layers, Copy } from 'lucide-react';
+import { Pagination } from '../components/Pagination';
 import type { CropType } from '../lib/database.types';
+
+const PRODUCTS_PAGE_SIZE = 25;
 import { FertilizerPrograms } from '../components/FertilizerPrograms';
 import { ChemicalPrograms } from '../components/ChemicalPrograms';
 import { calculateCostWithConversion } from '../lib/unitConversions';
@@ -270,6 +273,9 @@ function SeedsList({ seeds, seasonId, onReload, showForm, onHideForm }: { seeds:
   const { user } = useAuth();
   const [editingId, setEditingId] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
+  const [currentPage, setCurrentPage] = useState(1);
+  const totalPages = Math.ceil(seeds.length / PRODUCTS_PAGE_SIZE);
+  const paginatedSeeds = seeds.slice((currentPage - 1) * PRODUCTS_PAGE_SIZE, currentPage * PRODUCTS_PAGE_SIZE);
   const [formData, setFormData] = useState({
     product_name: '',
     crop_type: 'corn' as CropType,
@@ -506,7 +512,7 @@ function SeedsList({ seeds, seasonId, onReload, showForm, onHideForm }: { seeds:
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200">
-              {seeds.map((seed) => (
+              {paginatedSeeds.map((seed) => (
                 <tr key={seed.id} className="hover:bg-gray-50 transition-colors">
                   <td className="px-6 py-4 text-sm font-medium text-gray-900">{seed.product_name}</td>
                   <td className="px-6 py-4 text-sm text-gray-600 capitalize">{seed.crop_type}</td>
@@ -537,6 +543,17 @@ function SeedsList({ seeds, seasonId, onReload, showForm, onHideForm }: { seeds:
               ))}
             </tbody>
           </table>
+          {seeds.length > PRODUCTS_PAGE_SIZE && (
+            <div className="px-6 pb-4">
+              <Pagination
+                currentPage={currentPage}
+                totalPages={totalPages}
+                onPageChange={setCurrentPage}
+                totalCount={seeds.length}
+                pageSize={PRODUCTS_PAGE_SIZE}
+              />
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -547,6 +564,9 @@ function FertilizersList({ fertilizers, seasonId, onReload, showForm, onHideForm
   const { user } = useAuth();
   const [editingId, setEditingId] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
+  const [currentPage, setCurrentPage] = useState(1);
+  const totalPages = Math.ceil(fertilizers.length / PRODUCTS_PAGE_SIZE);
+  const paginatedFertilizers = fertilizers.slice((currentPage - 1) * PRODUCTS_PAGE_SIZE, currentPage * PRODUCTS_PAGE_SIZE);
   const [formData, setFormData] = useState({
     product_name: '',
     price_per_unit: '',
@@ -766,7 +786,7 @@ function FertilizersList({ fertilizers, seasonId, onReload, showForm, onHideForm
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200">
-              {fertilizers.map((fert) => (
+              {paginatedFertilizers.map((fert) => (
                 <tr key={fert.id} className="hover:bg-gray-50 transition-colors">
                   <td className="px-6 py-4 text-sm font-medium text-gray-900">{fert.product_name}</td>
                   <td className="px-6 py-4 text-sm text-gray-900">${fert.price_per_unit.toFixed(2)}/{fert.unit_type}</td>
@@ -794,6 +814,17 @@ function FertilizersList({ fertilizers, seasonId, onReload, showForm, onHideForm
               ))}
             </tbody>
           </table>
+          {fertilizers.length > PRODUCTS_PAGE_SIZE && (
+            <div className="px-6 pb-4">
+              <Pagination
+                currentPage={currentPage}
+                totalPages={totalPages}
+                onPageChange={setCurrentPage}
+                totalCount={fertilizers.length}
+                pageSize={PRODUCTS_PAGE_SIZE}
+              />
+            </div>
+          )}
         </div>
       )}
     </div>
@@ -804,6 +835,9 @@ function ChemicalsList({ chemicals, seasonId, onReload, showForm, onHideForm }: 
   const { user } = useAuth();
   const [editingId, setEditingId] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
+  const [currentPage, setCurrentPage] = useState(1);
+  const totalPages = Math.ceil(chemicals.length / PRODUCTS_PAGE_SIZE);
+  const paginatedChemicals = chemicals.slice((currentPage - 1) * PRODUCTS_PAGE_SIZE, currentPage * PRODUCTS_PAGE_SIZE);
   const [formData, setFormData] = useState({
     chemical_name: '',
     price_per_unit: '',
@@ -1015,7 +1049,7 @@ function ChemicalsList({ chemicals, seasonId, onReload, showForm, onHideForm }: 
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-200">
-              {chemicals.map((chem) => (
+              {paginatedChemicals.map((chem) => (
                 <tr key={chem.id} className="hover:bg-gray-50 transition-colors">
                   <td className="px-6 py-4 text-sm font-medium text-gray-900">{chem.chemical_name}</td>
                   <td className="px-6 py-4 text-sm text-gray-900">${chem.price_per_unit.toFixed(2)}</td>
@@ -1045,6 +1079,17 @@ function ChemicalsList({ chemicals, seasonId, onReload, showForm, onHideForm }: 
               ))}
             </tbody>
           </table>
+          {chemicals.length > PRODUCTS_PAGE_SIZE && (
+            <div className="px-6 pb-4">
+              <Pagination
+                currentPage={currentPage}
+                totalPages={totalPages}
+                onPageChange={setCurrentPage}
+                totalCount={chemicals.length}
+                pageSize={PRODUCTS_PAGE_SIZE}
+              />
+            </div>
+          )}
         </div>
       )}
     </div>
