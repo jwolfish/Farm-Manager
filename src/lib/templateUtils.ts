@@ -568,7 +568,8 @@ export interface RecalculateProgramResult {
 export async function recalculateFertilizerProgramCost(
   programId: string,
   seasonId: string,
-  taskId?: string
+  taskId?: string,
+  previousCost?: number
 ): Promise<RecalculateProgramResult | null> {
   try {
     const { data: program, error: programError } = await supabase
@@ -633,11 +634,12 @@ export async function recalculateFertilizerProgramCost(
     }
 
     const totalWithApplication = totalCostPerAcre + (program.application_cost || 0);
-    const changed = Math.abs(totalWithApplication - totalCostPerAcre) > 0.01;
+    const storedCost = previousCost ?? totalWithApplication;
+    const changed = Math.abs(totalWithApplication - storedCost) > 0.01;
 
     return {
       programId,
-      oldCost: totalCostPerAcre,
+      oldCost: storedCost,
       newCost: totalWithApplication,
       changed
     };
@@ -650,7 +652,8 @@ export async function recalculateFertilizerProgramCost(
 export async function recalculateChemicalProgramCost(
   programId: string,
   seasonId: string,
-  taskId?: string
+  taskId?: string,
+  previousCost?: number
 ): Promise<RecalculateProgramResult | null> {
   try {
     const { data: program, error: programError } = await supabase
@@ -715,11 +718,12 @@ export async function recalculateChemicalProgramCost(
     }
 
     const totalWithApplication = totalCostPerAcre + (program.application_cost || 0);
-    const changed = Math.abs(totalWithApplication - totalCostPerAcre) > 0.01;
+    const storedCost = previousCost ?? totalWithApplication;
+    const changed = Math.abs(totalWithApplication - storedCost) > 0.01;
 
     return {
       programId,
-      oldCost: totalCostPerAcre,
+      oldCost: storedCost,
       newCost: totalWithApplication,
       changed
     };
@@ -875,9 +879,20 @@ export async function cascadeProgramUpdateInSeason(
       return { success: true, data: { templatesUpdated: 0, fieldsUpdated: 0 } };
     }
 
+    let storedProgramCost: number | undefined;
+    for (const template of templates) {
+      const programs = template[programField] as any[];
+      if (!programs || !Array.isArray(programs)) continue;
+      const ref = programs.find((p: any) => p.program_id === programId);
+      if (ref && typeof ref.cost_per_acre === 'number') {
+        storedProgramCost = ref.cost_per_acre;
+        break;
+      }
+    }
+
     const recalcResult = programType === 'fertilizer'
-      ? await recalculateFertilizerProgramCost(programId, seasonId, taskId)
-      : await recalculateChemicalProgramCost(programId, seasonId, taskId);
+      ? await recalculateFertilizerProgramCost(programId, seasonId, taskId, storedProgramCost)
+      : await recalculateChemicalProgramCost(programId, seasonId, taskId, storedProgramCost);
 
     if (!recalcResult) {
       return { success: true, data: { templatesUpdated: 0, fieldsUpdated: 0 } };

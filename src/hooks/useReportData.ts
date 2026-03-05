@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { SeasonSummary, CropSummary, CostBreakdown, FieldPerformanceSummary, SaleRecord } from '../lib/reportTypes';
 import { CropType } from '../lib/database.types';
+import { safeDivide } from '../lib/mathUtils';
 
 interface RawField {
   id: string;
@@ -115,8 +116,8 @@ function buildSeasonSummary(
       }
     }
 
-    const costPerAcre = totalAcres > 0 ? weightedCostTotal / totalAcres : 0;
-    const yieldPerAcre = acresWithYield > 0 ? totalYieldBushels / acresWithYield : null;
+    const costPerAcre = safeDivide(weightedCostTotal, totalAcres);
+    const yieldPerAcre = acresWithYield > 0 ? safeDivide(totalYieldBushels, acresWithYield) : null;
 
     const cropSales = sales.filter((s) => s.crop_type === cropType);
     const seasonPrice = getPriceForCrop(cropType, season);
@@ -124,18 +125,18 @@ function buildSeasonSummary(
     let totalRevenue: number = 0;
     let priceUsed: number | null = null;
 
-    if (yieldPerAcre !== null && seasonPrice) {
-      totalRevenue = totalYieldBushels * seasonPrice;
-      priceUsed = seasonPrice;
-    } else if (cropSales.length > 0) {
+    if (cropSales.length > 0) {
       totalRevenue = cropSales.reduce((sum, s) => sum + s.total_revenue, 0);
       const totalBushelsSold = cropSales.reduce((sum, s) => sum + s.bushels_sold, 0);
       priceUsed = totalBushelsSold > 0
-        ? cropSales.reduce((sum, s) => sum + s.price_per_bushel * s.bushels_sold, 0) / totalBushelsSold
+        ? safeDivide(cropSales.reduce((sum, s) => sum + s.price_per_bushel * s.bushels_sold, 0), totalBushelsSold)
         : null;
+    } else if (yieldPerAcre !== null && seasonPrice) {
+      totalRevenue = totalYieldBushels * seasonPrice;
+      priceUsed = seasonPrice;
     }
 
-    const revenuePerAcre = totalAcres > 0 ? totalRevenue / totalAcres : 0;
+    const revenuePerAcre = safeDivide(totalRevenue, totalAcres);
     const totalCost = weightedCostTotal;
     const netProfit = totalRevenue - totalCost;
 
@@ -144,7 +145,7 @@ function buildSeasonSummary(
       acres: totalAcres,
       revenuePerAcre,
       costPerAcre,
-      netProfitPerAcre: totalAcres > 0 ? netProfit / totalAcres : 0,
+      netProfitPerAcre: safeDivide(netProfit, totalAcres),
       totalRevenue,
       totalCost,
       totalNetProfit: netProfit,
@@ -210,18 +211,18 @@ function buildFieldPerformance(
     let revenuePerAcre: number | null = null;
     let totalRevenue: number | null = null;
 
-    if (yieldPerAcre !== null && seasonPrice) {
-      totalRevenue = (totalYield ?? 0) * seasonPrice;
-      revenuePerAcre = yieldPerAcre * seasonPrice;
-    } else if (cropSales.length > 0 && field.acreage > 0) {
+    if (cropSales.length > 0 && field.acreage > 0) {
       const allRevenue = cropSales.reduce((s, c) => s + c.total_revenue, 0);
       const cropFields = fields.filter((f) => f.crop_type === field.crop_type);
       const totalCropAcres = cropFields.reduce((s, f) => s + f.acreage, 0);
       if (totalCropAcres > 0) {
-        const share = field.acreage / totalCropAcres;
+        const share = safeDivide(field.acreage, totalCropAcres);
         totalRevenue = allRevenue * share;
-        revenuePerAcre = totalRevenue / field.acreage;
+        revenuePerAcre = safeDivide(totalRevenue, field.acreage);
       }
+    } else if (yieldPerAcre !== null && seasonPrice) {
+      totalRevenue = (totalYield ?? 0) * seasonPrice;
+      revenuePerAcre = yieldPerAcre * seasonPrice;
     }
 
     const netProfitPerAcre = revenuePerAcre !== null ? revenuePerAcre - costPerAcre : null;

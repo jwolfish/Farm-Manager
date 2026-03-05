@@ -168,6 +168,7 @@ export async function importSeasonData(
   }
 ) {
   const productIdMap: Record<string, string> = {};
+  const skippedItems: string[] = [];
 
   if (selectedItems.fields.length > 0) {
     const fieldsToImport = sourceData.fields
@@ -297,7 +298,10 @@ export async function importSeasonData(
         const itemsToImport = program.fertilizer_program_items
           .map((item) => {
             const newProductId = productIdMap[item.fertilizer_product_id];
-            if (!newProductId) return null;
+            if (!newProductId) {
+              skippedItems.push(`product ID ${item.fertilizer_product_id} in fertilizer program "${program.program_name}"`);
+              return null;
+            }
 
             return {
               program_id: newProgram.id,
@@ -340,7 +344,10 @@ export async function importSeasonData(
         const itemsToImport = program.chemical_program_items
           .map((item) => {
             const newChemicalId = productIdMap[item.chemical_id];
-            if (!newChemicalId) return null;
+            if (!newChemicalId) {
+              skippedItems.push(`chemical ID ${item.chemical_id} in chemical program "${program.program_name}"`);
+              return null;
+            }
 
             return {
               program_id: newProgram.id,
@@ -359,7 +366,7 @@ export async function importSeasonData(
     }
   }
 
-  return { success: true };
+  return { success: true, skippedItems };
 }
 
 export function validateImport(

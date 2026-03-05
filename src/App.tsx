@@ -121,18 +121,17 @@ function AppContent() {
 
   const loadSeasonsByFarm = async (farmId: string, forUserId: string) => {
     setLoading(true);
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 10000);
     try {
-      const timeoutPromise = new Promise((_, reject) =>
-        setTimeout(() => reject(new Error('Request timeout')), 10000)
-      );
-
-      const dataPromise = supabase
+      const { data, error } = await supabase
         .from('seasons')
         .select('*')
         .eq('farm_id', farmId)
-        .order('year', { ascending: false });
+        .order('year', { ascending: false })
+        .abortSignal(controller.signal);
 
-      const { data, error } = await Promise.race([dataPromise, timeoutPromise]) as any;
+      clearTimeout(timeoutId);
 
       if (error) throw error;
 
@@ -144,8 +143,11 @@ function AppContent() {
       } else {
         setCurrentSeason(null);
       }
-    } catch (error) {
-      console.error('Error loading seasons:', error);
+    } catch (error: any) {
+      clearTimeout(timeoutId);
+      if (error?.name !== 'AbortError') {
+        console.error('Error loading seasons:', error);
+      }
       setSeasons([]);
     } finally {
       setLoading(false);
@@ -265,19 +267,47 @@ function AppContent() {
   };
 
   const handleImportComplete = async () => {
+    const importedSeasonId = pendingSeasonId;
     setShowImportWizard(false);
     setPendingSeasonId(null);
     setSeasonFormData({ year: new Date().getFullYear(), name: '', importFromSeason: '' });
     if (user) {
       if (activeFarmId) {
-        await loadSeasonsByFarm(activeFarmId, user.id);
+        const timeoutPromise = new Promise<never>((_, reject) =>
+          setTimeout(() => reject(new Error('Request timeout')), 10000)
+        );
+        const controller = new AbortController();
+        const dataPromise = supabase
+          .from('seasons')
+          .select('*')
+          .eq('farm_id', activeFarmId)
+          .order('year', { ascending: false })
+          .abortSignal(controller.signal);
+        const timeoutId = setTimeout(() => controller.abort(), 10000);
+        try {
+          const { data, error } = await Promise.race([dataPromise, timeoutPromise]) as any;
+          clearTimeout(timeoutId);
+          if (!error && data) {
+            setSeasons(data);
+            if (importedSeasonId) {
+              const season = data.find((s: Season) => s.id === importedSeasonId);
+              if (season) setCurrentSeason(season);
+            }
+          }
+        } catch {
+          clearTimeout(timeoutId);
+          controller.abort();
+        }
       } else {
         await loadSeasons(user.id);
+        if (importedSeasonId) {
+          setSeasons((prev) => {
+            const season = prev.find((s) => s.id === importedSeasonId);
+            if (season) setCurrentSeason(season);
+            return prev;
+          });
+        }
       }
-    }
-    if (pendingSeasonId) {
-      const season = seasons.find((s) => s.id === pendingSeasonId);
-      if (season) setCurrentSeason(season);
     }
   };
 
@@ -415,7 +445,7 @@ function AppContent() {
 
   const handleInviteAccepted = useCallback(async () => {
     await loadSharedFarms();
-  }, [user]);
+  }, [user, loadSharedFarms]);
 
   if (authLoading || loading) {
     return (

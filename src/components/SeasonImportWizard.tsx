@@ -20,12 +20,13 @@ interface SeasonImportWizardProps {
   onCancel: () => void;
 }
 
-type Step = 'select-categories' | 'select-fields' | 'select-products' | 'select-programs' | 'update-prices' | 'importing';
+type Step = 'select-categories' | 'select-fields' | 'select-products' | 'select-programs' | 'update-prices' | 'importing' | 'import-warnings';
 
 export function SeasonImportWizard({ sourceSeasonId, newSeasonId, userId, onComplete, onCancel }: SeasonImportWizardProps) {
   const [step, setStep] = useState<Step>('select-categories');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [skippedItems, setSkippedItems] = useState<string[]>([]);
 
   const [sourceData, setSourceData] = useState<{
     fields: Field[];
@@ -280,8 +281,13 @@ export function SeasonImportWizard({ sourceSeasonId, newSeasonId, userId, onComp
     setStep('importing');
     setError(null);
     try {
-      await importSeasonData(newSeasonId, userId, selectedItems, sourceData, priceUpdates, cropTypeUpdates);
-      onComplete();
+      const result = await importSeasonData(newSeasonId, userId, selectedItems, sourceData, priceUpdates, cropTypeUpdates);
+      if (result.skippedItems && result.skippedItems.length > 0) {
+        setSkippedItems(result.skippedItems);
+        setStep('import-warnings');
+      } else {
+        onComplete();
+      }
     } catch (err) {
       console.error('Import failed:', err);
       setError('Import failed. Please try again.');
@@ -1006,57 +1012,91 @@ export function SeasonImportWizard({ sourceSeasonId, newSeasonId, userId, onComp
               <p className="text-sm text-gray-500 mt-2">This may take a moment</p>
             </div>
           )}
+
+          {step === 'import-warnings' && (
+            <div className="space-y-4">
+              <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 flex items-start gap-3">
+                <AlertCircle className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
+                <div>
+                  <p className="font-medium text-amber-900">Import completed with warnings</p>
+                  <p className="text-sm text-amber-800 mt-1">
+                    The following items could not be imported because their product mappings were not found. This can happen if the associated products were not selected for import.
+                  </p>
+                </div>
+              </div>
+              <ul className="divide-y divide-gray-100 border border-gray-200 rounded-lg overflow-hidden">
+                {skippedItems.map((item, i) => (
+                  <li key={i} className="px-4 py-3 text-sm text-gray-700 bg-white">
+                    {item}
+                  </li>
+                ))}
+              </ul>
+              <p className="text-sm text-gray-500">All other data was imported successfully. You can add the missing items manually.</p>
+            </div>
+          )}
         </div>
 
         {step !== 'importing' && (
           <div className="p-6 border-t border-gray-200 flex items-center justify-between bg-gray-50">
-            <button
-              onClick={handleBack}
-              disabled={step === 'select-categories'}
-              className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-colors ${
-                step === 'select-categories'
-                  ? 'text-gray-400 cursor-not-allowed'
-                  : 'text-gray-700 hover:bg-gray-200'
-              }`}
-            >
-              <ChevronLeft className="w-4 h-4" />
-              Back
-            </button>
+            {step === 'import-warnings' ? (
+              <div className="flex w-full justify-end">
+                <button
+                  onClick={onComplete}
+                  className="flex items-center gap-2 px-6 py-2 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700 transition-colors"
+                >
+                  <Check className="w-4 h-4" />
+                  Done
+                </button>
+              </div>
+            ) : (
+              <>
+                <button
+                  onClick={handleBack}
+                  disabled={step === 'select-categories'}
+                  className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-colors ${
+                    step === 'select-categories'
+                      ? 'text-gray-400 cursor-not-allowed'
+                      : 'text-gray-700 hover:bg-gray-200'
+                  }`}
+                >
+                  <ChevronLeft className="w-4 h-4" />
+                  Back
+                </button>
 
-            <div className="flex gap-3">
-              <button
-                onClick={onCancel}
-                className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg font-medium hover:bg-gray-200 transition-colors"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={handleNext}
-                disabled={
-                  step === 'select-categories' &&
-                  !Object.values(selectedCategories).some((v) => v)
-                }
-                className={`flex items-center gap-2 px-6 py-2 rounded-lg font-medium transition-colors ${
-                  step === 'select-categories' && !Object.values(selectedCategories).some((v) => v)
-                    ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
-                    : step === 'update-prices'
-                    ? 'bg-green-600 text-white hover:bg-green-700'
-                    : 'bg-green-600 text-white hover:bg-green-700'
-                }`}
-              >
-                {step === 'update-prices' ? (
-                  <>
-                    <Check className="w-4 h-4" />
-                    Complete Import
-                  </>
-                ) : (
-                  <>
-                    Next
-                    <ChevronRight className="w-4 h-4" />
-                  </>
-                )}
-              </button>
-            </div>
+                <div className="flex gap-3">
+                  <button
+                    onClick={onCancel}
+                    className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg font-medium hover:bg-gray-200 transition-colors"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    onClick={handleNext}
+                    disabled={
+                      step === 'select-categories' &&
+                      !Object.values(selectedCategories).some((v) => v)
+                    }
+                    className={`flex items-center gap-2 px-6 py-2 rounded-lg font-medium transition-colors ${
+                      step === 'select-categories' && !Object.values(selectedCategories).some((v) => v)
+                        ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                        : 'bg-green-600 text-white hover:bg-green-700'
+                    }`}
+                  >
+                    {step === 'update-prices' ? (
+                      <>
+                        <Check className="w-4 h-4" />
+                        Complete Import
+                      </>
+                    ) : (
+                      <>
+                        Next
+                        <ChevronRight className="w-4 h-4" />
+                      </>
+                    )}
+                  </button>
+                </div>
+              </>
+            )}
           </div>
         )}
       </div>
