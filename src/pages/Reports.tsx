@@ -98,7 +98,7 @@ export function Reports({ currentSeasonId }: ReportsProps) {
       .then(({ data }) => {
         if (data?.farm_name) setFarmName(data.farm_name);
       });
-  }, [user]);
+  }, [user?.id]);
 
   const activecat = CATEGORIES.find((c) => c.id === activeCategory);
 

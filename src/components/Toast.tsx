@@ -1,8 +1,9 @@
-import { useNotifications, Notification } from '../contexts/NotificationContext';
+import { useNotificationList, useNotifications, Notification } from '../contexts/NotificationContext';
 import { CheckCircle, XCircle, Info, AlertTriangle, X } from 'lucide-react';
 
 export function ToastContainer() {
-  const { notifications, removeNotification } = useNotifications();
+  const { notifications } = useNotificationList();
+  const { removeNotification } = useNotifications();
 
   if (notifications.length === 0) return null;
 

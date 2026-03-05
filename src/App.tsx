@@ -36,6 +36,7 @@ function AppContent() {
   const { addNotification } = useNotifications();
   const { activeFarm, ownedFarms, setOwnedFarms, setOwnFarm, setOwnFarmById, setSharedFarm, activeFarmId } = useFarm();
   const wasAuthenticated = useRef(false);
+  const loadedForUserIdRef = useRef<string | null>(null);
   const [activePage, setActivePage] = useState<string>(() => {
     return sessionStorage.getItem('activePage') || 'dashboard';
   });
@@ -60,11 +61,15 @@ function AppContent() {
   useEffect(() => {
     if (user) {
       wasAuthenticated.current = true;
-      loadInitialData();
+      if (loadedForUserIdRef.current !== user.id) {
+        loadedForUserIdRef.current = user.id;
+        loadInitialData();
+      }
     } else if (!authLoading) {
+      loadedForUserIdRef.current = null;
       setLoading(false);
     }
-  }, [user, authLoading]);
+  }, [user?.id, authLoading]);
 
   const loadInitialData = async () => {
     if (!user) return;

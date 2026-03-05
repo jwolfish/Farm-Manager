@@ -32,7 +32,7 @@ export function SalesTracking({ seasonId }: SalesTrackingProps) {
     if (seasonId && user) {
       loadSales();
     }
-  }, [seasonId, user]);
+  }, [seasonId, user?.id]);
 
   const loadSales = async () => {
     if (!seasonId || !user) return;

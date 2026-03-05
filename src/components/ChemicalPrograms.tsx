@@ -67,7 +67,7 @@ export function ChemicalPrograms({ seasonId }: ChemicalProgramsProps) {
       loadPrograms();
       loadChemicals();
     }
-  }, [seasonId, user]);
+  }, [seasonId, user?.id]);
 
   const loadPrograms = async () => {
     if (!seasonId || !user) return;

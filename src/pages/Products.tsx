@@ -81,7 +81,7 @@ export function Products({ seasonId, readOnly = false }: ProductsProps) {
     if (seasonId && user) {
       loadProducts();
     }
-  }, [seasonId, user, activeTab]);
+  }, [seasonId, user?.id, activeTab]);
 
   const loadProducts = async () => {
     if (!seasonId || !user) return;

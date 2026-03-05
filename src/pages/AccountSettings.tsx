@@ -14,7 +14,7 @@ export function AccountSettings() {
   useEffect(() => {
     if (!user) return;
     loadProfile();
-  }, [user]);
+  }, [user?.id]);
 
   const loadProfile = async () => {
     if (!user) return;

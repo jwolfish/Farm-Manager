@@ -43,7 +43,7 @@ export function Dashboard({ seasonId }: DashboardProps) {
     if (seasonId && user) {
       loadMetrics();
     }
-  }, [seasonId, user]);
+  }, [seasonId, user?.id]);
 
   useEffect(() => {
     if (!seasonId || !user) return;
@@ -100,7 +100,7 @@ export function Dashboard({ seasonId }: DashboardProps) {
     return () => {
       supabase.removeChannel(channel);
     };
-  }, [seasonId, user]);
+  }, [seasonId, user?.id]);
 
   const loadMetrics = async () => {
     if (!seasonId || !user) return;

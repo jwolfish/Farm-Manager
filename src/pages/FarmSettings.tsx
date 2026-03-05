@@ -24,7 +24,7 @@ export function FarmSettings({ onFarmsUpdated }: FarmSettingsProps) {
   useEffect(() => {
     if (!user) return;
     loadFarms();
-  }, [user]);
+  }, [user?.id]);
 
   const loadFarms = async () => {
     if (!user) return;

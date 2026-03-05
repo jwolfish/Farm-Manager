@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useState } from 'react';
+import { createContext, useContext, useEffect, useRef, useState } from 'react';
 import { User, Session } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
 
@@ -17,37 +17,42 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
+  const currentUserIdRef = useRef<string | null>(null);
 
   useEffect(() => {
-    console.log('[Auth] Initializing...');
     const timeout = setTimeout(() => {
-      console.warn('[Auth] Check timed out, proceeding with no session');
       setLoading(false);
     }, 5000);
 
     supabase.auth.getSession()
       .then(({ data: { session } }) => {
-        console.log('[Auth] Session loaded:', session ? 'logged in' : 'no session');
         clearTimeout(timeout);
         setSession(session);
         setUser(session?.user ?? null);
+        currentUserIdRef.current = session?.user?.id ?? null;
         setLoading(false);
       })
-      .catch((error) => {
-        console.error('[Auth] Error getting session:', error);
+      .catch(() => {
         clearTimeout(timeout);
         setLoading(false);
       });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      console.log('[Auth] State change:', event, session ? 'logged in' : 'no session');
       if (event === 'TOKEN_REFRESHED' || event === 'INITIAL_SESSION') {
         if (session) {
-          setSession(session);
-          setUser(session.user);
+          if (session.user.id !== currentUserIdRef.current) {
+            currentUserIdRef.current = session.user.id;
+            setSession(session);
+            setUser(session.user);
+          } else {
+            setSession(session);
+          }
         }
         return;
       }
+
+      const newUserId = session?.user?.id ?? null;
+      currentUserIdRef.current = newUserId;
       setSession(session);
       setUser(session?.user ?? null);
     });

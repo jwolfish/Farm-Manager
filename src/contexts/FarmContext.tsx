@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, ReactNode } from 'react';
+import { createContext, useContext, useState, useCallback, useMemo, ReactNode } from 'react';
 import { Farm } from '../lib/farms';
 
 export interface ActiveFarm {
@@ -27,7 +27,7 @@ export function FarmProvider({ children, currentUserId }: { children: ReactNode;
   const [activeFarm, setActiveFarm] = useState<ActiveFarm | null>(null);
   const [ownedFarms, setOwnedFarms] = useState<Farm[]>([]);
 
-  const setOwnFarm = (userId: string, farmId: string | null, farmName: string | null) => {
+  const setOwnFarm = useCallback((userId: string, farmId: string | null, farmName: string | null) => {
     setActiveFarm({
       farmId,
       ownerId: userId,
@@ -36,9 +36,9 @@ export function FarmProvider({ children, currentUserId }: { children: ReactNode;
       role: 'admin',
       isOwn: true,
     });
-  };
+  }, []);
 
-  const setOwnFarmById = (userId: string, farm: Farm) => {
+  const setOwnFarmById = useCallback((userId: string, farm: Farm) => {
     setActiveFarm({
       farmId: farm.id,
       ownerId: userId,
@@ -47,9 +47,9 @@ export function FarmProvider({ children, currentUserId }: { children: ReactNode;
       role: 'admin',
       isOwn: true,
     });
-  };
+  }, []);
 
-  const setSharedFarm = (farm: { farmId: string; ownerId: string; ownerName: string | null; farmName: string | null; role: 'editor' | 'viewer' }) => {
+  const setSharedFarm = useCallback((farm: { farmId: string; ownerId: string; ownerName: string | null; farmName: string | null; role: 'editor' | 'viewer' }) => {
     setActiveFarm({
       farmId: farm.farmId,
       ownerId: farm.ownerId,
@@ -58,22 +58,24 @@ export function FarmProvider({ children, currentUserId }: { children: ReactNode;
       role: farm.role,
       isOwn: false,
     });
-  };
+  }, []);
 
   const effectiveUserId = activeFarm ? activeFarm.ownerId : currentUserId;
   const activeFarmId = activeFarm?.farmId ?? null;
 
+  const value = useMemo(() => ({
+    activeFarm,
+    ownedFarms,
+    setOwnedFarms,
+    setOwnFarm,
+    setOwnFarmById,
+    setSharedFarm,
+    effectiveUserId,
+    activeFarmId,
+  }), [activeFarm, ownedFarms, setOwnedFarms, setOwnFarm, setOwnFarmById, setSharedFarm, effectiveUserId, activeFarmId]);
+
   return (
-    <FarmContext.Provider value={{
-      activeFarm,
-      ownedFarms,
-      setOwnedFarms,
-      setOwnFarm,
-      setOwnFarmById,
-      setSharedFarm,
-      effectiveUserId,
-      activeFarmId,
-    }}>
+    <FarmContext.Provider value={value}>
       {children}
     </FarmContext.Provider>
   );

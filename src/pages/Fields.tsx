@@ -63,7 +63,7 @@ export function Fields({ seasonId, onViewFieldDetail }: FieldsProps) {
     if (seasonId && user) {
       loadFields();
     }
-  }, [seasonId, user]);
+  }, [seasonId, user?.id]);
 
   const loadFields = async () => {
     if (!seasonId || !user) return;

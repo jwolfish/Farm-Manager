@@ -62,7 +62,7 @@ export function FertilizerPrograms({ seasonId }: FertilizerProgramsProps) {
       loadPrograms();
       loadProducts();
     }
-  }, [seasonId, user]);
+  }, [seasonId, user?.id]);
 
   const loadPrograms = async () => {
     if (!seasonId || !user) return;

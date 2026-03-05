@@ -32,7 +32,7 @@ export function NotificationBell({ onInviteAccepted }: NotificationBellProps) {
     load();
     const interval = setInterval(load, 30000);
     return () => clearInterval(interval);
-  }, [user]);
+  }, [user?.id]);
 
   useEffect(() => {
     const handleClick = (e: MouseEvent) => {

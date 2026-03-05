@@ -67,7 +67,7 @@ export function Yields({ seasonId }: YieldsProps) {
     if (seasonId && user) {
       loadFieldsAndYields();
     }
-  }, [seasonId, user]);
+  }, [seasonId, user?.id]);
 
   useEffect(() => {
     return () => {
@@ -398,7 +398,7 @@ export function Yields({ seasonId }: YieldsProps) {
       console.error('Error autosaving yield:', error);
       setSaveStatus(prev => ({ ...prev, [field.id]: 'error' }));
     }
-  }, [user]);
+  }, [user?.id]);
 
   const scheduleAutosave = useCallback((field: FieldWithYield) => {
     if (autosaveTimers.current[field.id]) {

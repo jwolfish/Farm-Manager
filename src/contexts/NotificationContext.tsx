@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useCallback, ReactNode } from 'react';
+import { createContext, useContext, useState, useCallback, useMemo, ReactNode } from 'react';
 
 export interface Notification {
   id: string;
@@ -8,14 +8,18 @@ export interface Notification {
   createdAt: number;
 }
 
-interface NotificationContextType {
-  notifications: Notification[];
+interface NotificationActionsContextType {
   addNotification: (message: string, type: Notification['type'], taskId?: string) => void;
   removeNotification: (id: string) => void;
   clearAll: () => void;
 }
 
-const NotificationContext = createContext<NotificationContextType | undefined>(undefined);
+interface NotificationListContextType {
+  notifications: Notification[];
+}
+
+const NotificationActionsContext = createContext<NotificationActionsContextType | undefined>(undefined);
+const NotificationListContext = createContext<NotificationListContextType | undefined>(undefined);
 
 export function NotificationProvider({ children }: { children: ReactNode }) {
   const [notifications, setNotifications] = useState<Notification[]>([]);
@@ -55,17 +59,35 @@ export function NotificationProvider({ children }: { children: ReactNode }) {
     setNotifications([]);
   }, []);
 
+  const actions = useMemo(() => ({
+    addNotification,
+    removeNotification,
+    clearAll,
+  }), [addNotification, removeNotification, clearAll]);
+
+  const listValue = useMemo(() => ({ notifications }), [notifications]);
+
   return (
-    <NotificationContext.Provider value={{ notifications, addNotification, removeNotification, clearAll }}>
-      {children}
-    </NotificationContext.Provider>
+    <NotificationActionsContext.Provider value={actions}>
+      <NotificationListContext.Provider value={listValue}>
+        {children}
+      </NotificationListContext.Provider>
+    </NotificationActionsContext.Provider>
   );
 }
 
-export function useNotifications() {
-  const context = useContext(NotificationContext);
+export function useNotifications(): NotificationActionsContextType {
+  const context = useContext(NotificationActionsContext);
   if (!context) {
     throw new Error('useNotifications must be used within NotificationProvider');
+  }
+  return context;
+}
+
+export function useNotificationList(): NotificationListContextType {
+  const context = useContext(NotificationListContext);
+  if (!context) {
+    throw new Error('useNotificationList must be used within NotificationProvider');
   }
   return context;
 }

@@ -42,7 +42,7 @@ export function CostTemplates({ seasonId, readOnly = false, onTemplateSelect }: 
     if (seasonId && user) {
       loadTemplates();
     }
-  }, [seasonId, user]);
+  }, [seasonId, user?.id]);
 
   const loadTemplates = async () => {
     if (!seasonId) return;

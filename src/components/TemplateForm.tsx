@@ -106,7 +106,7 @@ export function TemplateForm({ seasonId, template, onClose, onSuccess }: Templat
     if (seasonId && user) {
       loadPrograms();
     }
-  }, [seasonId, user]);
+  }, [seasonId, user?.id]);
 
   useEffect(() => {
     if (template) {

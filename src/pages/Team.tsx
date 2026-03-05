@@ -58,7 +58,7 @@ export function Team({ onSwitchToFarm, onSwitchToOwnFarm, sharedFarms, onRefresh
   useEffect(() => {
     if (!user || !activeFarmId) return;
     loadData();
-  }, [user, activeFarmId]);
+  }, [user?.id, activeFarmId]);
 
   const loadData = async () => {
     if (!user || !activeFarmId) return;
