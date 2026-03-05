@@ -1,11 +1,9 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
-import { useNotifications } from '../contexts/NotificationContext';
 import { Package, Plus, X, Edit2, Trash2 } from 'lucide-react';
 import { calculateCostWithConversion } from '../lib/unitConversions';
 import { queueCascadeTask } from '../lib/backgroundTasks';
-import { cascadeProgramUpdateInSeason } from '../lib/templateUtils';
 
 interface FertilizerProduct {
   id: string;
@@ -45,7 +43,6 @@ interface FertilizerProgramsProps {
 
 export function FertilizerPrograms({ seasonId }: FertilizerProgramsProps) {
   const { user } = useAuth();
-  const { addNotification } = useNotifications();
   const [programs, setPrograms] = useState<FertilizerProgram[]>([]);
   const [products, setProducts] = useState<FertilizerProduct[]>([]);
   const [showForm, setShowForm] = useState(false);
@@ -260,7 +257,7 @@ export function FertilizerPrograms({ seasonId }: FertilizerProgramsProps) {
           'cascade_program_update',
           programId,
           'program',
-          (ctx) => cascadeProgramUpdateInSeason(programId, 'fertilizer', seasonId, ctx.taskId)
+          'fertilizer'
         );
       }
     } catch (error) {

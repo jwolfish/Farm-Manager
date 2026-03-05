@@ -1,12 +1,10 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
-import { useNotifications } from '../contexts/NotificationContext';
 import { FlaskConical, Plus, X, Edit2, Trash2 } from 'lucide-react';
 import { calculateCostWithConversion } from '../lib/unitConversions';
 import type { CropType } from '../lib/database.types';
 import { queueCascadeTask } from '../lib/backgroundTasks';
-import { cascadeProgramUpdateInSeason } from '../lib/templateUtils';
 
 interface IndividualChemical {
   id: string;
@@ -49,7 +47,6 @@ interface ChemicalProgramsProps {
 
 export function ChemicalPrograms({ seasonId }: ChemicalProgramsProps) {
   const { user } = useAuth();
-  const { addNotification } = useNotifications();
   const [programs, setPrograms] = useState<ChemicalProgram[]>([]);
   const [chemicals, setChemicals] = useState<IndividualChemical[]>([]);
   const [showForm, setShowForm] = useState(false);
@@ -240,7 +237,7 @@ export function ChemicalPrograms({ seasonId }: ChemicalProgramsProps) {
           'cascade_program_update',
           programId,
           'program',
-          (ctx) => cascadeProgramUpdateInSeason(programId, 'chemical', seasonId, ctx.taskId)
+          'chemical'
         );
       }
     } catch (error) {

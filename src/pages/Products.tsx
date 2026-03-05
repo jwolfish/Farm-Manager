@@ -7,7 +7,6 @@ import { FertilizerPrograms } from '../components/FertilizerPrograms';
 import { ChemicalPrograms } from '../components/ChemicalPrograms';
 import { calculateCostWithConversion } from '../lib/unitConversions';
 import { queueCascadeTask } from '../lib/backgroundTasks';
-import { cascadeProductUpdateInSeason, cascadeChemicalUpdateInSeason } from '../lib/templateUtils';
 import { CrossFarmCopyModal } from '../components/CrossFarmCopyModal';
 import { SeasonImportWizard } from '../components/SeasonImportWizard';
 import { useFarm } from '../contexts/FarmContext';
@@ -625,8 +624,7 @@ function FertilizersList({ fertilizers, seasonId, onReload, showForm, onHideForm
           seasonId,
           'cascade_product_update',
           productId,
-          'product',
-          (ctx) => cascadeProductUpdateInSeason(productId, 'fertilizer', seasonId, ctx.taskId)
+          'product'
         );
       }
     } catch (error) {
@@ -880,8 +878,7 @@ function ChemicalsList({ chemicals, seasonId, onReload, showForm, onHideForm }: 
           seasonId,
           'cascade_chemical_update',
           chemicalId,
-          'chemical',
-          (ctx) => cascadeChemicalUpdateInSeason(chemicalId, seasonId, ctx.taskId)
+          'chemical'
         );
       }
     } catch (error) {

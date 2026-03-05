@@ -556,7 +556,6 @@ async function recalculateFieldTotal(fieldId: string): Promise<void> {
 
 import { calculateCostWithConversion } from './unitConversions';
 import { TransactionResult, logCascadeWarning } from './transactionUtils';
-import { updateTaskProgress } from './backgroundTasks';
 
 export interface RecalculateProgramResult {
   programId: string;
@@ -775,15 +774,6 @@ export async function cascadeProductUpdateInSeason(
       }
     }
 
-    if (taskId) {
-      await updateTaskProgress(taskId, {
-        programsUpdated,
-        templatesUpdated,
-        fieldsUpdated,
-        warnings: []
-      });
-    }
-
     return {
       success: true,
       data: { programsUpdated, templatesUpdated, fieldsUpdated }
@@ -835,15 +825,6 @@ export async function cascadeChemicalUpdateInSeason(
           }
         }
       }
-    }
-
-    if (taskId) {
-      await updateTaskProgress(taskId, {
-        programsUpdated,
-        templatesUpdated,
-        fieldsUpdated,
-        warnings: []
-      });
     }
 
     return {
@@ -928,15 +909,6 @@ export async function cascadeProgramUpdateInSeason(
           fieldsUpdated += cascadeResult.data.fieldsUpdated;
         }
       }
-    }
-
-    if (taskId) {
-      await updateTaskProgress(taskId, {
-        programsUpdated: 0,
-        templatesUpdated,
-        fieldsUpdated,
-        warnings: []
-      });
     }
 
     return {

@@ -21,7 +21,7 @@ import { supabase } from './lib/supabase';
 import { fetchSharedFarms, SharedFarm } from './lib/teamMembers';
 import { fetchOwnedFarms, createFarm, Farm } from './lib/farms';
 import { Plus } from 'lucide-react';
-import { setNotificationCallback } from './lib/backgroundTasks';
+import { useCascadeTaskNotifications } from './hooks/useCascadeTaskNotifications';
 
 interface Season {
   id: string;
@@ -55,11 +55,7 @@ function AppContent() {
   const [selectedFieldId, setSelectedFieldId] = useState<string | null>(null);
   const [sharedFarms, setSharedFarms] = useState<SharedFarm[]>([]);
 
-  useEffect(() => {
-    setNotificationCallback((message, type) => {
-      addNotification(message, type);
-    });
-  }, [addNotification]);
+  useCascadeTaskNotifications(user?.id ?? null);
 
   useEffect(() => {
     if (user) {

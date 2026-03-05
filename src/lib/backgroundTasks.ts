@@ -1,5 +1,4 @@
 import { supabase } from './supabase';
-import { executeInTransaction, TransactionContext, TransactionResult } from './transactionUtils';
 
 export type TaskType =
   | 'cascade_product_update'
@@ -22,26 +21,13 @@ export interface TaskProgress {
   warnings: string[];
 }
 
-let notificationCallback: ((message: string, type: 'info' | 'success' | 'error', taskId?: string) => void) | null = null;
-
-export function setNotificationCallback(
-  callback: (message: string, type: 'info' | 'success' | 'error', taskId?: string) => void
-) {
-  notificationCallback = callback;
-}
-
-function notify(message: string, type: 'info' | 'success' | 'error', taskId?: string) {
-  if (notificationCallback) {
-    notificationCallback(message, type, taskId);
-  }
-}
-
 export async function createCascadeTask(
   userId: string,
   seasonId: string,
   taskType: TaskType,
   entityId?: string,
-  entityType?: string
+  entityType?: string,
+  programType?: 'fertilizer' | 'chemical'
 ): Promise<string | null> {
   try {
     const { data: season } = await supabase
@@ -59,6 +45,7 @@ export async function createCascadeTask(
         status: 'pending',
         entity_id: entityId,
         entity_type: entityType,
+        program_type: programType ?? null,
         result_data: {
           seasonName: season ? `${season.name} (${season.year})` : 'Unknown Season',
           programsUpdated: 0,
@@ -82,139 +69,52 @@ export async function createCascadeTask(
   }
 }
 
-export async function updateTaskProgress(
-  taskId: string,
-  progress: Partial<TaskProgress>
-): Promise<void> {
-  try {
-    const { data: task } = await supabase
-      .from('cascade_tasks')
-      .select('result_data')
-      .eq('id', taskId)
-      .maybeSingle();
-
-    if (task) {
-      const currentData = (task.result_data as any) || {};
-      await supabase
-        .from('cascade_tasks')
-        .update({
-          result_data: {
-            ...currentData,
-            programsUpdated: progress.programsUpdated ?? currentData.programsUpdated ?? 0,
-            templatesUpdated: progress.templatesUpdated ?? currentData.templatesUpdated ?? 0,
-            fieldsUpdated: progress.fieldsUpdated ?? currentData.fieldsUpdated ?? 0,
-            warnings: progress.warnings ?? currentData.warnings ?? []
-          }
-        })
-        .eq('id', taskId);
-    }
-  } catch (err) {
-    console.error('Failed to update task progress:', err);
-  }
-}
-
-export async function completeTask(
-  taskId: string,
-  success: boolean,
-  errorMessage?: string
-): Promise<void> {
-  try {
-    await supabase
-      .from('cascade_tasks')
-      .update({
-        status: success ? 'completed' : 'failed',
-        completed_at: new Date().toISOString(),
-        error_message: errorMessage
-      })
-      .eq('id', taskId);
-
-    if (success) {
-      const { data: task } = await supabase
-        .from('cascade_tasks')
-        .select('result_data')
-        .eq('id', taskId)
-        .maybeSingle();
-
-      if (task) {
-        const result = task.result_data as any;
-        const seasonName = result.seasonName || 'Unknown Season';
-        const stats = [
-          result.programsUpdated > 0 ? `${result.programsUpdated} programs` : null,
-          result.templatesUpdated > 0 ? `${result.templatesUpdated} templates` : null,
-          result.fieldsUpdated > 0 ? `${result.fieldsUpdated} fields` : null
-        ].filter(Boolean).join(', ');
-
-        notify(
-          `Updated ${stats} in ${seasonName}`,
-          'success',
-          taskId
-        );
-      }
-    } else {
-      notify(
-        `Update failed: ${errorMessage || 'Unknown error'}`,
-        'error',
-        taskId
-      );
-    }
-  } catch (err) {
-    console.error('Failed to complete task:', err);
-  }
-}
-
-export async function executeCascadeTask<T>(
-  context: TransactionContext,
-  operation: (ctx: TransactionContext) => Promise<TransactionResult<T>>
-): Promise<void> {
-  if (!context.taskId) {
-    console.error('No task ID provided for cascade execution');
-    return;
-  }
-
-  try {
-    await supabase
-      .from('cascade_tasks')
-      .update({ status: 'running' })
-      .eq('id', context.taskId);
-
-    const result = await executeInTransaction(context, operation);
-
-    await completeTask(context.taskId, result.success, result.error);
-  } catch (err) {
-    const errorMsg = err instanceof Error ? err.message : String(err);
-    await completeTask(context.taskId, false, errorMsg);
-  }
-}
-
 export async function queueCascadeTask(
   userId: string,
   seasonId: string,
   taskType: TaskType,
   entityId: string,
   entityType: 'product' | 'chemical' | 'program' | 'template',
-  operation: (ctx: TransactionContext) => Promise<TransactionResult<any>>
+  programType?: 'fertilizer' | 'chemical'
 ): Promise<void> {
-  const taskId = await createCascadeTask(userId, seasonId, taskType, entityId, entityType);
+  const taskId = await createCascadeTask(userId, seasonId, taskType, entityId, entityType, programType);
 
   if (!taskId) {
-    notify('Failed to create update task', 'error');
+    console.error('Failed to create cascade task record');
     return;
   }
 
-  const { data: season } = await supabase
-    .from('seasons')
-    .select('name, year')
-    .eq('id', seasonId)
-    .maybeSingle();
+  try {
+    const { data: { session } } = await supabase.auth.getSession();
 
-  const seasonName = season ? `${season.name} (${season.year})` : 'Unknown Season';
-
-  notify(`Updating related costs in ${seasonName}...`, 'info', taskId);
-
-  setTimeout(async () => {
-    await executeCascadeTask(
-      { seasonId, userId, taskId },
-      operation
+    const response = await fetch(
+      `${import.meta.env.VITE_SUPABASE_URL}/functions/v1/process-cascade-task`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${session?.access_token}`,
+          'apikey': import.meta.env.VITE_SUPABASE_ANON_KEY,
+        },
+        body: JSON.stringify({ taskId }),
+      }
     );
-  }, 100);
+
+    if (!response.ok) {
+      const errorText = await response.text().catch(() => 'Unknown error');
+      throw new Error(`Edge function returned ${response.status}: ${errorText}`);
+    }
+  } catch (err) {
+    const errorMsg = err instanceof Error ? err.message : String(err);
+    console.error('Failed to invoke cascade task edge function:', errorMsg);
+
+    await supabase
+      .from('cascade_tasks')
+      .update({
+        status: 'failed',
+        completed_at: new Date().toISOString(),
+        error_message: `Failed to start update: ${errorMsg}`
+      })
+      .eq('id', taskId);
+  }
 }
