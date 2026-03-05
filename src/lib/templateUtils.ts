@@ -155,11 +155,19 @@ export async function getFieldOverrides(fieldId: string): Promise<FieldCostOverr
   return data || [];
 }
 
+export type OverrideValue = number | ProgramReference[];
+
 export async function createOrUpdateOverride(
   fieldId: string,
   costItemName: string,
-  overrideValue: any
+  overrideValue: OverrideValue
 ): Promise<FieldCostOverride> {
+  if (
+    typeof overrideValue !== 'number' &&
+    !Array.isArray(overrideValue)
+  ) {
+    throw new Error(`Invalid override value for "${costItemName}": must be a number or ProgramReference array.`);
+  }
   const { data, error } = await supabase
     .from('field_cost_overrides')
     .upsert(

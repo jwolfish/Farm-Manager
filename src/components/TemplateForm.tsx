@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
+import { useNotifications } from '../contexts/NotificationContext';
 import { X } from 'lucide-react';
 import {
   createTemplate,
@@ -17,6 +18,25 @@ interface TemplateFormProps {
   template?: TemplateWithStats | null;
   onClose: () => void;
   onSuccess: () => void;
+}
+
+interface TemplateFormPayload {
+  user_id: string;
+  season_id: string;
+  name: string;
+  description: string | null;
+  fertilizer_programs: ProgramReference[];
+  chemical_programs: ProgramReference[];
+  tillage_cost_per_acre: number;
+  planting_cost_per_acre: number;
+  harvest_cost_per_acre: number;
+  equipment_cost_per_acre: number;
+  custom_services_cost_per_acre: number;
+  labor_cost_per_acre: number;
+  crop_insurance_cost_per_acre: number;
+  other_expenses_per_acre: number;
+  drying_storage_cost_per_acre: number;
+  hauling_cost_per_acre: number;
 }
 
 interface FertilizerProgram {
@@ -56,11 +76,13 @@ interface ChemicalProgram {
 
 export function TemplateForm({ seasonId, template, onClose, onSuccess }: TemplateFormProps) {
   const { user } = useAuth();
+  const { addNotification } = useNotifications();
   const [loading, setLoading] = useState(false);
+  const [formError, setFormError] = useState<string | null>(null);
   const [fertilizerPrograms, setFertilizerPrograms] = useState<FertilizerProgram[]>([]);
   const [chemicalPrograms, setChemicalPrograms] = useState<ChemicalProgram[]>([]);
   const [showCascadeModal, setShowCascadeModal] = useState(false);
-  const [pendingTemplateData, setPendingTemplateData] = useState<any>(null);
+  const [pendingTemplateData, setPendingTemplateData] = useState<TemplateFormPayload | null>(null);
 
   const [formData, setFormData] = useState({
     name: '',
@@ -267,6 +289,29 @@ export function TemplateForm({ seasonId, template, onClose, onSuccess }: Templat
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user) return;
+    setFormError(null);
+
+    const costKeys = [
+      'tillage_cost_per_acre',
+      'planting_cost_per_acre',
+      'harvest_cost_per_acre',
+      'equipment_cost_per_acre',
+      'custom_services_cost_per_acre',
+      'labor_cost_per_acre',
+      'crop_insurance_cost_per_acre',
+      'other_expenses_per_acre',
+      'drying_storage_cost_per_acre',
+      'hauling_cost_per_acre',
+    ] as const;
+
+    for (const key of costKeys) {
+      const val = parseFloat(formData[key]);
+      if (!isFinite(val) || val < 0) {
+        const label = key.replace(/_/g, ' ').replace(' per acre', '').replace(/\b\w/g, c => c.toUpperCase());
+        setFormError(`${label} must be a number of 0 or greater.`);
+        return;
+      }
+    }
 
     const fertilizerProgramsData: ProgramReference[] = Array.from(selectedFertilizerPrograms).map(id => {
       const program = fertilizerPrograms.find(p => p.id === id);
@@ -284,7 +329,7 @@ export function TemplateForm({ seasonId, template, onClose, onSuccess }: Templat
       };
     });
 
-    const templateData = {
+    const templateData: TemplateFormPayload = {
       user_id: user.id,
       season_id: seasonId,
       name: formData.name,
@@ -311,7 +356,7 @@ export function TemplateForm({ seasonId, template, onClose, onSuccess }: Templat
     }
   };
 
-  const saveTemplate = async (templateData: any) => {
+  const saveTemplate = async (templateData: TemplateFormPayload) => {
     if (!user) return;
 
     setLoading(true);
@@ -326,7 +371,7 @@ export function TemplateForm({ seasonId, template, onClose, onSuccess }: Templat
       onClose();
     } catch (error) {
       console.error('Error saving template:', error);
-      alert('Failed to save template. Please try again.');
+      addNotification('Failed to save template. Please try again.', 'error');
     } finally {
       setLoading(false);
     }
@@ -344,25 +389,20 @@ export function TemplateForm({ seasonId, template, onClose, onSuccess }: Templat
       setPendingTemplateData(null);
 
       if (result.errors.length > 0) {
-        alert(`Template updated successfully!\n\nHowever, ${result.errors.length} field(s) had errors:\n${result.errors.map(e => e.error).join('\n')}`);
+        addNotification(
+          `Template updated, but ${result.errors.length} field(s) had errors updating.`,
+          'warning'
+        );
       }
 
       onSuccess();
       onClose();
     } catch (error) {
       console.error('Error cascading template update:', error);
-      alert('Failed to update template. Please try again.');
+      addNotification('Failed to update template. Please try again.', 'error');
     } finally {
       setLoading(false);
     }
-
-    return {
-      templateId: template.id,
-      totalFields: 0,
-      fullyUpdatedFields: 0,
-      partiallyUpdatedFields: 0,
-      errors: []
-    };
   };
 
   return (
@@ -489,6 +529,12 @@ export function TemplateForm({ seasonId, template, onClose, onSuccess }: Templat
               ))}
             </div>
           </div>
+
+          {formError && (
+            <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
+              {formError}
+            </div>
+          )}
 
           <div className="border-t border-neutral-200 pt-6 flex items-center justify-between">
             <div>

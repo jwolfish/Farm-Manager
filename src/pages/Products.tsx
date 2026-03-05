@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
-import { useNotifications } from '../contexts/NotificationContext';
 import { Plus, Edit2, Trash2, Package, Droplet, FlaskConical, Layers, Copy } from 'lucide-react';
 import type { CropType } from '../lib/database.types';
 import { FertilizerPrograms } from '../components/FertilizerPrograms';
@@ -271,6 +270,7 @@ export function Products({ seasonId, readOnly = false }: ProductsProps) {
 function SeedsList({ seeds, seasonId, onReload, showForm, onHideForm }: { seeds: SeedVariety[]; seasonId: string; onReload: () => void; showForm: boolean; onHideForm: () => void }) {
   const { user } = useAuth();
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [formError, setFormError] = useState<string | null>(null);
   const [formData, setFormData] = useState({
     product_name: '',
     crop_type: 'corn' as CropType,
@@ -322,15 +322,32 @@ function SeedsList({ seeds, seasonId, onReload, showForm, onHideForm }: { seeds:
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user) return;
+    setFormError(null);
+
+    const price = parseFloat(formData.price_per_unit);
+    if (!isFinite(price) || price <= 0) {
+      setFormError('Price per bag must be a number greater than 0.');
+      return;
+    }
+    const unitsPerBag = formData.units_per_bag ? parseFloat(formData.units_per_bag) : null;
+    if (unitsPerBag !== null && (!isFinite(unitsPerBag) || unitsPerBag <= 0)) {
+      setFormError('Units per bag must be a number greater than 0.');
+      return;
+    }
+    const seedingRate = formData.standard_seeding_rate ? parseFloat(formData.standard_seeding_rate) : null;
+    if (seedingRate !== null && (!isFinite(seedingRate) || seedingRate <= 0)) {
+      setFormError('Seeding rate must be a number greater than 0.');
+      return;
+    }
 
     try {
       const payload = {
         product_name: formData.product_name,
         crop_type: formData.crop_type,
-        price_per_unit: parseFloat(formData.price_per_unit),
+        price_per_unit: price,
         unit_type: formData.unit_type,
-        standard_seeding_rate: formData.standard_seeding_rate ? parseFloat(formData.standard_seeding_rate) : null,
-        units_per_bag: formData.units_per_bag ? parseFloat(formData.units_per_bag) : null,
+        standard_seeding_rate: seedingRate,
+        units_per_bag: unitsPerBag,
       };
 
       if (editingId) {
@@ -350,17 +367,19 @@ function SeedsList({ seeds, seasonId, onReload, showForm, onHideForm }: { seeds:
 
       setFormData({ product_name: '', crop_type: 'corn', price_per_unit: '', unit_type: 'bag', standard_seeding_rate: '', units_per_bag: '' });
       setEditingId(null);
+      setFormError(null);
       onHideForm();
       onReload();
     } catch (error) {
       console.error('Error saving seed:', error);
-      alert('Error saving seed variety. Please try again.');
+      setFormError('Error saving seed variety. Please try again.');
     }
   };
 
   const handleCancel = () => {
     setFormData({ product_name: '', crop_type: 'corn', price_per_unit: '', unit_type: 'bag', standard_seeding_rate: '', units_per_bag: '' });
     setEditingId(null);
+    setFormError(null);
     onHideForm();
   };
 
@@ -372,7 +391,6 @@ function SeedsList({ seeds, seasonId, onReload, showForm, onHideForm }: { seeds:
       onReload();
     } catch (error) {
       console.error('Error deleting seed:', error);
-      alert('Error deleting seed variety. Please try again.');
     }
   };
 
@@ -452,6 +470,11 @@ function SeedsList({ seeds, seasonId, onReload, showForm, onHideForm }: { seeds:
                 placeholder={formData.crop_type === 'wheat' ? '90' : '32000'}
               />
             </div>
+            {formError && (
+              <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
+                {formError}
+              </div>
+            )}
             <div className="flex gap-3">
               <button type="submit" className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors">
                 {editingId ? 'Update' : 'Add'} Seed Variety
@@ -523,8 +546,8 @@ function SeedsList({ seeds, seasonId, onReload, showForm, onHideForm }: { seeds:
 
 function FertilizersList({ fertilizers, seasonId, onReload, showForm, onHideForm }: { fertilizers: FertilizerProduct[]; seasonId: string; onReload: () => void; showForm: boolean; onHideForm: () => void }) {
   const { user } = useAuth();
-  const { addNotification } = useNotifications();
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [formError, setFormError] = useState<string | null>(null);
   const [formData, setFormData] = useState({
     product_name: '',
     price_per_unit: '',
@@ -549,13 +572,25 @@ function FertilizersList({ fertilizers, seasonId, onReload, showForm, onHideForm
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user) return;
+    setFormError(null);
+
+    const price = parseFloat(formData.price_per_unit);
+    if (!isFinite(price) || price <= 0) {
+      setFormError('Price per unit must be a number greater than 0.');
+      return;
+    }
+    const appRate = formData.application_rate ? parseFloat(formData.application_rate) : null;
+    if (appRate !== null && (!isFinite(appRate) || appRate <= 0)) {
+      setFormError('Application rate must be a number greater than 0.');
+      return;
+    }
 
     try {
       const payload = {
         product_name: formData.product_name,
-        price_per_unit: parseFloat(formData.price_per_unit),
+        price_per_unit: price,
         unit_type: formData.unit_type,
-        application_rate: formData.application_rate ? parseFloat(formData.application_rate) : null,
+        application_rate: appRate,
         application_rate_unit: formData.application_rate_unit || null,
         notes: formData.notes || null,
       };
@@ -580,6 +615,7 @@ function FertilizersList({ fertilizers, seasonId, onReload, showForm, onHideForm
 
       setFormData({ product_name: '', price_per_unit: '', unit_type: 'gallon', application_rate: '', application_rate_unit: 'gallon', notes: '' });
       setEditingId(null);
+      setFormError(null);
       onHideForm();
       onReload();
 
@@ -595,13 +631,14 @@ function FertilizersList({ fertilizers, seasonId, onReload, showForm, onHideForm
       }
     } catch (error) {
       console.error('Error saving fertilizer:', error);
-      alert('Error saving fertilizer product. Please try again.');
+      setFormError('Error saving fertilizer product. Please try again.');
     }
   };
 
   const handleCancel = () => {
     setFormData({ product_name: '', price_per_unit: '', unit_type: 'gallon', application_rate: '', application_rate_unit: 'gallon', notes: '' });
     setEditingId(null);
+    setFormError(null);
     onHideForm();
   };
 
@@ -695,6 +732,11 @@ function FertilizersList({ fertilizers, seasonId, onReload, showForm, onHideForm
                 placeholder="Additional information"
               />
             </div>
+            {formError && (
+              <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
+                {formError}
+              </div>
+            )}
             <div className="flex gap-3">
               <button type="submit" className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors">
                 {editingId ? 'Update' : 'Add'} Fertilizer
@@ -762,8 +804,8 @@ function FertilizersList({ fertilizers, seasonId, onReload, showForm, onHideForm
 
 function ChemicalsList({ chemicals, seasonId, onReload, showForm, onHideForm }: { chemicals: IndividualChemical[]; seasonId: string; onReload: () => void; showForm: boolean; onHideForm: () => void }) {
   const { user } = useAuth();
-  const { addNotification } = useNotifications();
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [formError, setFormError] = useState<string | null>(null);
   const [formData, setFormData] = useState({
     chemical_name: '',
     price_per_unit: '',
@@ -786,14 +828,26 @@ function ChemicalsList({ chemicals, seasonId, onReload, showForm, onHideForm }: 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user) return;
+    setFormError(null);
+
+    const price = parseFloat(formData.price_per_unit);
+    if (!isFinite(price) || price <= 0) {
+      setFormError('Price per unit must be a number greater than 0.');
+      return;
+    }
+    const appRate = formData.default_application_rate ? parseFloat(formData.default_application_rate) : null;
+    if (appRate !== null && (!isFinite(appRate) || appRate <= 0)) {
+      setFormError('Application rate must be a number greater than 0.');
+      return;
+    }
 
     try {
       const payload = {
         chemical_name: formData.chemical_name,
-        price_per_unit: parseFloat(formData.price_per_unit),
+        price_per_unit: price,
         unit_type: formData.unit_type,
-        default_application_rate: formData.default_application_rate ? parseFloat(formData.default_application_rate) : null,
-        default_application_rate_unit: formData.default_application_rate ? formData.default_application_rate_unit : null,
+        default_application_rate: appRate,
+        default_application_rate_unit: appRate !== null ? formData.default_application_rate_unit : null,
       };
 
       const isUpdating = !!editingId;
@@ -816,6 +870,7 @@ function ChemicalsList({ chemicals, seasonId, onReload, showForm, onHideForm }: 
 
       setFormData({ chemical_name: '', price_per_unit: '', unit_type: 'gal', default_application_rate: '', default_application_rate_unit: 'fl oz' });
       setEditingId(null);
+      setFormError(null);
       onHideForm();
       onReload();
 
@@ -831,13 +886,14 @@ function ChemicalsList({ chemicals, seasonId, onReload, showForm, onHideForm }: 
       }
     } catch (error) {
       console.error('Error saving chemical:', error);
-      alert('Error saving chemical. Please try again.');
+      setFormError('Error saving chemical. Please try again.');
     }
   };
 
   const handleCancel = () => {
-    setFormData({ chemical_name: '', crop_type: 'corn', price_per_unit: '', unit_type: 'gal', default_application_rate: '', default_application_rate_unit: 'fl oz' });
+    setFormData({ chemical_name: '', price_per_unit: '', unit_type: 'gal', default_application_rate: '', default_application_rate_unit: 'fl oz' });
     setEditingId(null);
+    setFormError(null);
     onHideForm();
   };
 
@@ -926,6 +982,11 @@ function ChemicalsList({ chemicals, seasonId, onReload, showForm, onHideForm }: 
                 </select>
               </div>
             </div>
+            {formError && (
+              <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
+                {formError}
+              </div>
+            )}
             <div className="flex gap-3">
               <button type="submit" className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors">
                 {editingId ? 'Update' : 'Add'} Chemical

@@ -32,6 +32,8 @@ export interface AppNotification {
   senderUserId: string | null;
 }
 
+const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
 export async function sendInvitation(
   ownerUserId: string,
   ownerName: string,
@@ -42,6 +44,10 @@ export async function sendInvitation(
   role: TeamRole
 ): Promise<{ error: string | null }> {
   const trimmedEmail = invitedEmail.trim().toLowerCase();
+
+  if (!EMAIL_REGEX.test(trimmedEmail)) {
+    return { error: 'Please enter a valid email address.' };
+  }
 
   const { data: existingMember } = await (supabase as any)
     .from('team_members')

@@ -2,6 +2,7 @@ import { useEffect, useState, useMemo, useCallback } from 'react';
 import { X, AlertTriangle, Check, TrendingUp, TrendingDown } from 'lucide-react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
+import { useNotifications } from '../contexts/NotificationContext';
 import { getTemplate, applyTemplateToFields, type SeedVarietyAssignment } from '../lib/templateUtils';
 import type { CropType } from '../lib/database.types';
 
@@ -33,6 +34,7 @@ export function TemplateApplicationPreview({
   onComplete
 }: TemplateApplicationPreviewProps) {
   const { user } = useAuth();
+  const { addNotification } = useNotifications();
   const [loading, setLoading] = useState(true);
   const [applying, setApplying] = useState(false);
   const [template, setTemplate] = useState<any>(null);
@@ -84,11 +86,14 @@ export function TemplateApplicationPreview({
         onComplete();
       } else {
         console.error('Errors applying template:', result.errors);
-        alert(`Failed to apply template to some fields:\n${result.errors.map(e => e.error).join('\n')}`);
+        addNotification(
+          `Failed to apply template to ${result.errors.length} field(s). Please try again.`,
+          'error'
+        );
       }
     } catch (error) {
       console.error('Error applying template:', error);
-      alert('An error occurred while applying the template');
+      addNotification('An error occurred while applying the template.', 'error');
     } finally {
       setApplying(false);
     }

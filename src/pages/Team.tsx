@@ -73,6 +73,12 @@ export function Team({ onSwitchToFarm, onSwitchToOwnFarm, sharedFarms, onRefresh
     e.preventDefault();
     if (!user || !inviteEmail.trim() || !activeFarmId) return;
 
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailRegex.test(inviteEmail.trim())) {
+      setError('Please enter a valid email address.');
+      return;
+    }
+
     setSubmitting(true);
     setError(null);
     setSuccess(null);
