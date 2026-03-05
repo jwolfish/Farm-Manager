@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
-import { Package, Plus, X, Edit2, Trash2 } from 'lucide-react';
+import { Package, Plus, X, CreditCard as Edit2, Trash2 } from 'lucide-react';
 import { calculateCostWithConversion } from '../lib/unitConversions';
 import { queueCascadeTask } from '../lib/backgroundTasks';
 

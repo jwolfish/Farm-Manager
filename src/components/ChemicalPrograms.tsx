@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
-import { FlaskConical, Plus, X, Edit2, Trash2 } from 'lucide-react';
+import { FlaskConical, Plus, X, CreditCard as Edit2, Trash2 } from 'lucide-react';
 import { calculateCostWithConversion } from '../lib/unitConversions';
 import type { CropType } from '../lib/database.types';
 import { queueCascadeTask } from '../lib/backgroundTasks';
