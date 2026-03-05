@@ -10,16 +10,7 @@ import {
 import { TemplateForm } from '../components/TemplateForm';
 import { CrossFarmCopyModal } from '../components/CrossFarmCopyModal';
 import { SeasonImportWizard } from '../components/SeasonImportWizard';
-import {
-  FileText,
-  Plus,
-  Edit2,
-  Trash2,
-  DollarSign,
-  Users,
-  Calendar,
-  Copy,
-} from 'lucide-react';
+import { FileText, Plus, CreditCard as Edit2, Trash2, DollarSign, Users, Calendar, Copy } from 'lucide-react';
 
 interface CostTemplatesProps {
   seasonId: string | null;

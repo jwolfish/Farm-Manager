@@ -1,7 +1,7 @@
 import { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
-import { Plus, Edit2, Trash2, Sprout, FileText, Square, CheckSquare, Filter } from 'lucide-react';
+import { Plus, CreditCard as Edit2, Trash2, Sprout, FileText, Square, CheckSquare, Filter } from 'lucide-react';
 import { hasOverrides } from '../lib/templateUtils';
 import { TemplateSelector } from '../components/TemplateSelector';
 import { SeedVarietyAssignmentComponent } from '../components/SeedVarietyAssignment';
