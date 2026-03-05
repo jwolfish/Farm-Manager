@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
-import { Plus, Edit2, Trash2, Package, Droplet, FlaskConical, Layers, Copy } from 'lucide-react';
+import { Plus, CreditCard as Edit2, Trash2, Package, Droplet, FlaskConical, Layers, Copy } from 'lucide-react';
 import type { CropType } from '../lib/database.types';
 import { FertilizerPrograms } from '../components/FertilizerPrograms';
 import { ChemicalPrograms } from '../components/ChemicalPrograms';
