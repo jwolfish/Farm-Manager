@@ -50,11 +50,12 @@ export async function createFarm(userId: string, farmName: string): Promise<{ fa
   };
 }
 
-export async function updateFarmName(farmId: string, farmName: string): Promise<{ error: string | null }> {
+export async function updateFarmName(farmId: string, farmName: string, ownerUserId: string): Promise<{ error: string | null }> {
   const { error } = await (supabase as any)
     .from('farms')
     .update({ farm_name: farmName.trim() })
-    .eq('id', farmId);
+    .eq('id', farmId)
+    .eq('owner_user_id', ownerUserId);
 
   if (error) {
     console.error('Error updating farm name:', error);
@@ -64,7 +65,7 @@ export async function updateFarmName(farmId: string, farmName: string): Promise<
   return { error: null };
 }
 
-export async function deleteFarm(farmId: string): Promise<{ error: string | null }> {
+export async function deleteFarm(farmId: string, ownerUserId: string): Promise<{ error: string | null }> {
   const { count } = await (supabase as any)
     .from('seasons')
     .select('id', { count: 'exact', head: true })
@@ -77,7 +78,8 @@ export async function deleteFarm(farmId: string): Promise<{ error: string | null
   const { error } = await (supabase as any)
     .from('farms')
     .delete()
-    .eq('id', farmId);
+    .eq('id', farmId)
+    .eq('owner_user_id', ownerUserId);
 
   if (error) {
     console.error('Error deleting farm:', error);

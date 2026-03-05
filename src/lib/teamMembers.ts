@@ -135,18 +135,10 @@ export async function fetchSentInvitations(ownerUserId: string, farmId: string):
 }
 
 export async function fetchSharedFarms(userId: string): Promise<SharedFarm[]> {
-  const { data: profileData } = await (supabase as any)
-    .from('user_profiles')
-    .select('email')
-    .eq('id', userId)
-    .maybeSingle();
-
-  if (!profileData?.email) return [];
-
   const { data, error } = await (supabase as any)
     .from('team_members')
     .select('id, user_id, role, farm_id, farms(farm_name), owner_profile:user_profiles!team_members_user_id_fkey(email)')
-    .eq('email', profileData.email)
+    .eq('invited_user_id', userId)
     .eq('status', 'accepted' as InvitationStatus);
 
   if (error) {
@@ -177,7 +169,8 @@ export async function acceptInvitation(
       invited_user_id: userId,
       accepted_at: new Date().toISOString(),
     })
-    .eq('id', invitationId);
+    .eq('id', invitationId)
+    .eq('status', 'pending' as InvitationStatus);
 
   if (updateError) {
     console.error('Error accepting invitation:', updateError);

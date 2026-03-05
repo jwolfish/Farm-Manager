@@ -75,24 +75,21 @@ export interface PriceUpdate {
 export async function loadSeasonData(seasonId: string, userId: string) {
   const [fieldsResult, seedsResult, fertilizersResult, chemicalsResult, fertProgramsResult, chemProgramsResult] =
     await Promise.all([
-      supabase.from('fields').select('*').eq('season_id', seasonId).eq('user_id', userId).order('name'),
+      supabase.from('fields').select('*').eq('season_id', seasonId).order('name'),
       supabase
         .from('seed_varieties')
         .select('*')
         .eq('season_id', seasonId)
-        .eq('user_id', userId)
         .order('product_name'),
       supabase
         .from('fertilizer_products')
         .select('*')
         .eq('season_id', seasonId)
-        .eq('user_id', userId)
         .order('product_name'),
       supabase
         .from('individual_chemicals')
         .select('*')
         .eq('season_id', seasonId)
-        .eq('user_id', userId)
         .order('chemical_name'),
       supabase
         .from('fertilizer_programs')
@@ -108,7 +105,6 @@ export async function loadSeasonData(seasonId: string, userId: string) {
         `
         )
         .eq('season_id', seasonId)
-        .eq('user_id', userId)
         .order('program_name'),
       supabase
         .from('chemical_programs')
@@ -124,7 +120,6 @@ export async function loadSeasonData(seasonId: string, userId: string) {
         `
         )
         .eq('season_id', seasonId)
-        .eq('user_id', userId)
         .order('program_name'),
     ]);
 

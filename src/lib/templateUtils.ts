@@ -373,7 +373,8 @@ export interface ApplyTemplateResult {
 export async function applyTemplateToFields(
   templateId: string,
   fieldIds: string[],
-  seedAssignments: SeedVarietyAssignment[]
+  seedAssignments: SeedVarietyAssignment[],
+  authenticatedUserId: string
 ): Promise<ApplyTemplateResult> {
   const result: ApplyTemplateResult = {
     success: true,
@@ -411,6 +412,14 @@ export async function applyTemplateToFields(
         result.errors.push({
           fieldId,
           error: 'Field not found'
+        });
+        continue;
+      }
+
+      if (field.user_id !== authenticatedUserId) {
+        result.errors.push({
+          fieldId,
+          error: 'Not authorized to modify this field'
         });
         continue;
       }

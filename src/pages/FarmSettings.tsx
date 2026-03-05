@@ -50,7 +50,7 @@ export function FarmSettings({ onFarmsUpdated }: FarmSettingsProps) {
     if (!editName.trim()) return;
     setSaving(true);
     setError(null);
-    const { error: err } = await updateFarmName(farmId, editName.trim());
+    const { error: err } = await updateFarmName(farmId, editName.trim(), user!.id);
     if (err) {
       setError(err);
     } else {
@@ -66,7 +66,7 @@ export function FarmSettings({ onFarmsUpdated }: FarmSettingsProps) {
   const handleDelete = async (farmId: string) => {
     setDeleting(true);
     setError(null);
-    const { error: err } = await deleteFarm(farmId);
+    const { error: err } = await deleteFarm(farmId, user!.id);
     if (err) {
       setError(err);
       setDeleting(false);

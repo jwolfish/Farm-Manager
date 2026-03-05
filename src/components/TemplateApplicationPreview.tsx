@@ -1,6 +1,7 @@
 import { useEffect, useState, useMemo, useCallback } from 'react';
 import { X, AlertTriangle, Check, TrendingUp, TrendingDown } from 'lucide-react';
 import { supabase } from '../lib/supabase';
+import { useAuth } from '../contexts/AuthContext';
 import { getTemplate, applyTemplateToFields, type SeedVarietyAssignment } from '../lib/templateUtils';
 import type { CropType } from '../lib/database.types';
 
@@ -31,6 +32,7 @@ export function TemplateApplicationPreview({
   onBack,
   onComplete
 }: TemplateApplicationPreviewProps) {
+  const { user } = useAuth();
   const [loading, setLoading] = useState(true);
   const [applying, setApplying] = useState(false);
   const [template, setTemplate] = useState<any>(null);
@@ -68,12 +70,14 @@ export function TemplateApplicationPreview({
   }, [templateId]);
 
   const handleApply = async () => {
+    if (!user) return;
     setApplying(true);
     try {
       const result = await applyTemplateToFields(
         templateId,
         selectedFields.map(f => f.id),
-        seedAssignments
+        seedAssignments,
+        user.id
       );
 
       if (result.success) {

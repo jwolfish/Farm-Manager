@@ -195,7 +195,8 @@ function AppContent() {
         await supabase
           .from('seasons')
           .update({ is_active: true })
-          .eq('id', seasonId);
+          .eq('id', seasonId)
+          .eq('user_id', user.id);
       }
     }
   };
@@ -347,6 +348,22 @@ function AppContent() {
   }, [user, setOwnFarmById]);
 
   const handleSwitchToSharedFarm = useCallback(async (farm: SharedFarm) => {
+    if (!user) return;
+
+    const { data: accessRecord } = await supabase
+      .from('team_members')
+      .select('id, status')
+      .eq('invited_user_id', user.id)
+      .eq('farm_id', farm.farmId)
+      .eq('status', 'accepted')
+      .maybeSingle();
+
+    if (!accessRecord) {
+      addNotification('Access to this farm is no longer available.', 'error');
+      await loadSharedFarms();
+      return;
+    }
+
     setSharedFarm({
       farmId: farm.farmId,
       ownerId: farm.ownerId,
@@ -360,7 +377,7 @@ function AppContent() {
       await loadSeasons(farm.ownerId);
     }
     handleNavigate('dashboard');
-  }, [setSharedFarm]);
+  }, [user, setSharedFarm, addNotification]);
 
   const handleSwitchToOwnFarm = useCallback(async () => {
     if (!user) return;
