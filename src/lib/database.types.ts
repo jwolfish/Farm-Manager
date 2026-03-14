@@ -797,6 +797,59 @@ export interface Database {
           updated_at?: string;
         };
       };
+      commodity_hedges: {
+        Row: {
+          id: string;
+          season_id: string;
+          user_id: string;
+          crop_type: CropType;
+          contract_date: string;
+          delivery_month: string;
+          contract_type: string;
+          broker_elevator: string;
+          bushels_hedged: number;
+          futures_price: number;
+          basis: number;
+          net_price: number;
+          notes: string | null;
+          created_at: string;
+          updated_at: string;
+        };
+        Insert: {
+          id?: string;
+          season_id: string;
+          user_id: string;
+          crop_type: CropType;
+          contract_date: string;
+          delivery_month: string;
+          contract_type?: string;
+          broker_elevator?: string;
+          bushels_hedged: number;
+          futures_price: number;
+          basis?: number;
+          net_price?: number;
+          notes?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+        Update: {
+          id?: string;
+          season_id?: string;
+          user_id?: string;
+          crop_type?: CropType;
+          contract_date?: string;
+          delivery_month?: string;
+          contract_type?: string;
+          broker_elevator?: string;
+          bushels_hedged?: number;
+          futures_price?: number;
+          basis?: number;
+          net_price?: number;
+          notes?: string | null;
+          created_at?: string;
+          updated_at?: string;
+        };
+      };
       team_members: {
         Row: {
           id: string;
