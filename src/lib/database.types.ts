@@ -13,6 +13,29 @@ export type InvitationStatus = 'pending' | 'accepted' | 'declined';
 export interface Database {
   public: {
     Tables: {
+      farms: {
+        Row: {
+          id: string;
+          owner_user_id: string;
+          farm_name: string;
+          is_active: boolean | null;
+          created_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          owner_user_id: string;
+          farm_name?: string;
+          is_active?: boolean | null;
+          created_at?: string | null;
+        };
+        Update: {
+          id?: string;
+          owner_user_id?: string;
+          farm_name?: string;
+          is_active?: boolean | null;
+          created_at?: string | null;
+        };
+      };
       user_profiles: {
         Row: {
           id: string;
@@ -43,6 +66,7 @@ export interface Database {
         Row: {
           id: string;
           user_id: string;
+          farm_id: string | null;
           year: number;
           name: string;
           is_active: boolean;
@@ -55,6 +79,7 @@ export interface Database {
         Insert: {
           id?: string;
           user_id: string;
+          farm_id?: string | null;
           year: number;
           name: string;
           is_active?: boolean;
@@ -67,6 +92,7 @@ export interface Database {
         Update: {
           id?: string;
           user_id?: string;
+          farm_id?: string | null;
           year?: number;
           name?: string;
           is_active?: boolean;
@@ -855,33 +881,33 @@ export interface Database {
           id: string;
           user_id: string;
           invited_user_id: string | null;
-          season_id: string | null;
+          farm_id: string | null;
           email: string;
           role: UserRole;
           status: InvitationStatus;
-          invited_at: string;
+          invited_at: string | null;
           accepted_at: string | null;
         };
         Insert: {
           id?: string;
           user_id: string;
           invited_user_id?: string | null;
-          season_id?: string | null;
+          farm_id?: string | null;
           email: string;
           role?: UserRole;
           status?: InvitationStatus;
-          invited_at?: string;
+          invited_at?: string | null;
           accepted_at?: string | null;
         };
         Update: {
           id?: string;
           user_id?: string;
           invited_user_id?: string | null;
-          season_id?: string | null;
+          farm_id?: string | null;
           email?: string;
           role?: UserRole;
           status?: InvitationStatus;
-          invited_at?: string;
+          invited_at?: string | null;
           accepted_at?: string | null;
         };
       };

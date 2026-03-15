@@ -180,7 +180,7 @@ async function cascadeTemplateUpdateInSeason(
   templateId: string,
   seasonId: string,
   taskId: string
-): Promise<number> {
+): Promise<{ fieldsUpdated: number; failedFieldIds: string[] }> {
   const { data: template } = await supabase
     .from("cost_templates")
     .select("*")
@@ -188,7 +188,7 @@ async function cascadeTemplateUpdateInSeason(
     .eq("season_id", seasonId)
     .maybeSingle();
 
-  if (!template) return 0;
+  if (!template) return { fieldsUpdated: 0, failedFieldIds: [] };
 
   const { data: fieldCostRows } = await supabase
     .from("field_costs")
@@ -196,6 +196,7 @@ async function cascadeTemplateUpdateInSeason(
     .eq("template_id", templateId);
 
   let fieldsUpdated = 0;
+  const failedFieldIds: string[] = [];
 
   for (const row of fieldCostRows || []) {
     const fieldId = row.field_id;
@@ -243,14 +244,23 @@ async function cascadeTemplateUpdateInSeason(
         updates.total_cost_per_acre = calculateFieldTotalCost({ ...currentFieldCost, ...updates });
       }
 
-      await supabase.from("field_costs").update(updates).eq("field_id", fieldId);
+      const { error: updateError } = await supabase
+        .from("field_costs")
+        .update(updates)
+        .eq("field_id", fieldId);
+
+      if (updateError) {
+        throw updateError;
+      }
+
       fieldsUpdated++;
     } catch (err) {
+      failedFieldIds.push(fieldId);
       await logWarning(supabase, taskId, `Failed to update field ${fieldId}: ${err instanceof Error ? err.message : String(err)}`);
     }
   }
 
-  return fieldsUpdated;
+  return { fieldsUpdated, failedFieldIds };
 }
 
 async function cascadeProgramUpdateInSeason(
@@ -308,20 +318,22 @@ async function cascadeProgramUpdateInSeason(
 
     if (!error) {
       templatesUpdated++;
-      const updated = await cascadeTemplateUpdateInSeason(supabase, template.id, seasonId, taskId);
-      fieldsUpdated += updated;
+      const result = await cascadeTemplateUpdateInSeason(supabase, template.id, seasonId, taskId);
+      fieldsUpdated += result.fieldsUpdated;
     }
   }
 
   return { templatesUpdated, fieldsUpdated };
 }
 
+type CascadeStats = { programsUpdated: number; templatesUpdated: number; fieldsUpdated: number; failedFieldIds: string[] };
+
 async function runCascadeProductUpdate(
   supabase: ReturnType<typeof createClient>,
   entityId: string,
   seasonId: string,
   taskId: string
-): Promise<{ programsUpdated: number; templatesUpdated: number; fieldsUpdated: number }> {
+): Promise<CascadeStats> {
   const { data: programs } = await supabase
     .from("fertilizer_programs")
     .select("id, season_id, fertilizer_program_items!inner(fertilizer_product_id)")
@@ -331,6 +343,7 @@ async function runCascadeProductUpdate(
   let programsUpdated = 0;
   let templatesUpdated = 0;
   let fieldsUpdated = 0;
+  const failedFieldIds: string[] = [];
 
   for (const program of programs || []) {
     await withRetry(() => recalculateFertilizerProgramCost(supabase, program.id, seasonId, taskId));
@@ -340,7 +353,7 @@ async function runCascadeProductUpdate(
     fieldsUpdated += r.fieldsUpdated;
   }
 
-  return { programsUpdated, templatesUpdated, fieldsUpdated };
+  return { programsUpdated, templatesUpdated, fieldsUpdated, failedFieldIds };
 }
 
 async function runCascadeChemicalUpdate(
@@ -348,7 +361,7 @@ async function runCascadeChemicalUpdate(
   entityId: string,
   seasonId: string,
   taskId: string
-): Promise<{ programsUpdated: number; templatesUpdated: number; fieldsUpdated: number }> {
+): Promise<CascadeStats> {
   const { data: programs } = await supabase
     .from("chemical_programs")
     .select("id, season_id, chemical_program_items!inner(chemical_id)")
@@ -358,6 +371,7 @@ async function runCascadeChemicalUpdate(
   let programsUpdated = 0;
   let templatesUpdated = 0;
   let fieldsUpdated = 0;
+  const failedFieldIds: string[] = [];
 
   for (const program of programs || []) {
     await withRetry(() => recalculateChemicalProgramCost(supabase, program.id, seasonId, taskId));
@@ -367,7 +381,7 @@ async function runCascadeChemicalUpdate(
     fieldsUpdated += r.fieldsUpdated;
   }
 
-  return { programsUpdated, templatesUpdated, fieldsUpdated };
+  return { programsUpdated, templatesUpdated, fieldsUpdated, failedFieldIds };
 }
 
 async function runCascadeProgramUpdate(
@@ -376,9 +390,9 @@ async function runCascadeProgramUpdate(
   programType: "fertilizer" | "chemical",
   seasonId: string,
   taskId: string
-): Promise<{ programsUpdated: number; templatesUpdated: number; fieldsUpdated: number }> {
+): Promise<CascadeStats> {
   const r = await withRetry(() => cascadeProgramUpdateInSeason(supabase, entityId, programType, seasonId, taskId));
-  return { programsUpdated: 1, templatesUpdated: r.templatesUpdated, fieldsUpdated: r.fieldsUpdated };
+  return { programsUpdated: 1, templatesUpdated: r.templatesUpdated, fieldsUpdated: r.fieldsUpdated, failedFieldIds: [] };
 }
 
 async function runCascadeTemplateUpdate(
@@ -386,9 +400,9 @@ async function runCascadeTemplateUpdate(
   entityId: string,
   seasonId: string,
   taskId: string
-): Promise<{ programsUpdated: number; templatesUpdated: number; fieldsUpdated: number }> {
-  const fieldsUpdated = await withRetry(() => cascadeTemplateUpdateInSeason(supabase, entityId, seasonId, taskId));
-  return { programsUpdated: 0, templatesUpdated: 1, fieldsUpdated };
+): Promise<{ programsUpdated: number; templatesUpdated: number; fieldsUpdated: number; failedFieldIds: string[] }> {
+  const result = await withRetry(() => cascadeTemplateUpdateInSeason(supabase, entityId, seasonId, taskId));
+  return { programsUpdated: 0, templatesUpdated: 1, fieldsUpdated: result.fieldsUpdated, failedFieldIds: result.failedFieldIds };
 }
 
 Deno.serve(async (req: Request) => {
@@ -457,7 +471,7 @@ Deno.serve(async (req: Request) => {
     const entityId = task.entity_id as string;
     const programType = (task.program_type as "fertilizer" | "chemical" | null) ?? "fertilizer";
 
-    let stats = { programsUpdated: 0, templatesUpdated: 0, fieldsUpdated: 0 };
+    let stats: CascadeStats = { programsUpdated: 0, templatesUpdated: 0, fieldsUpdated: 0, failedFieldIds: [] };
 
     try {
       if (taskType === "cascade_product_update") {
@@ -477,15 +491,18 @@ Deno.serve(async (req: Request) => {
         .maybeSingle();
 
       const currentData = (currentTask?.result_data as Record<string, unknown>) || {};
+      const hasFailures = stats.failedFieldIds.length > 0;
+      const finalStatus = hasFailures ? "partial" : "completed";
 
       await supabaseAdmin.from("cascade_tasks").update({
-        status: "completed",
+        status: finalStatus,
         completed_at: new Date().toISOString(),
         result_data: {
           ...currentData,
           programsUpdated: stats.programsUpdated,
           templatesUpdated: stats.templatesUpdated,
           fieldsUpdated: stats.fieldsUpdated,
+          failedFieldIds: stats.failedFieldIds,
         },
       }).eq("id", taskId);
 

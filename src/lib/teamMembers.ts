@@ -1,7 +1,8 @@
 import { supabase } from './supabase';
+import type { Database } from './database.types';
 
 export type TeamRole = 'editor' | 'viewer';
-export type InvitationStatus = 'pending' | 'accepted' | 'declined';
+export type InvitationStatus = Database['public']['Tables']['team_members']['Row']['status'];
 
 export interface TeamMember {
   id: string;
@@ -49,7 +50,7 @@ export async function sendInvitation(
     return { error: 'Please enter a valid email address.' };
   }
 
-  const { data: existingMember } = await (supabase as any)
+  const { data: existingMember } = await supabase
     .from('team_members')
     .select('id, status')
     .eq('user_id', ownerUserId)
@@ -58,44 +59,47 @@ export async function sendInvitation(
     .maybeSingle();
 
   if (existingMember) {
-    if ((existingMember.status as InvitationStatus) === 'accepted') {
+    if (existingMember.status === 'accepted') {
       return { error: 'This person already has access to this farm.' };
     }
-    if ((existingMember.status as InvitationStatus) === 'pending') {
+    if (existingMember.status === 'pending') {
       return { error: 'An invitation is already pending for this email.' };
     }
   }
 
-  const { data: inviteRecord, error: inviteError } = await (supabase as any)
+  const { data: inviteRecord, error: inviteError } = await supabase
     .from('team_members')
     .insert({
       user_id: ownerUserId,
       farm_id: farmId,
       email: trimmedEmail,
       role,
-      status: 'pending' as InvitationStatus,
+      status: 'pending',
     })
     .select('id')
     .single();
 
   if (inviteError) {
     console.error('Error creating invitation:', inviteError);
+    if (inviteError.code === '23505') {
+      return { error: 'This person already has a pending or active invitation to this farm.' };
+    }
     return { error: 'Failed to send invitation. Please try again.' };
   }
 
-  const { data: invitedProfile } = await (supabase as any)
+  const { data: invitedProfile } = await supabase
     .from('user_profiles')
     .select('id')
     .eq('email', trimmedEmail)
     .maybeSingle();
 
   if (invitedProfile?.id) {
-    await (supabase as any)
+    await supabase
       .from('team_members')
       .update({ invited_user_id: invitedProfile.id })
       .eq('id', inviteRecord.id);
 
-    await (supabase as any)
+    await supabase
       .from('app_notifications')
       .insert({
         recipient_user_id: invitedProfile.id,
@@ -117,7 +121,7 @@ export async function sendInvitation(
 }
 
 export async function fetchSentInvitations(ownerUserId: string, farmId: string): Promise<TeamMember[]> {
-  const { data, error } = await (supabase as any)
+  const { data, error } = await supabase
     .from('team_members')
     .select('id, email, role, status, invited_at, accepted_at, invited_user_id')
     .eq('user_id', ownerUserId)
@@ -129,38 +133,42 @@ export async function fetchSentInvitations(ownerUserId: string, farmId: string):
     return [];
   }
 
-  return (data || []).map((row: any) => ({
+  return (data || []).map((row) => ({
     id: row.id,
     email: row.email,
     role: row.role as TeamRole,
-    status: row.status as InvitationStatus,
-    invitedAt: row.invited_at,
+    status: row.status,
+    invitedAt: row.invited_at ?? '',
     acceptedAt: row.accepted_at,
     invitedUserId: row.invited_user_id,
   }));
 }
 
 export async function fetchSharedFarms(userId: string): Promise<SharedFarm[]> {
-  const { data, error } = await (supabase as any)
+  const { data, error } = await supabase
     .from('team_members')
     .select('id, user_id, role, farm_id, farms(farm_name), owner_profile:user_profiles!team_members_user_id_fkey(email)')
     .eq('invited_user_id', userId)
-    .eq('status', 'accepted' as InvitationStatus);
+    .eq('status', 'accepted');
 
   if (error) {
     console.error('Error fetching shared farms:', error);
     return [];
   }
 
-  return (data || []).map((row: any) => ({
-    invitationId: row.id,
-    farmId: row.farm_id ?? '',
-    ownerId: row.user_id,
-    ownerName: null,
-    ownerEmail: row.owner_profile?.email ?? '',
-    farmName: row.farms?.farm_name ?? null,
-    role: row.role as TeamRole,
-  }));
+  return (data || []).map((row) => {
+    const farms = row.farms as { farm_name: string } | null;
+    const ownerProfile = row.owner_profile as { email: string } | null;
+    return {
+      invitationId: row.id,
+      farmId: row.farm_id ?? '',
+      ownerId: row.user_id,
+      ownerName: null,
+      ownerEmail: ownerProfile?.email ?? '',
+      farmName: farms?.farm_name ?? null,
+      role: row.role as TeamRole,
+    };
+  });
 }
 
 export async function acceptInvitation(
@@ -168,22 +176,22 @@ export async function acceptInvitation(
   invitationId: string,
   userId: string
 ): Promise<{ error: string | null }> {
-  const { error: updateError } = await (supabase as any)
+  const { error: updateError } = await supabase
     .from('team_members')
     .update({
-      status: 'accepted' as InvitationStatus,
+      status: 'accepted',
       invited_user_id: userId,
       accepted_at: new Date().toISOString(),
     })
     .eq('id', invitationId)
-    .eq('status', 'pending' as InvitationStatus);
+    .eq('status', 'pending');
 
   if (updateError) {
     console.error('Error accepting invitation:', updateError);
     return { error: 'Failed to accept invitation.' };
   }
 
-  await (supabase as any)
+  await supabase
     .from('app_notifications')
     .update({ is_read: true })
     .eq('id', notificationId);
@@ -195,9 +203,9 @@ export async function declineInvitation(
   notificationId: string,
   invitationId: string
 ): Promise<{ error: string | null }> {
-  const { error } = await (supabase as any)
+  const { error } = await supabase
     .from('team_members')
-    .update({ status: 'declined' as InvitationStatus })
+    .update({ status: 'declined' })
     .eq('id', invitationId);
 
   if (error) {
@@ -205,7 +213,7 @@ export async function declineInvitation(
     return { error: 'Failed to decline invitation.' };
   }
 
-  await (supabase as any)
+  await supabase
     .from('app_notifications')
     .update({ is_read: true })
     .eq('id', notificationId);
@@ -214,7 +222,7 @@ export async function declineInvitation(
 }
 
 export async function revokeAccess(invitationId: string, ownerUserId: string): Promise<{ error: string | null }> {
-  const { error } = await (supabase as any)
+  const { error } = await supabase
     .from('team_members')
     .delete()
     .eq('id', invitationId)
@@ -229,7 +237,7 @@ export async function revokeAccess(invitationId: string, ownerUserId: string): P
 }
 
 export async function fetchUnreadNotifications(userId: string): Promise<AppNotification[]> {
-  const { data, error } = await (supabase as any)
+  const { data, error } = await supabase
     .from('app_notifications')
     .select('id, type, payload, is_read, created_at, sender_user_id')
     .eq('recipient_user_id', userId)
@@ -241,7 +249,7 @@ export async function fetchUnreadNotifications(userId: string): Promise<AppNotif
     return [];
   }
 
-  return (data || []).map((row: any) => ({
+  return (data || []).map((row) => ({
     id: row.id,
     type: row.type,
     payload: row.payload as Record<string, unknown>,
@@ -252,7 +260,7 @@ export async function fetchUnreadNotifications(userId: string): Promise<AppNotif
 }
 
 export async function dismissNotification(notificationId: string): Promise<void> {
-  await (supabase as any)
+  await supabase
     .from('app_notifications')
     .update({ is_read: true })
     .eq('id', notificationId);

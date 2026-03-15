@@ -55,6 +55,7 @@ function AppContent() {
   const [seasonToDelete, setSeasonToDelete] = useState<Season | null>(null);
   const [selectedFieldId, setSelectedFieldId] = useState<string | null>(null);
   const [sharedFarms, setSharedFarms] = useState<SharedFarm[]>([]);
+  const [dataLoadError, setDataLoadError] = useState<string | null>(null);
 
   useCascadeTaskNotifications(user?.id ?? null);
 
@@ -74,6 +75,7 @@ function AppContent() {
   const loadInitialData = async () => {
     if (!user) return;
     setLoading(true);
+    setDataLoadError(null);
     try {
       const [farmsResult, sharedFarmsResult, profileResult] = await Promise.allSettled([
         fetchOwnedFarms(user.id),
@@ -81,11 +83,16 @@ function AppContent() {
         supabase.from('user_profiles').select('farm_name').eq('id', user.id).maybeSingle(),
       ]);
 
-      const farms = farmsResult.status === 'fulfilled' ? farmsResult.value : [];
+      if (farmsResult.status === 'rejected') {
+        setDataLoadError('Could not load your farms. Please check your connection and try again.');
+        setLoading(false);
+        return;
+      }
+
+      const farms = farmsResult.value;
       const sharedFarmsData = sharedFarmsResult.status === 'fulfilled' ? sharedFarmsResult.value : [];
       const profileData = profileResult.status === 'fulfilled' ? profileResult.value : { data: null };
 
-      if (farmsResult.status === 'rejected') console.error('Error loading owned farms:', farmsResult.reason);
       if (sharedFarmsResult.status === 'rejected') console.error('Error loading shared farms:', sharedFarmsResult.reason);
       if (profileResult.status === 'rejected') console.error('Error loading profile:', profileResult.reason);
 
@@ -113,6 +120,7 @@ function AppContent() {
       }
     } catch (error) {
       console.error('Error loading initial data:', error);
+      setDataLoadError('Something went wrong loading your account. Please try again.');
       setLoading(false);
     }
   };
@@ -128,10 +136,12 @@ function AppContent() {
     setActivePage(page);
   };
 
+  const SEASON_LOAD_TIMEOUT_MS = 10000;
+
   const loadSeasonsByFarm = async (farmId: string, forUserId: string) => {
     setLoading(true);
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 10000);
+    const timeoutId = setTimeout(() => controller.abort(), SEASON_LOAD_TIMEOUT_MS);
     try {
       const { data, error } = await supabase
         .from('seasons')
@@ -152,10 +162,14 @@ function AppContent() {
       } else {
         setCurrentSeason(null);
       }
-    } catch (error: any) {
+    } catch (error: unknown) {
       clearTimeout(timeoutId);
-      if (error?.name !== 'AbortError') {
+      const isAbort = error instanceof Error && error.name === 'AbortError';
+      if (!isAbort) {
         console.error('Error loading seasons:', error);
+        setDataLoadError('Could not load seasons. Please check your connection and try again.');
+      } else {
+        setDataLoadError('Loading seasons timed out. Please try again.');
       }
       setSeasons([]);
     } finally {
@@ -455,6 +469,31 @@ function AppContent() {
   const handleInviteAccepted = useCallback(async () => {
     await loadSharedFarms();
   }, [user, loadSharedFarms]);
+
+  if (dataLoadError && !loading) {
+    return (
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
+        <div className="w-full max-w-md bg-white rounded-2xl shadow-xl p-8 text-center">
+          <div className="bg-red-100 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-6">
+            <svg className="w-8 h-8 text-red-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+            </svg>
+          </div>
+          <h2 className="text-xl font-bold text-gray-900 mb-3">Failed to Load</h2>
+          <p className="text-gray-600 mb-6">{dataLoadError}</p>
+          <button
+            onClick={() => {
+              setDataLoadError(null);
+              loadInitialData();
+            }}
+            className="w-full bg-blue-600 text-white py-3 px-4 rounded-lg font-medium hover:bg-blue-700 transition-colors"
+          >
+            Try Again
+          </button>
+        </div>
+      </div>
+    );
+  }
 
   if (authLoading || loading) {
     return (

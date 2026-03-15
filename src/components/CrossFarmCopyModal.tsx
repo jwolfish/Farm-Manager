@@ -43,7 +43,7 @@ export function CrossFarmCopyModal({ currentSeasonId, onSelectSourceSeason, onCa
   const loadSeasons = async (farmId: string) => {
     setLoadingSeasons(true);
     setSelectedSeasonId(null);
-    const { data } = await (supabase as any)
+    const { data } = await supabase
       .from('seasons')
       .select('id, name, year')
       .eq('farm_id', farmId)

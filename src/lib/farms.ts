@@ -1,4 +1,7 @@
 import { supabase } from './supabase';
+import type { Database } from './database.types';
+
+type FarmRow = Database['public']['Tables']['farms']['Row'];
 
 export interface Farm {
   id: string;
@@ -7,8 +10,17 @@ export interface Farm {
   isActive: boolean;
 }
 
+function rowToFarm(row: FarmRow): Farm {
+  return {
+    id: row.id,
+    farmName: row.farm_name,
+    createdAt: row.created_at ?? '',
+    isActive: row.is_active ?? true,
+  };
+}
+
 export async function fetchOwnedFarms(userId: string): Promise<Farm[]> {
-  const { data, error } = await (supabase as any)
+  const { data, error } = await supabase
     .from('farms')
     .select('id, farm_name, created_at, is_active')
     .eq('owner_user_id', userId)
@@ -19,16 +31,11 @@ export async function fetchOwnedFarms(userId: string): Promise<Farm[]> {
     return [];
   }
 
-  return (data || []).map((row: any) => ({
-    id: row.id,
-    farmName: row.farm_name,
-    createdAt: row.created_at,
-    isActive: row.is_active,
-  }));
+  return (data || []).map(rowToFarm);
 }
 
 export async function createFarm(userId: string, farmName: string): Promise<{ farm: Farm | null; error: string | null }> {
-  const { data, error } = await (supabase as any)
+  const { data, error } = await supabase
     .from('farms')
     .insert({ owner_user_id: userId, farm_name: farmName.trim() })
     .select('id, farm_name, created_at, is_active')
@@ -39,19 +46,11 @@ export async function createFarm(userId: string, farmName: string): Promise<{ fa
     return { farm: null, error: 'Failed to create farm. Please try again.' };
   }
 
-  return {
-    farm: {
-      id: data.id,
-      farmName: data.farm_name,
-      createdAt: data.created_at,
-      isActive: data.is_active,
-    },
-    error: null,
-  };
+  return { farm: rowToFarm(data), error: null };
 }
 
 export async function updateFarmName(farmId: string, farmName: string, ownerUserId: string): Promise<{ error: string | null }> {
-  const { error } = await (supabase as any)
+  const { error } = await supabase
     .from('farms')
     .update({ farm_name: farmName.trim() })
     .eq('id', farmId)
@@ -66,7 +65,7 @@ export async function updateFarmName(farmId: string, farmName: string, ownerUser
 }
 
 export async function deleteFarm(farmId: string, ownerUserId: string): Promise<{ error: string | null }> {
-  const { count } = await (supabase as any)
+  const { count } = await supabase
     .from('seasons')
     .select('id', { count: 'exact', head: true })
     .eq('farm_id', farmId);
@@ -75,7 +74,7 @@ export async function deleteFarm(farmId: string, ownerUserId: string): Promise<{
     return { error: 'Cannot delete a farm that has seasons. Delete all seasons first.' };
   }
 
-  const { error } = await (supabase as any)
+  const { error } = await supabase
     .from('farms')
     .delete()
     .eq('id', farmId)

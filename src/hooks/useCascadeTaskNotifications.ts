@@ -5,7 +5,7 @@ import { useNotifications } from '../contexts/NotificationContext';
 interface CascadeTaskRow {
   id: string;
   user_id: string;
-  status: 'pending' | 'running' | 'completed' | 'failed';
+  status: 'pending' | 'running' | 'completed' | 'partial' | 'failed';
   result_data: Record<string, unknown> | null;
   error_message: string | null;
 }
@@ -42,6 +42,15 @@ export function useCascadeTaskNotifications(userId: string | null) {
 
             const stats = parts.length > 0 ? parts.join(', ') : 'no items';
             addNotification(`Updated ${stats} in ${seasonName}`, 'success', task.id);
+          } else if (task.status === 'partial') {
+            const result = task.result_data || {};
+            const failedCount = ((result.failedFieldIds as string[]) || []).length;
+            const seasonName = (result.seasonName as string) || 'Unknown Season';
+            addNotification(
+              `Update partially completed in ${seasonName} — ${failedCount} field${failedCount !== 1 ? 's' : ''} could not be updated. Check the fields page for details.`,
+              'warning',
+              task.id
+            );
           } else if (task.status === 'failed') {
             addNotification(
               `Update failed: ${task.error_message || 'Unknown error'}`,
