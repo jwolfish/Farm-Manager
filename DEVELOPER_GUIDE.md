@@ -105,7 +105,7 @@ Supabase provides PostgreSQL, row-level security, email/password authentication,
 
 ### Database Migrations
 
-Migrations live in `supabase/migrations/`. When working with a fresh Supabase project, apply migrations in chronological order using the Supabase dashboard SQL editor or CLI. There are 29 migration files as of this writing.
+Migrations live in `supabase/migrations/`. When working with a fresh Supabase project, apply migrations in chronological order using the Supabase dashboard SQL editor or CLI. There are 30 migration files as of this writing.
 
 ### Edge Functions
 
@@ -211,7 +211,7 @@ The app uses one Supabase Edge Function:
 │               └── SalesByMonth.tsx
 │
 ├── supabase/
-│   ├── migrations/                 29 SQL migration files (apply in chronological order)
+│   ├── migrations/                 30 SQL migration files (apply in chronological order)
 │   └── functions/
 │       └── process-cascade-task/
 │           └── index.ts            Edge Function for async cascade updates
@@ -515,6 +515,7 @@ Generic pagination control component. Accepts `currentPage`, `totalPages`, and a
 | `20260305193038` | Consolidated multiple permissive RLS policies |
 | `20260305193055` | Dropped unused indexes |
 | `20260314235029` | Added `commodity_hedges` table |
+| `20260315003529` | Added partial unique index on `team_members(user_id, farm_id, email)` where `status <> 'declined'` to prevent duplicate invitations |
 
 ### Tables
 
@@ -1086,33 +1087,58 @@ The project intentionally avoids Redux, Zustand, and similar libraries. Use Reac
 
 ## Known Issues & Technical Debt
 
-### `(supabase as any)` Type Casts
-
-Several files bypass TypeScript type checking with `(supabase as any)` due to tables and columns that are not reflected in the current `database.types.ts` file. This primarily affects:
-
-- `src/lib/farms.ts` — `farms` table
-- `src/lib/teamMembers.ts` — `team_members` table
-- `src/components/CrossFarmCopyModal.tsx`
-
-**Resolution:** Regenerate `database.types.ts` from the current Supabase schema after all migrations have been applied.
-
 ### Console Logging in Production
 
 Several files contain `console.log` and `console.error` calls that will appear in production browser consoles. These should be replaced with structured logging or removed before a public launch.
 
 **Hotspots:** `src/lib/backgroundTasks.ts`, `src/lib/teamMembers.ts`, `src/pages/Products.tsx`
 
-### Silent Failures on Data Load Errors
+---
 
-In `App.tsx`, if `fetchOwnedFarms` or `fetchSharedFarms` rejects, the app silently continues with empty arrays. Users will see no data and no error message. A user-visible error state or retry option should be added.
+## Resolved Issues
 
-### Cascade Task Atomicity
+The following issues were identified during a code review and have since been fixed.
 
-The cascade update process has no transaction guarantee. If the Edge Function fails partway through updating linked fields, some fields will have the new template values and others will retain the old ones. A retry mechanism or idempotent update approach should be considered.
+### [Fixed] `(supabase as any)` Type Casts
 
-### Missing Unique Constraint on `team_members`
+`farms.ts`, `teamMembers.ts`, and `CrossFarmCopyModal.tsx` previously bypassed TypeScript type checking because the `farms` table and the `farm_id` column on `team_members` were absent from `database.types.ts`.
 
-The `team_members` table has no unique constraint on `(user_id, email, farm_id)`, which can allow duplicate invitation records if the invite flow is triggered multiple times for the same email. A database-level unique constraint should be added.
+**Resolution:** `database.types.ts` was manually updated to add the `farms` table definition, correct `team_members.farm_id` (replacing the stale `season_id` field), add `farm_id` to the `seasons` type, and align `InvitationStatus` with the actual database enum. All `(supabase as any)` casts in `farms.ts`, `teamMembers.ts`, and `CrossFarmCopyModal.tsx` were replaced with properly typed Supabase client calls.
+
+When schema changes are applied in future, regenerate types to keep them current:
+```bash
+npx supabase gen types typescript --project-id YOUR_PROJECT_ID > src/lib/database.types.ts
+```
+
+### [Fixed] Silent Failures on Data Load Errors
+
+Previously, if `fetchOwnedFarms` rejected on initial load, or if `loadSeasonsByFarm` timed out or errored, the app silently fell back to empty state with no user-visible feedback.
+
+**Resolution (`App.tsx`):**
+- Added a `dataLoadError` state that is set whenever a critical load path fails
+- When `fetchOwnedFarms` rejects, the error state is set and loading stops — the app does not silently continue with empty data
+- When `loadSeasonsByFarm` throws (including on abort/timeout), the error state is set with a specific message
+- A full-screen error banner with a "Try Again" button is rendered when `dataLoadError` is set and loading is complete
+- The timeout duration is extracted to a named constant (`SEASON_LOAD_TIMEOUT_MS`)
+
+### [Fixed] Cascade Task Partial Failures
+
+Previously, the `process-cascade-task` Edge Function continued the field-update loop on errors, leaving the database in a partially-updated state with no indication of which fields had failed.
+
+**Resolution:**
+- The Edge Function now accumulates failed field IDs into a `failedFieldIds` array during the update loop
+- After the loop, if any fields failed, the task `status` is set to `'partial'` instead of `'completed'`; the failed field IDs are stored in `result_data.failedFieldIds`
+- The `useCascadeTaskNotifications` hook handles the `'partial'` status by showing a warning-level toast that names the count of fields that were not updated
+- The `CascadeTaskRow` type in the hook was updated to include `'partial'` as a valid status value
+
+### [Fixed] Missing Unique Constraint on `team_members`
+
+The `team_members` table previously had no database-level guard against duplicate invitations, allowing the same email to be invited to the same farm multiple times.
+
+**Resolution:**
+- Migration `20260315003529_add_unique_constraint_team_members.sql` adds a partial unique index on `(user_id, farm_id, email)` where `status <> 'declined'`. This prevents duplicate active invitations while still allowing re-invitation after a previous invite was declined (which is the only terminal non-delete state in the enum).
+- `sendInvitation()` in `teamMembers.ts` already performed an application-level check for existing pending/accepted records before inserting and catches Postgres error code `23505` (unique violation) to return a user-friendly message. The database index is now the authoritative safety net.
+- The `sendInvitation` function signature was also updated to accept `ownerName`, `ownerEmail`, and `farmName` parameters so notification payloads are fully populated.
 
 ---
 
