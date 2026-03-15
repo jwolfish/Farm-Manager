@@ -31,6 +31,8 @@ interface Season {
   farm_id?: string | null;
 }
 
+const SEASON_LOAD_TIMEOUT_MS = 10000;
+
 function AppContent() {
   const { user, loading: authLoading } = useAuth();
   const { addNotification } = useNotifications();
@@ -59,20 +61,81 @@ function AppContent() {
 
   useCascadeTaskNotifications(user?.id ?? null);
 
-  useEffect(() => {
-    if (user) {
-      wasAuthenticated.current = true;
-      if (loadedForUserIdRef.current !== user.id) {
-        loadedForUserIdRef.current = user.id;
-        loadInitialData();
+  const loadSeasonsByFarm = useCallback(async (farmId: string, forUserId: string) => {
+    setLoading(true);
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), SEASON_LOAD_TIMEOUT_MS);
+    try {
+      const { data, error } = await supabase
+        .from('seasons')
+        .select('*')
+        .eq('farm_id', farmId)
+        .order('year', { ascending: false })
+        .abortSignal(controller.signal);
+
+      clearTimeout(timeoutId);
+
+      if (error) throw error;
+
+      setSeasons(data || []);
+
+      if (data && data.length > 0) {
+        const active = data.find((s: Season) => s.is_active) || data[0];
+        setCurrentSeason(active);
+      } else {
+        setCurrentSeason(null);
       }
-    } else if (!authLoading) {
-      loadedForUserIdRef.current = null;
+    } catch (error: unknown) {
+      clearTimeout(timeoutId);
+      const isAbort = error instanceof Error && error.name === 'AbortError';
+      if (!isAbort) {
+        console.error('Error loading seasons:', error);
+        setDataLoadError('Could not load seasons. Please check your connection and try again.');
+      } else {
+        setDataLoadError('Loading seasons timed out. Please try again.');
+      }
+      setSeasons([]);
+    } finally {
       setLoading(false);
     }
-  }, [user?.id, authLoading]);
+  }, []);
 
-  const loadInitialData = async () => {
+  const loadSeasons = useCallback(async (forUserId: string) => {
+    if (activeFarmId) {
+      await loadSeasonsByFarm(activeFarmId, forUserId);
+    } else {
+      setLoading(true);
+      try {
+        const { data, error } = await supabase
+          .from('seasons')
+          .select('*')
+          .eq('user_id', forUserId)
+          .order('year', { ascending: false });
+
+        if (error) throw error;
+        setSeasons(data || []);
+        if (data && data.length > 0) {
+          const active = data.find((s: Season) => s.is_active) || data[0];
+          setCurrentSeason(active);
+        } else {
+          setCurrentSeason(null);
+        }
+      } catch (error) {
+        console.error('Error loading seasons:', error);
+        setSeasons([]);
+      } finally {
+        setLoading(false);
+      }
+    }
+  }, [activeFarmId, loadSeasonsByFarm]);
+
+  const loadSharedFarms = useCallback(async () => {
+    if (!user) return;
+    const farms = await fetchSharedFarms(user.id);
+    setSharedFarms(farms);
+  }, [user]);
+
+  const loadInitialData = useCallback(async () => {
     if (!user) return;
     setLoading(true);
     setDataLoadError(null);
@@ -123,87 +186,24 @@ function AppContent() {
       setDataLoadError('Something went wrong loading your account. Please try again.');
       setLoading(false);
     }
-  };
+  }, [user, setOwnedFarms, setOwnFarmById, setOwnFarm, loadSeasonsByFarm]);
 
-  const loadSharedFarms = async () => {
-    if (!user) return;
-    const farms = await fetchSharedFarms(user.id);
-    setSharedFarms(farms);
-  };
+  useEffect(() => {
+    if (user) {
+      wasAuthenticated.current = true;
+      if (loadedForUserIdRef.current !== user.id) {
+        loadedForUserIdRef.current = user.id;
+        loadInitialData();
+      }
+    } else if (!authLoading) {
+      loadedForUserIdRef.current = null;
+      setLoading(false);
+    }
+  }, [user?.id, authLoading, loadInitialData]);
 
   const handleNavigate = (page: string) => {
     sessionStorage.setItem('activePage', page);
     setActivePage(page);
-  };
-
-  const SEASON_LOAD_TIMEOUT_MS = 10000;
-
-  const loadSeasonsByFarm = async (farmId: string, forUserId: string) => {
-    setLoading(true);
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), SEASON_LOAD_TIMEOUT_MS);
-    try {
-      const { data, error } = await supabase
-        .from('seasons')
-        .select('*')
-        .eq('farm_id', farmId)
-        .order('year', { ascending: false })
-        .abortSignal(controller.signal);
-
-      clearTimeout(timeoutId);
-
-      if (error) throw error;
-
-      setSeasons(data || []);
-
-      if (data && data.length > 0) {
-        const active = data.find((s: Season) => s.is_active) || data[0];
-        setCurrentSeason(active);
-      } else {
-        setCurrentSeason(null);
-      }
-    } catch (error: unknown) {
-      clearTimeout(timeoutId);
-      const isAbort = error instanceof Error && error.name === 'AbortError';
-      if (!isAbort) {
-        console.error('Error loading seasons:', error);
-        setDataLoadError('Could not load seasons. Please check your connection and try again.');
-      } else {
-        setDataLoadError('Loading seasons timed out. Please try again.');
-      }
-      setSeasons([]);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const loadSeasons = async (forUserId: string) => {
-    if (activeFarmId) {
-      await loadSeasonsByFarm(activeFarmId, forUserId);
-    } else {
-      setLoading(true);
-      try {
-        const { data, error } = await supabase
-          .from('seasons')
-          .select('*')
-          .eq('user_id', forUserId)
-          .order('year', { ascending: false });
-
-        if (error) throw error;
-        setSeasons(data || []);
-        if (data && data.length > 0) {
-          const active = data.find((s: Season) => s.is_active) || data[0];
-          setCurrentSeason(active);
-        } else {
-          setCurrentSeason(null);
-        }
-      } catch (error) {
-        console.error('Error loading seasons:', error);
-        setSeasons([]);
-      } finally {
-        setLoading(false);
-      }
-    }
   };
 
   const handleSeasonChange = async (seasonId: string) => {
@@ -322,13 +322,20 @@ function AppContent() {
           controller.abort();
         }
       } else {
-        await loadSeasons(user.id);
-        if (importedSeasonId) {
-          setSeasons((prev) => {
-            const season = prev.find((s) => s.id === importedSeasonId);
+        const { data: freshData } = await supabase
+          .from('seasons')
+          .select('*')
+          .eq('user_id', user.id)
+          .order('year', { ascending: false });
+        if (freshData) {
+          setSeasons(freshData);
+          if (importedSeasonId) {
+            const season = freshData.find((s: Season) => s.id === importedSeasonId);
             if (season) setCurrentSeason(season);
-            return prev;
-          });
+          } else if (freshData.length > 0) {
+            const active = freshData.find((s: Season) => s.is_active) || freshData[0];
+            setCurrentSeason(active);
+          }
         }
       }
     }
@@ -398,7 +405,7 @@ function AppContent() {
     setOwnFarmById(user.id, farm);
     await loadSeasonsByFarm(farm.id, user.id);
     handleNavigate('dashboard');
-  }, [user, setOwnFarmById]);
+  }, [user, setOwnFarmById, loadSeasonsByFarm]);
 
   const handleSwitchToSharedFarm = useCallback(async (farm: SharedFarm) => {
     if (!user) return;
@@ -430,7 +437,7 @@ function AppContent() {
       await loadSeasons(farm.ownerId);
     }
     handleNavigate('dashboard');
-  }, [user, setSharedFarm, addNotification]);
+  }, [user, setSharedFarm, addNotification, loadSharedFarms, loadSeasonsByFarm, loadSeasons]);
 
   const handleSwitchToOwnFarm = useCallback(async () => {
     if (!user) return;
@@ -443,7 +450,7 @@ function AppContent() {
       await loadSeasons(user.id);
     }
     handleNavigate('dashboard');
-  }, [user, ownedFarms, setOwnFarmById, setOwnFarm]);
+  }, [user, ownedFarms, setOwnFarmById, setOwnFarm, loadSeasonsByFarm, loadSeasons]);
 
   const handleFarmCreated = useCallback(async (newFarm: Farm) => {
     if (!user) return;
@@ -452,7 +459,7 @@ function AppContent() {
     setOwnFarmById(user.id, newFarm);
     await loadSeasonsByFarm(newFarm.id, user.id);
     handleNavigate('dashboard');
-  }, [user, ownedFarms, setOwnedFarms, setOwnFarmById]);
+  }, [user, ownedFarms, setOwnedFarms, setOwnFarmById, loadSeasonsByFarm]);
 
   const handleFarmsUpdated = useCallback(async () => {
     if (!user) return;
@@ -468,7 +475,7 @@ function AppContent() {
 
   const handleInviteAccepted = useCallback(async () => {
     await loadSharedFarms();
-  }, [user, loadSharedFarms]);
+  }, [loadSharedFarms]);
 
   if (dataLoadError && !loading) {
     return (

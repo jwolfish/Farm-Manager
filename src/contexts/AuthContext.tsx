@@ -1,4 +1,4 @@
-import { createContext, useContext, useEffect, useRef, useState } from 'react';
+import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { User, Session } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
 
@@ -18,6 +18,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
   const currentUserIdRef = useRef<string | null>(null);
+  const currentAccessTokenRef = useRef<string | null>(null);
 
   useEffect(() => {
     const timeout = setTimeout(() => {
@@ -30,6 +31,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         setSession(session);
         setUser(session?.user ?? null);
         currentUserIdRef.current = session?.user?.id ?? null;
+        currentAccessTokenRef.current = session?.access_token ?? null;
         setLoading(false);
       })
       .catch(() => {
@@ -38,8 +40,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
-      if (event === 'TOKEN_REFRESHED' || event === 'INITIAL_SESSION') {
+      if (event === 'TOKEN_REFRESHED') {
         if (session) {
+          if (session.access_token === currentAccessTokenRef.current) {
+            return;
+          }
+          currentAccessTokenRef.current = session.access_token;
           if (session.user.id !== currentUserIdRef.current) {
             currentUserIdRef.current = session.user.id;
             setSession(session);
@@ -51,8 +57,13 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
         return;
       }
 
+      if (event === 'INITIAL_SESSION') {
+        return;
+      }
+
       const newUserId = session?.user?.id ?? null;
       currentUserIdRef.current = newUserId;
+      currentAccessTokenRef.current = session?.access_token ?? null;
       setSession(session);
       setUser(session?.user ?? null);
     });
@@ -63,16 +74,16 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
-  const signIn = async (email: string, password: string) => {
+  const signIn = useCallback(async (email: string, password: string) => {
     const { error } = await supabase.auth.signInWithPassword({
       email,
       password,
     });
 
     if (error) throw error;
-  };
+  }, []);
 
-  const signUp = async (email: string, password: string, fullName: string) => {
+  const signUp = useCallback(async (email: string, password: string, fullName: string) => {
     const { data, error } = await supabase.auth.signUp({
       email,
       password,
@@ -91,15 +102,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       if (profileError) throw profileError;
     }
-  };
+  }, []);
 
-  const signOut = async () => {
+  const signOut = useCallback(async () => {
     const { error } = await supabase.auth.signOut();
     if (error) throw error;
-  };
+  }, []);
+
+  const value = useMemo(
+    () => ({ user, session, loading, signIn, signUp, signOut }),
+    [user, session, loading, signIn, signUp, signOut]
+  );
 
   return (
-    <AuthContext.Provider value={{ user, session, loading, signIn, signUp, signOut }}>
+    <AuthContext.Provider value={value}>
       {children}
     </AuthContext.Provider>
   );
