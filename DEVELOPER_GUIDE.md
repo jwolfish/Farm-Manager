@@ -15,24 +15,28 @@
 11. [Reporting System](#reporting-system)
 12. [Utilities & Hooks](#utilities--hooks)
 13. [Code Patterns & Conventions](#code-patterns--conventions)
-14. [Deployment](#deployment)
+14. [Known Issues & Technical Debt](#known-issues--technical-debt)
+15. [Deployment](#deployment)
 
 ---
 
 ## Project Overview
 
-**Crop Tracker** is a web-based agricultural cost management platform for farmers managing multiple fields across multiple growing seasons. It enables detailed cost tracking at the field level, profitability analysis, sales recording, and year-over-year performance comparisons.
+**Crop Tracker** is a web-based agricultural cost management platform for farmers managing multiple fields across multiple growing seasons. It enables detailed cost tracking at the field level, profitability analysis, commodity sales recording, hedge position tracking, and year-over-year performance comparisons.
 
 ### Core Capabilities
 
-- Multi-season management with season-to-season data import
+- Multi-farm support with farm switching via the sidebar
+- Multi-season management with season-to-season data import wizard
 - Per-field cost tracking broken down by category (seed, fertilizer, chemicals, operational, land)
 - Reusable cost templates with cascading updates across all linked fields
 - Field-level cost overrides that survive template updates
-- Yield and commodity sales recording
-- Comprehensive reporting suite with charting
+- Yield, commodity sales, and commodity hedge recording
+- Comprehensive reporting suite with Recharts-based charting
 - PDF export of reports
 - Team/farm sharing with role-based access (editor, viewer)
+- Real-time Dashboard updates via Supabase subscriptions
+- Background cascade update processing via Supabase Edge Functions
 
 ---
 
@@ -55,7 +59,7 @@
 |---|---|---|
 | @supabase/supabase-js | 2.57.4 | Database, auth, real-time subscriptions |
 
-Supabase provides PostgreSQL, row-level security, email/password authentication, and real-time change subscriptions with no separate backend server required.
+Supabase provides PostgreSQL, row-level security, email/password authentication, real-time change subscriptions, and Edge Functions — no separate backend server required.
 
 ### Dev Tools
 
@@ -101,7 +105,13 @@ Supabase provides PostgreSQL, row-level security, email/password authentication,
 
 ### Database Migrations
 
-Migrations live in `supabase/migrations/`. When working with a fresh Supabase project, apply migrations in chronological order using the Supabase dashboard SQL editor or CLI.
+Migrations live in `supabase/migrations/`. When working with a fresh Supabase project, apply migrations in chronological order using the Supabase dashboard SQL editor or CLI. There are 29 migration files as of this writing.
+
+### Edge Functions
+
+The app uses one Supabase Edge Function:
+
+- **`process-cascade-task`** (`supabase/functions/process-cascade-task/index.ts`) — Processes template cascade updates asynchronously. It is deployed via the Supabase CLI or the Supabase MCP tools. It is called from the frontend via a `fetch` call in `src/lib/backgroundTasks.ts`.
 
 ---
 
@@ -121,17 +131,22 @@ Migrations live in `supabase/migrations/`. When working with a fresh Supabase pr
 │   │   └── NotificationContext.tsx Toast notification queue and display
 │   │
 │   ├── hooks/
-│   │   └── useReportData.ts        Data fetching hook for all report pages
+│   │   ├── useCascadeTaskNotifications.ts  Polls cascade_tasks for background task progress
+│   │   ├── useSalesTracking.ts             Data and CRUD for commodity sales and hedges
+│   │   └── useReportData.ts                Data fetching hook for all report pages
 │   │
 │   ├── lib/
 │   │   ├── supabase.ts             Supabase client singleton
 │   │   ├── database.types.ts       Auto-generated TypeScript types from Supabase schema
 │   │   ├── templateUtils.ts        Template CRUD, cascade update logic, cost calculations
 │   │   ├── transactionUtils.ts     Multi-step database operation helpers
-│   │   ├── backgroundTasks.ts      Async task coordination and progress notification
+│   │   ├── backgroundTasks.ts      Async task coordination and toast notification bridge
 │   │   ├── seasonImport.ts         Season-to-season data copy logic
 │   │   ├── unitConversions.ts      Unit conversion helpers (lbs, gallons, acres, etc.)
+│   │   ├── farms.ts                Farm CRUD operations
 │   │   ├── teamMembers.ts          Team invitation and shared farm fetching
+│   │   ├── salesUtils.ts           Sales and hedge formatting helpers and constants
+│   │   ├── mathUtils.ts            Shared math utility functions
 │   │   ├── exportUtils.ts          CSV/data export helpers
 │   │   ├── reportTypes.ts          Shared TypeScript types for reports
 │   │   └── pdfExport.ts            PDF generation for report export
@@ -139,16 +154,20 @@ Migrations live in `supabase/migrations/`. When working with a fresh Supabase pr
 │   ├── components/
 │   │   ├── DashboardLayout.tsx     Sidebar nav, season selector, farm switcher, layout shell
 │   │   ├── Toast.tsx               Toast notification component and container
-│   │   ├── NotificationBell.tsx    Bell icon for notification count
+│   │   ├── NotificationBell.tsx    Bell icon for app notification count
 │   │   ├── OverrideBadge.tsx       Visual badge indicating a field cost override is active
 │   │   ├── CostItemEditor.tsx      Inline editor for individual cost line items
+│   │   ├── Pagination.tsx          Reusable pagination controls
 │   │   ├── TemplateForm.tsx        Form for creating and editing cost templates
 │   │   ├── TemplateSelector.tsx    Modal for selecting a template to apply to fields
 │   │   ├── TemplateApplicationPreview.tsx  Preview and confirm before applying a template
 │   │   ├── CascadeUpdateModal.tsx  Progress modal for cascade update operations
 │   │   ├── SeasonImportWizard.tsx  Multi-step wizard for importing data from prior seasons
+│   │   ├── CrossFarmCopyModal.tsx  Modal for copying templates or programs across farms
 │   │   ├── SaleEntryForm.tsx       Form for recording commodity sales
-│   │   ├── SalesCommoditySection.tsx  Sales grouped by crop type
+│   │   ├── SalesCommoditySection.tsx  Sales entries grouped by crop type
+│   │   ├── HedgeEntryForm.tsx      Form for recording commodity hedge positions
+│   │   ├── HedgeCommoditySection.tsx  Hedge entries grouped by crop type
 │   │   ├── SeedVarietyAssignment.tsx  Assign seed varieties to fields
 │   │   ├── FertilizerPrograms.tsx  Fertilizer program builder and editor
 │   │   ├── ChemicalPrograms.tsx    Chemical program builder and editor
@@ -164,9 +183,10 @@ Migrations live in `supabase/migrations/`. When working with a fresh Supabase pr
 │       ├── Products.tsx            Seed, fertilizer, chemical product catalog management
 │       ├── CostTemplates.tsx       Template list with creation, editing, deletion
 │       ├── Yields.tsx              Harvest yield data entry per field
-│       ├── SalesTracking.tsx       Commodity sales recording and history
+│       ├── SalesTracking.tsx       Commodity sales and hedge position tracking
 │       ├── Reports.tsx             Report hub with navigation to all report categories
-│       ├── Settings.tsx            User profile and farm name configuration
+│       ├── AccountSettings.tsx     User profile configuration (full name)
+│       ├── FarmSettings.tsx        Farm name management and farm deletion
 │       ├── Team.tsx                Team member management, invitations, shared farm access
 │       └── reports/
 │           ├── ProfitabilityReports.tsx
@@ -190,8 +210,14 @@ Migrations live in `supabase/migrations/`. When working with a fresh Supabase pr
 │               ├── PricingPerformance.tsx
 │               └── SalesByMonth.tsx
 │
-└── supabase/
-    └── migrations/                 17 SQL migration files (chronological)
+├── supabase/
+│   ├── migrations/                 29 SQL migration files (apply in chronological order)
+│   └── functions/
+│       └── process-cascade-task/
+│           └── index.ts            Edge Function for async cascade updates
+│
+└── docs/
+    └── CropTracker_HedgeTracking_PRD_(1).docx  Feature PRD for hedge tracking
 ```
 
 ---
@@ -220,7 +246,7 @@ Manages Supabase auth state. Provides:
 - `signUp(email, password, fullName)` — new account creation
 - `signOut()` — logout and clear session
 
-Uses `supabase.auth.onAuthStateChange` to track session changes reactively. The callback is wrapped in an async IIFE to avoid deadlocks.
+Uses `supabase.auth.onAuthStateChange` to track session changes reactively. The callback is wrapped in an async IIFE to avoid Supabase client deadlocks.
 
 #### FarmContext (`src/contexts/FarmContext.tsx`)
 
@@ -229,7 +255,7 @@ Tracks which farm the user is currently viewing. Critical for multi-farm support
 Provides:
 
 - `activeFarm: ActiveFarm | null` — the currently active farm record
-- `effectiveUserId: string | null` — the user ID to use for data queries (may be the farm owner's ID, not the logged-in user's)
+- `effectiveUserId: string | null` — the user ID to use for data queries (may be the farm owner's ID, not the logged-in user's ID)
 - `setOwnFarm(userId, farmName)` — switch to the user's own farm (role: `admin`)
 - `setSharedFarm(farm)` — switch to a farm shared with the user (role: `editor` or `viewer`)
 
@@ -244,7 +270,7 @@ interface ActiveFarm {
 }
 ```
 
-All data queries should use `effectiveUserId` (not `user.id` directly) so they work correctly when viewing a shared farm.
+All data queries must use `effectiveUserId` (not `user.id` directly) so they work correctly when viewing a shared farm.
 
 #### NotificationContext (`src/contexts/NotificationContext.tsx`)
 
@@ -259,12 +285,13 @@ The background task system (`src/lib/backgroundTasks.ts`) hooks into this contex
 
 ### Routing
 
-The app is a Single Page Application with no URL-based router. Navigation state is managed in `App.tsx` via a `activePage` string stored in `sessionStorage` (so it survives hot reloads). The `DashboardLayout` sidebar calls `onNavigate(pageName)` to switch pages.
+The app is a Single Page Application with no URL-based router. Navigation state is managed in `App.tsx` via an `activePage` string stored in `sessionStorage` (so it survives hot reloads). The `DashboardLayout` sidebar calls `onNavigate(pageName)` to switch pages.
 
 The `FieldDetail` page is a special case — it receives a `fieldId` prop rather than being routed to by URL, and the back button returns to the `fields` page.
 
 Pages that must not be visible when viewing a shared farm (`isOwnFarm === false`) are gated in `App.tsx`:
-- `settings` — hidden for shared farms
+- `account-settings` — hidden for shared farms
+- `farm-settings` — hidden for shared farms
 - `team` — hidden for shared farms
 
 ### Season State
@@ -289,7 +316,7 @@ Displays season-level summary metrics grouped by crop type (corn, soybeans, whea
 - Average yield (bu/acre)
 - Profit per acre (based on crop price from `seasons` table)
 
-Subscribes to real-time Supabase changes on `fields`, `field_costs`, `field_yields`, and `commodity_sales`. Unsubscribes on unmount.
+Subscribes to real-time Supabase changes on `fields`, `field_costs`, `yield_and_price`, and `commodity_sales`. Unsubscribes on unmount.
 
 ### Fields (`src/pages/Fields.tsx`)
 
@@ -328,6 +355,7 @@ Lists all cost templates for the active season. Allows:
 - Viewing how many fields use each template
 - Editing existing templates (triggers cascade update check)
 - Deleting unused templates
+- Cross-farm copy of templates via `CrossFarmCopyModal`
 
 ### Yields (`src/pages/Yields.tsx`)
 
@@ -341,21 +369,39 @@ Records harvest data per field:
 
 ### Sales Tracking (`src/pages/SalesTracking.tsx`)
 
-Records commodity sale events:
+Two-tab interface for recording commodity market activity:
 
+**Sales tab:**
 - Crop type (corn, soybeans, wheat)
 - Sale date and delivery month
 - Destination / buyer
 - Bushels sold, price per bushel, total revenue
 - Notes
 
+**Hedges tab:**
+- Crop type
+- Contract date and delivery month
+- Contract type (futures, basis, HTA, flat price, etc.)
+- Broker / elevator
+- Bushels hedged, futures price, basis, net price
+- Notes
+
+Data is managed via the `useSalesTracking` hook.
+
 ### Reports (`src/pages/Reports.tsx`)
 
 Navigation hub for five report categories. Each category links to a dedicated report page containing multiple sub-reports.
 
-### Settings (`src/pages/Settings.tsx`)
+### Account Settings (`src/pages/AccountSettings.tsx`)
 
-User profile management: full name and farm name. Farm name is stored in `user_profiles` and displayed in the sidebar and Team invite flow.
+User profile management: full name update. Farm name is managed separately in Farm Settings.
+
+### Farm Settings (`src/pages/FarmSettings.tsx`)
+
+Manages the user's owned farms:
+- Rename a farm
+- Delete a farm (with confirmation; farm owner only)
+- Calls `onFarmsUpdated` prop callback to refresh the sidebar farm list after changes
 
 ### Team (`src/pages/Team.tsx`)
 
@@ -377,11 +423,11 @@ Main layout shell. Contains:
 
 - Left sidebar with page navigation links
 - Season selector dropdown (create, switch, delete seasons)
-- Farm switcher when shared farms are available
-- Notification bell
+- Farm switcher when the user has access to shared farms
+- Notification bell (`NotificationBell`)
 - User menu (logout)
 
-Accepts `readOnly`-aware rendering — the sidebar hides write-only pages (Settings, Team) when viewing a shared farm.
+Accepts `readOnly`-aware rendering — the sidebar hides write-only pages (Account Settings, Farm Settings, Team) when viewing a shared farm.
 
 ### SeasonImportWizard
 
@@ -394,11 +440,15 @@ Multi-step modal wizard launched when creating a new season with "Import from pr
 
 ### CascadeUpdateModal
 
-Modal that appears during template save operations. Shows per-field progress as the cascade update propagates changes to all fields linked to the template. Uses `cascade_tasks` table to track progress.
+Modal that appears during template save operations. Shows per-field progress as the cascade update propagates changes to all fields linked to the template. Uses the `cascade_tasks` table and real-time subscriptions to track progress.
 
 ### TemplateApplicationPreview
 
 Shown before bulk-applying a template to selected fields. Displays a before/after cost comparison per field so the user can confirm the change.
+
+### CrossFarmCopyModal
+
+Modal that allows a farm owner to copy cost templates or fertilizer/chemical programs from one owned farm to another. Uses `(supabase as any)` type workaround due to incomplete generated types — see Known Issues.
 
 ### CostItemEditor
 
@@ -412,9 +462,21 @@ Small visual indicator shown next to cost items that have been overridden at the
 
 Program builders rendered inside the Products page. Allow composing multi-product programs with per-product application rates and an overall application cost. Programs are stored as separate database records and referenced by JSONB arrays in templates.
 
+### SaleEntryForm / HedgeEntryForm
+
+Form modals for adding and editing commodity sales and hedge positions respectively. Used inside `SalesCommoditySection` and `HedgeCommoditySection`.
+
+### SalesCommoditySection / HedgeCommoditySection
+
+Display components that group sales or hedge entries by crop type. Each includes pagination (20 items per page for hedges, configurable for sales).
+
 ### Toast / ToastContainer
 
-`Toast` renders a single notification. `ToastContainer` is mounted at the app root (outside `DashboardLayout`) so toasts display over any page including modals.
+`Toast` renders a single notification. The container is mounted at the app root (outside `DashboardLayout`) so toasts display over any page including modals.
+
+### Pagination
+
+Generic pagination control component. Accepts `currentPage`, `totalPages`, and an `onPageChange` callback.
 
 ---
 
@@ -424,23 +486,35 @@ Program builders rendered inside the Products page. Allow composing multi-produc
 
 | File | Change |
 |---|---|
-| `20260205170031` | Initial schema: users, seasons, fields, seed_varieties, fertilizer_products, individual_chemicals, field_costs, equipment_rates |
+| `20260205170031` | Initial schema: user_profiles, seasons, fields, seed_varieties, fertilizer_products, individual_chemicals, field_costs, equipment_rates |
 | `20260205174842` | Added `units_per_bag` to `seed_varieties` |
 | `20260205180913` | Removed `crop_type` from `fertilizer_products` (fertilizers are crop-agnostic) |
 | `20260205182443` | Added `fertilizer_programs`, `fertilizer_program_items`, `chemical_programs`, `chemical_program_items`, application costs |
-| `20260205182505` | Added junction tables for field-to-program assignments (later removed) |
+| `20260205182505` | Added junction tables for field-to-program assignments (later dropped) |
 | `20260205190304` | Added application rate columns to `chemical_program_items` |
-| `20260205193632` | Added `field_yields` table |
-| `20260205194147` | Added `price` column to `field_yields` |
+| `20260205193632` | Added `yield_and_price` table |
+| `20260205194147` | Added `price` column to `yield_and_price` |
 | `20260205194734` | Added `land_rent_per_acre` and `property_tax_per_acre` to `fields` |
 | `20260205200039` | Added tillage, planting, harvest, and other operational cost columns to `field_costs` |
 | `20260205221117` | Added crop price columns to `seasons` (corn, soybeans, wheat price per bushel) |
-| `20260206034309` | Removed unused yield columns from `field_yields` |
+| `20260206034309` | Removed unused yield columns from `yield_and_price` |
 | `20260208053658` | Added `cost_templates` and `field_cost_overrides` tables |
 | `20260208184944` | Added `cascade_tasks` table for background task tracking |
 | `20260211012336` | Added `commodity_sales` table |
 | `20260217214952` | Dropped field-program junction tables (programs now embedded in templates via JSONB) |
 | `20260217221551` | Added `farm_name` to `user_profiles` |
+| `20260218055206` | Added `farms` table; added `farm_id` to `seasons` |
+| `20260218055235` | Backfilled `farms` records from existing `user_profiles` data |
+| `20260218055300` | Updated RLS policies for farm-scoped multi-farm access |
+| `20260305180723` | Cleaned up duplicate RLS policies |
+| `20260305180749` | Added missing RLS policies for collaboration access patterns |
+| `20260305184151` | Added `program_type` column to `cascade_tasks` |
+| `20260305184158` | Enabled real-time on `cascade_tasks` table |
+| `20260305192457` | Added missing foreign key indexes |
+| `20260305192931` | Fixed RLS auth initialization and function search paths |
+| `20260305193038` | Consolidated multiple permissive RLS policies |
+| `20260305193055` | Dropped unused indexes |
+| `20260314235029` | Added `commodity_hedges` table |
 
 ### Tables
 
@@ -451,16 +525,29 @@ Extends Supabase auth users with app-specific profile data.
 |---|---|---|
 | id | uuid | Matches `auth.users.id` |
 | full_name | text | Display name |
-| farm_name | text | Farm name shown in UI and invitations |
+| farm_name | text | Legacy field; farm names now in `farms` table |
+| created_at | timestamptz | |
+| updated_at | timestamptz | Auto-updated by trigger |
+
+#### `farms`
+One record per farm. A user may own multiple farms.
+
+| Column | Type | Notes |
+|---|---|---|
+| id | uuid | PK |
+| owner_user_id | uuid | FK → auth.users |
+| farm_name | text | |
+| is_active | boolean | |
 | created_at | timestamptz | |
 
 #### `seasons`
-Top-level container for a growing year's data.
+Top-level container for a growing year's data. Each season belongs to a farm.
 
 | Column | Type | Notes |
 |---|---|---|
 | id | uuid | PK |
 | user_id | uuid | Owner |
+| farm_id | uuid | FK → farms |
 | year | int | e.g. 2026 |
 | name | text | e.g. "2026 Growing Season" |
 | is_active | boolean | Which season is shown by default on load |
@@ -468,6 +555,7 @@ Top-level container for a growing year's data.
 | soybeans_price_per_bushel | numeric | |
 | wheat_price_per_bushel | numeric | |
 | created_at | timestamptz | |
+| updated_at | timestamptz | |
 
 #### `fields`
 Individual parcels of land within a season.
@@ -615,7 +703,8 @@ Records individual cost line items that have been overridden at the field level.
 | cost_item_name | text | Column name of the overridden item |
 | override_value | jsonb | The overridden value |
 
-#### `field_yields`
+#### `yield_and_price`
+Harvest data per field.
 
 | Column | Type | Notes |
 |---|---|---|
@@ -635,13 +724,32 @@ Records individual cost line items that have been overridden at the field level.
 | id | uuid | PK |
 | season_id | uuid | FK → seasons |
 | user_id | uuid | |
-| crop_type | text | |
+| crop_type | text | `'corn'`, `'soybeans'`, or `'wheat'` |
 | sale_date | date | |
 | delivery_month | text | |
 | destination | text | Buyer / elevator name |
 | bushels_sold | numeric | |
 | price_per_bushel | numeric | |
-| total_revenue | numeric | Computed or entered |
+| total_revenue | numeric | |
+| notes | text | |
+
+#### `commodity_hedges`
+Records hedge positions (futures contracts, basis contracts, HTAs, etc.).
+
+| Column | Type | Notes |
+|---|---|---|
+| id | uuid | PK |
+| season_id | uuid | FK → seasons |
+| user_id | uuid | |
+| crop_type | text | `'corn'`, `'soybeans'`, or `'wheat'` |
+| contract_date | date | |
+| delivery_month | text | |
+| contract_type | text | e.g. `'futures'`, `'basis'`, `'hta'`, `'flat_price'` |
+| broker_elevator | text | |
+| bushels_hedged | numeric | |
+| futures_price | numeric | |
+| basis | numeric | |
+| net_price | numeric | Computed: futures_price + basis |
 | notes | text | |
 
 #### `equipment_rates`
@@ -669,30 +777,48 @@ Tracks progress of background cascade update operations.
 | status | text | `'pending'`, `'running'`, `'complete'`, `'error'` |
 | entity_id | uuid | ID of the template or product being updated |
 | entity_type | text | |
-| progress | jsonb | `{completed, total, fieldNames}` |
+| program_type | text | `'fertilizer'` or `'chemical'` (nullable) |
+| result_data | jsonb | `{completed, total, fieldNames}` |
+| error_message | text | Set when status is `'error'` |
 | created_at | timestamptz | |
 | completed_at | timestamptz | |
 
-#### `team_invitations`
+#### `team_members`
 Tracks pending and accepted invitations for farm sharing.
 
 | Column | Type | Notes |
 |---|---|---|
 | id | uuid | PK |
-| organization_id | uuid | Farm owner's user ID |
-| invited_email | text | |
-| invited_by | uuid | |
+| user_id | uuid | Farm owner's user ID |
+| invited_user_id | uuid | The invited user's ID (nullable until accepted) |
+| farm_id | uuid | FK → farms |
+| email | text | Invited email address |
 | role | text | `'editor'` or `'viewer'` |
 | status | text | `'pending'`, `'accepted'`, `'revoked'` |
+| invited_at | timestamptz | |
+| accepted_at | timestamptz | |
+
+#### `app_notifications`
+In-app notification records for the notification bell.
+
+| Column | Type | Notes |
+|---|---|---|
+| id | uuid | PK |
+| recipient_user_id | uuid | |
+| sender_user_id | uuid | |
+| type | text | Notification category |
+| payload | jsonb | Notification data |
+| is_read | boolean | |
 | created_at | timestamptz | |
-| responded_at | timestamptz | |
 
 ### Row Level Security
 
-RLS is enabled on all tables. Policies follow this pattern:
+RLS is enabled on all tables. The general policy pattern:
 
-- Users can only read, insert, update, or delete rows where `user_id = auth.uid()` (or where the relevant FK chain resolves to the user's ID)
-- Collaboration access is handled at the application level via `FarmContext` — viewers query using the farm owner's user ID, and database policies allow this because the queries are executed with the farm owner's data scope through the application logic
+- Users can read, insert, update, or delete their own rows where `user_id = auth.uid()`
+- Collaboration is handled at the application level via `FarmContext`. When viewing a shared farm, all queries use `effectiveUserId` (the farm owner's ID). RLS allows this because the owner's `user_id` matches RLS conditions, and the sharing check happens in the application.
+- The `auth.uid()` function is used in all policies (never `current_user`).
+- `DO NOT` use `USING (true)` in any policy.
 
 ---
 
@@ -717,12 +843,16 @@ The `calculateTemplateCost` function in `src/lib/templateUtils.ts` computes the 
 
 When a template is saved, a cascade update propagates the new values to all linked fields. The process:
 
-1. Identify all `field_costs` rows with `template_id` matching the updated template
-2. For each field, apply the new template values, but skip any cost item that has a corresponding row in `field_cost_overrides`
-3. Record progress in `cascade_tasks` for UI feedback
-4. `CascadeUpdateModal` polls the task record and shows per-field progress
+1. The updated template is saved to `cost_templates`
+2. A `cascade_tasks` record is created with `status = 'pending'`
+3. The frontend calls the `process-cascade-task` Edge Function with the task ID
+4. The Edge Function identifies all `field_costs` rows with `template_id` matching the updated template
+5. For each field, it applies the new template values, but skips any cost item that has a corresponding row in `field_cost_overrides`
+6. Progress is written back to `cascade_tasks.result_data`
+7. `CascadeUpdateModal` listens via real-time subscription and shows per-field progress
+8. On completion, `backgroundTasks.ts` fires a toast notification
 
-Implemented in `src/lib/templateUtils.ts` (`applyTemplateCascade`) and coordinated through `src/lib/backgroundTasks.ts`.
+The cascade is coordinated through `src/lib/backgroundTasks.ts` and `src/hooks/useCascadeTaskNotifications.ts`.
 
 ### Field Cost Overrides
 
@@ -743,21 +873,25 @@ When creating a new season with "Import from previous season":
 3. For each selected category, `src/lib/seasonImport.ts` copies records, updating foreign key references to point to the new season's records
 4. Product prices can be bulk-updated during import before the copy executes
 
+### Commodity Sales & Hedges
+
+Commodity sales and hedge positions are both scoped to a season. The `useSalesTracking` hook fetches and manages both collections. The `SalesTracking` page renders them in separate tabs via `SalesCommoditySection` and `HedgeCommoditySection`. Both sections group entries by crop type and support pagination.
+
 ---
 
 ## Team & Farm Sharing
 
 ### Inviting Collaborators
 
-From the Team page, the farm owner enters an email address and selects a role (editor or viewer). This creates a `team_invitations` record with `status = 'pending'`.
+From the Team page, the farm owner enters an email address and selects a role (editor or viewer). This creates a `team_members` record with `status = 'pending'`.
 
-When the invited user logs in (or the page detects they are already logged in), the system checks for any pending invitations matching their email address and automatically accepts them, setting `status = 'accepted'`.
+When the invited user logs in, the system checks for any pending invitations matching their email address and automatically accepts them, setting `status = 'accepted'` and populating `invited_user_id`.
 
 ### Roles
 
 | Role | Capabilities |
 |---|---|
-| admin | Full access to own farm, can invite/revoke team members |
+| admin | Full access to own farm, can invite/revoke team members, manage farm settings |
 | editor | Can view and edit data on the shared farm; cannot manage team or settings |
 | viewer | Read-only access to the shared farm |
 
@@ -768,6 +902,10 @@ The `readOnly` prop is passed to all page components when `activeRole === 'viewe
 The sidebar shows a farm switcher when the user has accepted invitations to shared farms. Clicking a shared farm calls `setSharedFarm()` in `FarmContext` and reloads the season list for that farm owner's user ID. All subsequent data queries use `effectiveUserId` from the context.
 
 Switching back to the user's own farm calls `setOwnFarm()` and reloads their seasons.
+
+### Multi-Farm Ownership
+
+A user can own multiple farms. Owned farms are created from `FarmSettings` or during the initial account setup flow. The farm switcher in the sidebar lists both owned farms and farms the user has been invited to.
 
 ---
 
@@ -783,7 +921,7 @@ Reports live in `src/pages/reports/`. Each category has a parent page and indivi
 | Field Performance | `FieldPerformanceReports.tsx` | Field Cost Comparison, Field ROI, Field Yield Ranking |
 | Sales Analytics | `SalesReports.tsx` | Buyer Breakdown, Pricing Performance, Sales by Month |
 | Cost Efficiency | `CostEfficiencyReports.tsx` | Break-Even Analysis, Cost Per Bushel, Input Efficiency |
-| Yield Analytics | `YieldReports.tsx` | (in development) |
+| Yield Analytics | `YieldReports.tsx` | Yield data visualizations |
 
 ### Data Fetching
 
@@ -791,7 +929,7 @@ All report data is fetched via the `useReportData` hook (`src/hooks/useReportDat
 
 ### Charts
 
-All charts use Recharts. Common chart types used: `BarChart`, `LineChart`, `PieChart`, `ComposedChart`. Chart data is derived from the `useReportData` output.
+All charts use Recharts. Common chart types: `BarChart`, `LineChart`, `PieChart`, `ComposedChart`. Chart data is derived from `useReportData` output.
 
 ### PDF Export
 
@@ -807,12 +945,14 @@ Exports a single `supabase` client instance initialized with `VITE_SUPABASE_URL`
 
 ### `src/lib/database.types.ts`
 
-Auto-generated TypeScript types from the Supabase schema. Provides `Database` type used as the generic parameter for Supabase client calls, enabling full type inference on query results.
+Auto-generated TypeScript types from the Supabase schema. Provides the `Database` type and exports common type aliases (`CropType`, etc.).
 
 To regenerate after schema changes:
 ```bash
 npx supabase gen types typescript --project-id YOUR_PROJECT_ID > src/lib/database.types.ts
 ```
+
+Then run `npm run typecheck` to catch any type mismatches.
 
 ### `src/lib/templateUtils.ts`
 
@@ -830,22 +970,41 @@ Central module for all template operations:
 
 ### `src/lib/backgroundTasks.ts`
 
-Provides `setNotificationCallback(fn)` to register the toast notification function from outside React, and `notifyUser(message, type)` to fire a toast from async utility code. Called during cascade update completion.
+Provides `setNotificationCallback(fn)` to register the toast notification function from outside React, and `notifyUser(message, type)` to fire a toast from async utility code. Also exports `triggerCascadeTask(taskId, session)` which calls the Edge Function.
+
+### `src/lib/farms.ts`
+
+- `fetchOwnedFarms(userId)` — returns all farms owned by the user
+- `createFarm(userId, farmName)` — creates a new farm record
+- `updateFarmName(farmId, name)` — renames a farm
+- `deleteFarm(farmId)` — deletes a farm and all associated data
+
+### `src/lib/teamMembers.ts`
+
+- `fetchSharedFarms(userId)` — returns all farms the user has been invited to and accepted
+- `inviteTeamMember(farmId, email, role)` — creates a `team_members` record
+- `revokeTeamMember(memberId)` — sets status to `'revoked'`
+- `fetchTeamMembers(farmId)` — lists accepted members for a farm
 
 ### `src/lib/seasonImport.ts`
 
 Exports `importSeasonData(options)` which copies selected data categories from a source season to a new season, remapping all foreign key relationships.
 
+### `src/lib/salesUtils.ts`
+
+Formatting constants and helpers for commodity sales and hedges:
+
+- `cropConfig` — display labels and colors per crop type
+- `CONTRACT_TYPE_LABELS` — display labels for hedge contract types
+- `formatDeliveryMonth`, `formatDate`, `formatCurrency`, `formatBushels` — display formatters
+
 ### `src/lib/unitConversions.ts`
 
-Helper functions for converting between agricultural units (bags to seeds, lbs to tons, etc.). Used in cost calculation displays.
+Helper functions for converting between agricultural units (bags to seeds, lbs to tons, acres, etc.). Used in cost calculation displays.
 
-### `src/lib/teamMembers.ts`
+### `src/lib/mathUtils.ts`
 
-- `fetchSharedFarms(userId)` — returns all farms the user has been invited to and accepted
-- `inviteTeamMember(orgId, email, role)` — creates a `team_invitations` record
-- `revokeTeamMember(invitationId)` — sets invitation status to `'revoked'`
-- `fetchTeamMembers(orgId)` — lists accepted members for a farm
+Shared numeric utility functions used across cost calculations and report data transformations.
 
 ### `src/lib/reportTypes.ts`
 
@@ -857,11 +1016,19 @@ Helper functions for serializing data to CSV format for download.
 
 ### `src/lib/pdfExport.ts`
 
-Generates PDF files from report data. Uses browser print APIs or a canvas-based approach to produce downloadable reports.
+Generates PDF files from report data using browser print APIs.
 
 ### `src/lib/transactionUtils.ts`
 
-Helpers for multi-step database operations that need to be treated as a unit. Wraps sequences of Supabase calls with error handling and rollback logic where possible.
+Helpers for multi-step database operations that need to be treated as a unit. Wraps sequences of Supabase calls with error handling.
+
+### `src/hooks/useSalesTracking.ts`
+
+Custom hook that manages all state and CRUD operations for commodity sales and hedges for a given season. Returns `sales`, `hedges`, `loading`, `salesByCrop`, `hedgesByCrop`, and handler functions used by `SalesTracking`.
+
+### `src/hooks/useCascadeTaskNotifications.ts`
+
+Polls the `cascade_tasks` table for completed or errored tasks belonging to the current user and fires toast notifications via the notification bridge.
 
 ---
 
@@ -905,7 +1072,7 @@ Pages receive a `readOnly: boolean` prop. Use it to conditionally render action 
 
 ### Error Handling
 
-Database errors from Supabase are checked with `if (error) throw error` or logged to the console. User-facing errors use the `addNotification` from `NotificationContext` — do not use `alert()` in new code.
+Database errors from Supabase are surfaced to the user via `addNotification` from `NotificationContext`. Do not use `alert()` in new code. Prefer `if (error) throw error` in library functions and catch at the component boundary.
 
 ### Component File Size
 
@@ -914,6 +1081,38 @@ Keep files focused. If a page component exceeds ~250 lines, extract sub-sections
 ### No External State Libraries
 
 The project intentionally avoids Redux, Zustand, and similar libraries. Use React Context for cross-component state and `useState` / `useReducer` for local state.
+
+---
+
+## Known Issues & Technical Debt
+
+### `(supabase as any)` Type Casts
+
+Several files bypass TypeScript type checking with `(supabase as any)` due to tables and columns that are not reflected in the current `database.types.ts` file. This primarily affects:
+
+- `src/lib/farms.ts` — `farms` table
+- `src/lib/teamMembers.ts` — `team_members` table
+- `src/components/CrossFarmCopyModal.tsx`
+
+**Resolution:** Regenerate `database.types.ts` from the current Supabase schema after all migrations have been applied.
+
+### Console Logging in Production
+
+Several files contain `console.log` and `console.error` calls that will appear in production browser consoles. These should be replaced with structured logging or removed before a public launch.
+
+**Hotspots:** `src/lib/backgroundTasks.ts`, `src/lib/teamMembers.ts`, `src/pages/Products.tsx`
+
+### Silent Failures on Data Load Errors
+
+In `App.tsx`, if `fetchOwnedFarms` or `fetchSharedFarms` rejects, the app silently continues with empty arrays. Users will see no data and no error message. A user-visible error state or retry option should be added.
+
+### Cascade Task Atomicity
+
+The cascade update process has no transaction guarantee. If the Edge Function fails partway through updating linked fields, some fields will have the new template values and others will retain the old ones. A retry mechanism or idempotent update approach should be considered.
+
+### Missing Unique Constraint on `team_members`
+
+The `team_members` table has no unique constraint on `(user_id, email, farm_id)`, which can allow duplicate invitation records if the invite flow is triggered multiple times for the same email. A database-level unique constraint should be added.
 
 ---
 
@@ -936,7 +1135,7 @@ VITE_SUPABASE_URL=https://your-project.supabase.co
 VITE_SUPABASE_ANON_KEY=your-anon-key
 ```
 
-These are embedded at build time by Vite. They are safe to expose publicly — the anon key provides no elevated database access beyond what RLS policies permit.
+These are embedded at build time by Vite. The anon key provides no elevated database access beyond what RLS policies permit and is safe to expose publicly.
 
 ### Supabase Project Setup
 
@@ -944,8 +1143,19 @@ For a new Supabase project:
 
 1. Create a project in the Supabase dashboard
 2. Apply all migration files from `supabase/migrations/` in chronological filename order
-3. Confirm RLS is enabled on all tables (the migrations handle this)
-4. Copy the project URL and anon key to the host environment variables
+3. Deploy the `process-cascade-task` Edge Function
+4. Confirm RLS is enabled on all tables (the migrations handle this)
+5. Copy the project URL and anon key to the host environment variables
+
+### Edge Function Deployment
+
+The `process-cascade-task` function is deployed via the Supabase MCP tools or CLI:
+
+```bash
+supabase functions deploy process-cascade-task
+```
+
+No additional secrets need to be configured — the function uses the built-in `SUPABASE_URL` and `SUPABASE_SERVICE_ROLE_KEY` environment variables that Supabase pre-populates automatically.
 
 ### Type Regeneration After Schema Changes
 
