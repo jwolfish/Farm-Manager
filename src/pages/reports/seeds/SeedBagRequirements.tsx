@@ -45,7 +45,6 @@ export function SeedBagRequirements({ currentSeasonId, effectiveUserId }: Props)
   const [sortBy, setSortBy] = useState<'field' | 'crop' | 'hybrid'>('field');
 
   useEffect(() => {
-    console.log('SeedBagRequirements load: seasonId=', currentSeasonId, 'userId=', effectiveUserId);
     if (!currentSeasonId || !effectiveUserId) {
       setLoading(false);
       return;
@@ -82,10 +81,8 @@ export function SeedBagRequirements({ currentSeasonId, effectiveUserId }: Props)
         return;
       }
 
-      console.log('SeedBagRequirements raw fields[0]:', JSON.stringify(fields?.[0], null, 2));
-
       const built: FieldSeedRow[] = (fields ?? []).map((f: any) => {
-        const fc = f.field_costs?.[0] ?? null;
+        const fc = Array.isArray(f.field_costs) ? (f.field_costs[0] ?? null) : (f.field_costs ?? null);
         const sv = Array.isArray(fc?.seed_varieties) ? (fc.seed_varieties[0] ?? null) : (fc?.seed_varieties ?? null);
         const seedingRate: number | null =
           fc?.seeding_rate_override != null
