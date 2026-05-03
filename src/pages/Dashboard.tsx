@@ -72,13 +72,14 @@ export function Dashboard({ seasonId }: DashboardProps) {
       debounceTimerRef.current = setTimeout(() => { loadAll(); }, 300);
     };
 
+    const userFilter = `user_id=eq.${user.id}`;
     const channel = supabase
-      .channel('dashboard-updates')
+      .channel(`dashboard-updates-${user.id}-${seasonId}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'fields', filter: `season_id=eq.${seasonId}` }, debouncedLoad)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'field_costs' }, debouncedLoad)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'field_yields' }, debouncedLoad)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'commodity_sales' }, debouncedLoad)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'commodity_hedges' }, debouncedLoad)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'field_costs', filter: userFilter }, debouncedLoad)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'field_yields', filter: userFilter }, debouncedLoad)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'commodity_sales', filter: `season_id=eq.${seasonId}` }, debouncedLoad)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'commodity_hedges', filter: `season_id=eq.${seasonId}` }, debouncedLoad)
       .subscribe();
 
     return () => {

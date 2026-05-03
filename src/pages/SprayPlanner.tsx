@@ -64,7 +64,7 @@ interface WorkOrderResult {
     chemicals: Array<ChemicalItem & { totalDisplay: string }>;
   }>;
   totalAcres: number;
-  chemTotals: Array<ChemicalItem & { totalDisplay: string; totalValue: number; totalUnit: string }>;
+  chemTotals: Array<ChemicalItem & { totalDisplay: string; totalValue: number; totalUnit: string; totalRaw: number }>;
 }
 
 interface CrossTotalRow {
@@ -131,6 +131,7 @@ export function SprayPlanner({ currentSeasonId, effectiveUserId }: Props) {
           )
         `)
           .eq('user_id', effectiveUserId!)
+          .eq('season_id', currentSeasonId!)
           .order('program_name'),
       ]);
 
@@ -290,7 +291,7 @@ export function SprayPlanner({ currentSeasonId, effectiveUserId }: Props) {
 
       const chemTotals = [...chemTotalMap.values()].map(({ ch, totalRaw }) => {
         const practical = toBestPracticalUnit(totalRaw, ch.rateUnit);
-        return { ...ch, totalDisplay: practical.display, totalValue: practical.value, totalUnit: practical.unit };
+        return { ...ch, totalDisplay: practical.display, totalValue: practical.value, totalUnit: practical.unit, totalRaw };
       });
 
       return {
@@ -310,13 +311,13 @@ export function SprayPlanner({ currentSeasonId, effectiveUserId }: Props) {
       for (const ct of wo.chemTotals) {
         const existing = crossMap.get(ct.chemicalId);
         if (existing) {
-          existing.totalRaw += ct.ratePerAcre * wo.totalAcres;
+          existing.totalRaw += ct.totalRaw;
         } else {
           crossMap.set(ct.chemicalId, {
             chemicalId: ct.chemicalId,
             chemicalName: ct.chemicalName,
             rateUnit: ct.rateUnit,
-            totalRaw: ct.ratePerAcre * wo.totalAcres,
+            totalRaw: ct.totalRaw,
           });
         }
       }

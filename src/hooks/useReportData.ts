@@ -285,54 +285,57 @@ export function useReportData(userId: string | undefined) {
 
       const seasonIds = seasons.map((s) => s.id);
 
-      const [fieldsResults, salesResults] = await Promise.all([
-        Promise.all(
-          seasonIds.map((seasonId) =>
-            supabase
-              .from('fields')
-              .select(`
-                id, name, crop_type, acreage, land_rent_per_acre, property_tax_per_acre,
-                field_costs (
-                  seed_cost_per_acre, fertilizer_cost_per_acre, chemical_cost_per_acre,
-                  tillage_cost_per_acre, planting_cost_per_acre, harvest_cost_per_acre,
-                  equipment_cost_per_acre, custom_services_cost_per_acre, labor_cost_per_acre,
-                  crop_insurance_cost_per_acre, drying_storage_cost_per_acre, hauling_cost_per_acre,
-                  other_expenses_per_acre, total_cost_per_acre
-                ),
-                field_yields (
-                  yield_bushels_per_acre, total_yield_bushels
-                )
-              `)
-              .eq('season_id', seasonId)
-              .eq('user_id', userId)
-          )
-        ),
-        Promise.all(
-          seasonIds.map((seasonId) =>
-            supabase
-              .from('commodity_sales')
-              .select('id, crop_type, bushels_sold, price_per_bushel, total_revenue, sale_date, delivery_month, destination, notes')
-              .eq('season_id', seasonId)
-              .eq('user_id', userId)
-              .order('sale_date', { ascending: true })
-          )
-        ),
+      const [fieldsRes, salesRes] = await Promise.all([
+        supabase
+          .from('fields')
+          .select(`
+            id, name, crop_type, acreage, land_rent_per_acre, property_tax_per_acre, season_id,
+            field_costs (
+              seed_cost_per_acre, fertilizer_cost_per_acre, chemical_cost_per_acre,
+              tillage_cost_per_acre, planting_cost_per_acre, harvest_cost_per_acre,
+              equipment_cost_per_acre, custom_services_cost_per_acre, labor_cost_per_acre,
+              crop_insurance_cost_per_acre, drying_storage_cost_per_acre, hauling_cost_per_acre,
+              other_expenses_per_acre, total_cost_per_acre
+            ),
+            field_yields (
+              yield_bushels_per_acre, total_yield_bushels
+            )
+          `)
+          .in('season_id', seasonIds)
+          .eq('user_id', userId),
+        supabase
+          .from('commodity_sales')
+          .select('id, season_id, crop_type, bushels_sold, price_per_bushel, total_revenue, sale_date, delivery_month, destination, notes')
+          .in('season_id', seasonIds)
+          .eq('user_id', userId)
+          .order('sale_date', { ascending: true }),
       ]);
+
+      if (fieldsRes.error) throw fieldsRes.error;
+      if (salesRes.error) throw salesRes.error;
+
+      const fieldsBySeason = new Map<string, RawField[]>();
+      for (const row of (fieldsRes.data ?? []) as unknown as (RawField & { season_id: string })[]) {
+        const arr = fieldsBySeason.get(row.season_id) ?? [];
+        arr.push(row);
+        fieldsBySeason.set(row.season_id, arr);
+      }
+
+      type SaleRow = RawSale & { id: string; season_id: string; sale_date: string; delivery_month: string; destination: string; notes: string | null };
+      const salesBySeason = new Map<string, SaleRow[]>();
+      for (const row of (salesRes.data ?? []) as SaleRow[]) {
+        const arr = salesBySeason.get(row.season_id) ?? [];
+        arr.push(row);
+        salesBySeason.set(row.season_id, arr);
+      }
 
       const summaries: SeasonSummary[] = [];
       const allFields: FieldPerformanceSummary[] = [];
       const allSales: SaleRecord[] = [];
 
-      for (let i = 0; i < seasons.length; i++) {
-        const season = seasons[i];
-        const fieldsResult = fieldsResults[i];
-        const salesResult = salesResults[i];
-
-        if (fieldsResult.error) throw fieldsResult.error;
-        if (salesResult.error) throw salesResult.error;
-
-        const typedFields = (fieldsResult.data || []) as unknown as RawField[];
-        const typedSales = (salesResult.data || []) as (RawSale & { id: string; sale_date: string; delivery_month: string; destination: string; notes: string | null })[];
+      for (const season of seasons) {
+        const typedFields = fieldsBySeason.get(season.id) ?? [];
+        const typedSales = salesBySeason.get(season.id) ?? [];
 
         const summary = buildSeasonSummary(season as RawSeason, typedFields, typedSales);
         summaries.push(summary);

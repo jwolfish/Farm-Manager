@@ -213,16 +213,8 @@ function AppContent() {
       setCurrentSeason(season);
 
       if (user && activeFarm?.isOwn !== false) {
-        await supabase
-          .from('seasons')
-          .update({ is_active: false })
-          .eq('user_id', user.id);
-
-        await supabase
-          .from('seasons')
-          .update({ is_active: true })
-          .eq('id', seasonId)
-          .eq('user_id', user.id);
+        const { error } = await supabase.rpc('set_active_season', { p_season_id: seasonId });
+        if (error) console.error('set_active_season failed:', error);
       }
     }
   };
@@ -253,22 +245,16 @@ function AppContent() {
 
       if (error) throw error;
 
-      const defaultEquipmentRates = [
-        { crop_type: 'corn', rate_per_acre: 185.0 },
-        { crop_type: 'soybeans', rate_per_acre: 155.0 },
-        { crop_type: 'wheat', rate_per_acre: 145.0 },
-      ];
+      const defaultEquipmentRates = (['corn', 'soybeans', 'wheat'] as const).map((crop, i) => ({
+        season_id: data.id,
+        user_id: user.id,
+        crop_type: crop,
+        rate_per_acre: [185.0, 155.0, 145.0][i],
+        source: 'Iowa Custom Rate Survey 2026',
+        is_overridden: false,
+      }));
 
-      for (const rate of defaultEquipmentRates) {
-        await supabase.from('equipment_rates').insert({
-          season_id: data.id,
-          user_id: user.id,
-          crop_type: rate.crop_type as 'corn' | 'soybeans' | 'wheat',
-          rate_per_acre: rate.rate_per_acre,
-          source: 'Iowa Custom Rate Survey 2026',
-          is_overridden: false,
-        });
-      }
+      await supabase.from('equipment_rates').insert(defaultEquipmentRates);
 
       if (seasonFormData.importFromSeason) {
         setPendingSeasonId(data.id);

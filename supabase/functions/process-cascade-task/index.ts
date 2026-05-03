@@ -7,6 +7,8 @@ const corsHeaders = {
   "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Client-Info, Apikey",
 };
 
+const MAX_WARNINGS = 100;
+
 function convertUnits(fromUnit: string, toUnit: string, amount: number): number {
   const from = fromUnit.toLowerCase().trim();
   const to = toUnit.toLowerCase().trim();
@@ -69,57 +71,53 @@ async function withRetry<T>(fn: () => Promise<T>, maxRetries = 3): Promise<T> {
       }
     }
   }
-  throw lastError;
+  const msg = lastError instanceof Error ? lastError.message : String(lastError);
+  throw new Error(`Retry exhausted after ${maxRetries} attempts: ${msg}`, {
+    cause: lastError instanceof Error ? lastError : undefined,
+  });
 }
 
-async function logWarning(supabase: ReturnType<typeof createClient>, taskId: string, warning: string): Promise<void> {
-  const { data: task } = await supabase
-    .from("cascade_tasks")
-    .select("result_data")
-    .eq("id", taskId)
-    .maybeSingle();
+class WarningBuffer {
+  private warnings: string[] = [];
+  private truncated = 0;
 
-  if (task) {
-    const warnings = ((task.result_data as Record<string, unknown>)?.warnings as string[]) || [];
-    warnings.push(warning);
-    await supabase
-      .from("cascade_tasks")
-      .update({ result_data: { ...(task.result_data as object || {}), warnings } })
-      .eq("id", taskId);
+  add(msg: string): void {
+    if (this.warnings.length < MAX_WARNINGS) {
+      this.warnings.push(msg);
+    } else {
+      this.truncated++;
+    }
+  }
+
+  snapshot(): string[] {
+    if (this.truncated > 0) {
+      return [...this.warnings, `... ${this.truncated} more warnings truncated`];
+    }
+    return [...this.warnings];
   }
 }
 
 async function recalculateFertilizerProgramCost(
   supabase: ReturnType<typeof createClient>,
-  programId: string,
-  seasonId: string,
-  taskId: string,
-  previousCost?: number
+  programId: string
 ): Promise<{ programId: string; newCost: number } | null> {
   const { data: program } = await supabase
     .from("fertilizer_programs")
-    .select("id, application_cost, season_id")
+    .select("id, application_cost")
     .eq("id", programId)
     .maybeSingle();
 
   if (!program) return null;
 
-  if (program.season_id !== seasonId) {
-    await logWarning(supabase, taskId, `Program ${programId} is from different season`);
-  }
-
   const { data: items } = await supabase
     .from("fertilizer_program_items")
-    .select("id, application_rate, application_rate_unit, fertilizer_products(id, price_per_unit, unit_type, season_id)")
+    .select("id, application_rate, application_rate_unit, fertilizer_products(id, price_per_unit, unit_type)")
     .eq("program_id", programId);
 
   let totalCostPerAcre = 0;
   for (const item of items || []) {
     const product = (item as Record<string, unknown>).fertilizer_products as Record<string, unknown> | null;
     if (!product) continue;
-    if (product.season_id !== seasonId) {
-      await logWarning(supabase, taskId, `Product ${product.id} in program ${programId} is from different season`);
-    }
     totalCostPerAcre += calculateCostWithConversion(
       Number(item.application_rate),
       String(item.application_rate_unit),
@@ -134,35 +132,25 @@ async function recalculateFertilizerProgramCost(
 
 async function recalculateChemicalProgramCost(
   supabase: ReturnType<typeof createClient>,
-  programId: string,
-  seasonId: string,
-  taskId: string,
-  previousCost?: number
+  programId: string
 ): Promise<{ programId: string; newCost: number } | null> {
   const { data: program } = await supabase
     .from("chemical_programs")
-    .select("id, application_cost, season_id")
+    .select("id, application_cost")
     .eq("id", programId)
     .maybeSingle();
 
   if (!program) return null;
 
-  if (program.season_id !== seasonId) {
-    await logWarning(supabase, taskId, `Program ${programId} is from different season`);
-  }
-
   const { data: items } = await supabase
     .from("chemical_program_items")
-    .select("id, application_rate, application_rate_unit, individual_chemicals(id, price_per_unit, unit_type, season_id)")
+    .select("id, application_rate, application_rate_unit, individual_chemicals(id, price_per_unit, unit_type)")
     .eq("program_id", programId);
 
   let totalCostPerAcre = 0;
   for (const item of items || []) {
     const chemical = (item as Record<string, unknown>).individual_chemicals as Record<string, unknown> | null;
     if (!chemical) continue;
-    if (chemical.season_id !== seasonId) {
-      await logWarning(supabase, taskId, `Chemical ${chemical.id} in program ${programId} is from different season`);
-    }
     totalCostPerAcre += calculateCostWithConversion(
       Number(item.application_rate),
       String(item.application_rate_unit),
@@ -179,7 +167,7 @@ async function cascadeTemplateUpdateInSeason(
   supabase: ReturnType<typeof createClient>,
   templateId: string,
   seasonId: string,
-  taskId: string
+  warnings: WarningBuffer
 ): Promise<{ fieldsUpdated: number; failedFieldIds: string[] }> {
   const { data: template } = await supabase
     .from("cost_templates")
@@ -192,73 +180,77 @@ async function cascadeTemplateUpdateInSeason(
 
   const { data: fieldCostRows } = await supabase
     .from("field_costs")
-    .select("field_id")
+    .select("*")
     .eq("template_id", templateId);
+
+  if (!fieldCostRows || fieldCostRows.length === 0) {
+    return { fieldsUpdated: 0, failedFieldIds: [] };
+  }
+
+  const fieldIds = fieldCostRows.map((r: Record<string, unknown>) => r.field_id as string);
+
+  const { data: overrideRows } = await supabase
+    .from("field_cost_overrides")
+    .select("field_id, cost_item_name")
+    .in("field_id", fieldIds);
+
+  const overridesByField = new Map<string, Set<string>>();
+  for (const o of overrideRows || []) {
+    const fid = (o as Record<string, unknown>).field_id as string;
+    const name = (o as Record<string, unknown>).cost_item_name as string;
+    if (!overridesByField.has(fid)) overridesByField.set(fid, new Set());
+    overridesByField.get(fid)!.add(name);
+  }
+
+  const fertilizerTemplateCost = Array.isArray(template.fertilizer_programs)
+    ? (template.fertilizer_programs as Array<{ cost_per_acre?: number }>).reduce((s, p) => s + (p.cost_per_acre || 0), 0)
+    : 0;
+  const chemicalTemplateCost = Array.isArray(template.chemical_programs)
+    ? (template.chemical_programs as Array<{ cost_per_acre?: number }>).reduce((s, p) => s + (p.cost_per_acre || 0), 0)
+    : 0;
+
+  const costFields = [
+    "tillage_cost_per_acre", "planting_cost_per_acre", "harvest_cost_per_acre",
+    "equipment_cost_per_acre", "custom_services_cost_per_acre", "labor_cost_per_acre",
+    "crop_insurance_cost_per_acre", "drying_storage_cost_per_acre", "hauling_cost_per_acre",
+    "other_expenses_per_acre",
+  ];
 
   let fieldsUpdated = 0;
   const failedFieldIds: string[] = [];
 
-  for (const row of fieldCostRows || []) {
-    const fieldId = row.field_id;
+  await Promise.all(fieldCostRows.map(async (currentFieldCost: Record<string, unknown>) => {
+    const fieldId = currentFieldCost.field_id as string;
     try {
-      const { data: overrides } = await supabase
-        .from("field_cost_overrides")
-        .select("cost_item_name")
-        .eq("field_id", fieldId);
-
-      const overrideMap = new Set((overrides || []).map((o: Record<string, unknown>) => o.cost_item_name));
-
+      const overrideMap = overridesByField.get(fieldId) ?? new Set<string>();
       const updates: Record<string, unknown> = {};
 
       if (!overrideMap.has("fertilizer_programs")) {
-        updates.fertilizer_cost_per_acre = Array.isArray(template.fertilizer_programs)
-          ? (template.fertilizer_programs as Array<{ cost_per_acre?: number }>).reduce((s, p) => s + (p.cost_per_acre || 0), 0)
-          : 0;
+        updates.fertilizer_cost_per_acre = fertilizerTemplateCost;
       }
       if (!overrideMap.has("chemical_programs")) {
-        updates.chemical_cost_per_acre = Array.isArray(template.chemical_programs)
-          ? (template.chemical_programs as Array<{ cost_per_acre?: number }>).reduce((s, p) => s + (p.cost_per_acre || 0), 0)
-          : 0;
+        updates.chemical_cost_per_acre = chemicalTemplateCost;
       }
-
-      const costFields = [
-        "tillage_cost_per_acre", "planting_cost_per_acre", "harvest_cost_per_acre",
-        "equipment_cost_per_acre", "custom_services_cost_per_acre", "labor_cost_per_acre",
-        "crop_insurance_cost_per_acre", "drying_storage_cost_per_acre", "hauling_cost_per_acre",
-        "other_expenses_per_acre"
-      ];
-
       for (const field of costFields) {
         if (!overrideMap.has(field)) {
-          updates[field] = template[field] || 0;
+          updates[field] = (template as Record<string, unknown>)[field] || 0;
         }
       }
 
-      const { data: currentFieldCost } = await supabase
-        .from("field_costs")
-        .select("*")
-        .eq("field_id", fieldId)
-        .maybeSingle();
-
-      if (currentFieldCost) {
-        updates.total_cost_per_acre = calculateFieldTotalCost({ ...currentFieldCost, ...updates });
-      }
+      updates.total_cost_per_acre = calculateFieldTotalCost({ ...currentFieldCost, ...updates });
 
       const { error: updateError } = await supabase
         .from("field_costs")
         .update(updates)
         .eq("field_id", fieldId);
 
-      if (updateError) {
-        throw updateError;
-      }
-
+      if (updateError) throw updateError;
       fieldsUpdated++;
     } catch (err) {
       failedFieldIds.push(fieldId);
-      await logWarning(supabase, taskId, `Failed to update field ${fieldId}: ${err instanceof Error ? err.message : String(err)}`);
+      warnings.add(`Failed to update field ${fieldId}: ${err instanceof Error ? err.message : String(err)}`);
     }
-  }
+  }));
 
   return { fieldsUpdated, failedFieldIds };
 }
@@ -268,7 +260,7 @@ async function cascadeProgramUpdateInSeason(
   programId: string,
   programType: "fertilizer" | "chemical",
   seasonId: string,
-  taskId: string
+  warnings: WarningBuffer
 ): Promise<{ templatesUpdated: number; fieldsUpdated: number }> {
   const programField = programType === "fertilizer" ? "fertilizer_programs" : "chemical_programs";
   let templatesUpdated = 0;
@@ -281,20 +273,9 @@ async function cascadeProgramUpdateInSeason(
 
   if (!templates) return { templatesUpdated: 0, fieldsUpdated: 0 };
 
-  let storedProgramCost: number | undefined;
-  for (const template of templates) {
-    const programs = template[programField] as Array<{ program_id: string; cost_per_acre?: number }> | null;
-    if (!Array.isArray(programs)) continue;
-    const ref = programs.find(p => p.program_id === programId);
-    if (ref && typeof ref.cost_per_acre === "number") {
-      storedProgramCost = ref.cost_per_acre;
-      break;
-    }
-  }
-
   const recalcResult = programType === "fertilizer"
-    ? await recalculateFertilizerProgramCost(supabase, programId, seasonId, taskId, storedProgramCost)
-    : await recalculateChemicalProgramCost(supabase, programId, seasonId, taskId, storedProgramCost);
+    ? await recalculateFertilizerProgramCost(supabase, programId)
+    : await recalculateChemicalProgramCost(supabase, programId);
 
   if (!recalcResult) return { templatesUpdated: 0, fieldsUpdated: 0 };
 
@@ -303,11 +284,6 @@ async function cascadeProgramUpdateInSeason(
     if (!Array.isArray(programs)) continue;
     const programRef = programs.find(p => p.program_id === programId);
     if (!programRef) continue;
-
-    if (template.season_id !== seasonId) {
-      await logWarning(supabase, taskId, `Template ${template.id} is from different season`);
-      continue;
-    }
 
     programRef.cost_per_acre = recalcResult.newCost;
 
@@ -318,7 +294,7 @@ async function cascadeProgramUpdateInSeason(
 
     if (!error) {
       templatesUpdated++;
-      const result = await cascadeTemplateUpdateInSeason(supabase, template.id, seasonId, taskId);
+      const result = await cascadeTemplateUpdateInSeason(supabase, template.id as string, seasonId, warnings);
       fieldsUpdated += result.fieldsUpdated;
     }
   }
@@ -332,7 +308,7 @@ async function runCascadeProductUpdate(
   supabase: ReturnType<typeof createClient>,
   entityId: string,
   seasonId: string,
-  taskId: string
+  warnings: WarningBuffer
 ): Promise<CascadeStats> {
   const { data: programs } = await supabase
     .from("fertilizer_programs")
@@ -346,9 +322,9 @@ async function runCascadeProductUpdate(
   const failedFieldIds: string[] = [];
 
   for (const program of programs || []) {
-    await withRetry(() => recalculateFertilizerProgramCost(supabase, program.id, seasonId, taskId));
+    await withRetry(() => recalculateFertilizerProgramCost(supabase, program.id as string));
     programsUpdated++;
-    const r = await withRetry(() => cascadeProgramUpdateInSeason(supabase, program.id, "fertilizer", seasonId, taskId));
+    const r = await withRetry(() => cascadeProgramUpdateInSeason(supabase, program.id as string, "fertilizer", seasonId, warnings));
     templatesUpdated += r.templatesUpdated;
     fieldsUpdated += r.fieldsUpdated;
   }
@@ -360,7 +336,7 @@ async function runCascadeChemicalUpdate(
   supabase: ReturnType<typeof createClient>,
   entityId: string,
   seasonId: string,
-  taskId: string
+  warnings: WarningBuffer
 ): Promise<CascadeStats> {
   const { data: programs } = await supabase
     .from("chemical_programs")
@@ -374,9 +350,9 @@ async function runCascadeChemicalUpdate(
   const failedFieldIds: string[] = [];
 
   for (const program of programs || []) {
-    await withRetry(() => recalculateChemicalProgramCost(supabase, program.id, seasonId, taskId));
+    await withRetry(() => recalculateChemicalProgramCost(supabase, program.id as string));
     programsUpdated++;
-    const r = await withRetry(() => cascadeProgramUpdateInSeason(supabase, program.id, "chemical", seasonId, taskId));
+    const r = await withRetry(() => cascadeProgramUpdateInSeason(supabase, program.id as string, "chemical", seasonId, warnings));
     templatesUpdated += r.templatesUpdated;
     fieldsUpdated += r.fieldsUpdated;
   }
@@ -389,9 +365,9 @@ async function runCascadeProgramUpdate(
   entityId: string,
   programType: "fertilizer" | "chemical",
   seasonId: string,
-  taskId: string
+  warnings: WarningBuffer
 ): Promise<CascadeStats> {
-  const r = await withRetry(() => cascadeProgramUpdateInSeason(supabase, entityId, programType, seasonId, taskId));
+  const r = await withRetry(() => cascadeProgramUpdateInSeason(supabase, entityId, programType, seasonId, warnings));
   return { programsUpdated: 1, templatesUpdated: r.templatesUpdated, fieldsUpdated: r.fieldsUpdated, failedFieldIds: [] };
 }
 
@@ -399,9 +375,9 @@ async function runCascadeTemplateUpdate(
   supabase: ReturnType<typeof createClient>,
   entityId: string,
   seasonId: string,
-  taskId: string
-): Promise<{ programsUpdated: number; templatesUpdated: number; fieldsUpdated: number; failedFieldIds: string[] }> {
-  const result = await withRetry(() => cascadeTemplateUpdateInSeason(supabase, entityId, seasonId, taskId));
+  warnings: WarningBuffer
+): Promise<CascadeStats> {
+  const result = await withRetry(() => cascadeTemplateUpdateInSeason(supabase, entityId, seasonId, warnings));
   return { programsUpdated: 0, templatesUpdated: 1, fieldsUpdated: result.fieldsUpdated, failedFieldIds: result.failedFieldIds };
 }
 
@@ -471,17 +447,18 @@ Deno.serve(async (req: Request) => {
     const entityId = task.entity_id as string;
     const programType = (task.program_type as "fertilizer" | "chemical" | null) ?? "fertilizer";
 
+    const warnings = new WarningBuffer();
     let stats: CascadeStats = { programsUpdated: 0, templatesUpdated: 0, fieldsUpdated: 0, failedFieldIds: [] };
 
     try {
       if (taskType === "cascade_product_update") {
-        stats = await runCascadeProductUpdate(supabaseAdmin, entityId, seasonId, taskId);
+        stats = await runCascadeProductUpdate(supabaseAdmin, entityId, seasonId, warnings);
       } else if (taskType === "cascade_chemical_update") {
-        stats = await runCascadeChemicalUpdate(supabaseAdmin, entityId, seasonId, taskId);
+        stats = await runCascadeChemicalUpdate(supabaseAdmin, entityId, seasonId, warnings);
       } else if (taskType === "cascade_program_update") {
-        stats = await runCascadeProgramUpdate(supabaseAdmin, entityId, programType, seasonId, taskId);
+        stats = await runCascadeProgramUpdate(supabaseAdmin, entityId, programType, seasonId, warnings);
       } else if (taskType === "cascade_template_update") {
-        stats = await runCascadeTemplateUpdate(supabaseAdmin, entityId, seasonId, taskId);
+        stats = await runCascadeTemplateUpdate(supabaseAdmin, entityId, seasonId, warnings);
       }
 
       const { data: currentTask } = await supabaseAdmin
@@ -503,6 +480,7 @@ Deno.serve(async (req: Request) => {
           templatesUpdated: stats.templatesUpdated,
           fieldsUpdated: stats.fieldsUpdated,
           failedFieldIds: stats.failedFieldIds,
+          warnings: warnings.snapshot(),
         },
       }).eq("id", taskId);
 
@@ -512,6 +490,7 @@ Deno.serve(async (req: Request) => {
         status: "failed",
         completed_at: new Date().toISOString(),
         error_message: errorMsg,
+        result_data: { warnings: warnings.snapshot() },
       }).eq("id", taskId);
     }
 

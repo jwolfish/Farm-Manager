@@ -61,7 +61,7 @@ export function Yields({ seasonId }: YieldsProps) {
     soybeans: '',
     wheat: '',
   });
-  const autosaveTimers = useRef<Record<string, NodeJS.Timeout>>({});
+  const autosaveTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
 
   useEffect(() => {
     if (seasonId && user) {
@@ -99,9 +99,14 @@ export function Yields({ seasonId }: YieldsProps) {
         .from('seasons')
         .select('id, corn_price_per_bushel, soybeans_price_per_bushel, wheat_price_per_bushel')
         .eq('id', seasonId)
-        .single();
+        .maybeSingle();
 
       if (seasonError) throw seasonError;
+      if (!seasonData) {
+        setFields([]);
+        setSeason(null);
+        return;
+      }
       setSeason(seasonData);
 
       setPriceInputs({
@@ -347,6 +352,7 @@ export function Yields({ seasonId }: YieldsProps) {
   };
 
   const autosaveYield = useCallback(async (field: FieldWithYield) => {
+    if (!user) return;
     if (!field.yield || field.yield.yield_bushels_per_acre <= 0) {
       return;
     }
@@ -356,7 +362,7 @@ export function Yields({ seasonId }: YieldsProps) {
     try {
       const yieldData = {
         field_id: field.id,
-        user_id: user!.id,
+        user_id: user.id,
         yield_bushels_per_acre: field.yield.yield_bushels_per_acre,
         total_yield_bushels: field.yield.total_yield_bushels,
         harvest_date: field.yield.harvest_date || null,
