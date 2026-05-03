@@ -25,6 +25,7 @@ import {
   User,
   Tractor,
   Check,
+  Droplets,
 } from 'lucide-react';
 
 interface DashboardLayoutProps {
@@ -97,6 +98,7 @@ export function DashboardLayout({
     { id: 'templates', name: 'Cost Templates', icon: FileText },
     { id: 'yields', name: 'Yields', icon: Wheat },
     { id: 'sales', name: 'Sales', icon: TrendingUp },
+    { id: 'spray-planner', name: 'Spray Planner', icon: Droplets },
     { id: 'reports', name: 'Reports', icon: BarChart3 },
   ];
 

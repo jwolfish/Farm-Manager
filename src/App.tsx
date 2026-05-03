@@ -12,6 +12,7 @@ import { CostTemplates } from './pages/CostTemplates';
 import { Yields } from './pages/Yields';
 import { SalesTracking } from './pages/SalesTracking';
 import { Reports } from './pages/Reports';
+import { SprayPlanner } from './pages/SprayPlanner';
 import { AccountSettings } from './pages/AccountSettings';
 import { FarmSettings } from './pages/FarmSettings';
 import { Team } from './pages/Team';
@@ -729,6 +730,12 @@ function AppContent() {
       {activePage === 'templates' && <CostTemplates seasonId={currentSeason?.id || null} readOnly={activeRole === 'viewer'} />}
       {activePage === 'yields' && <Yields seasonId={currentSeason?.id || null} readOnly={activeRole === 'viewer'} />}
       {activePage === 'sales' && <SalesTracking seasonId={currentSeason?.id || null} readOnly={activeRole === 'viewer'} />}
+      {activePage === 'spray-planner' && (
+        <SprayPlanner
+          currentSeasonId={currentSeason?.id || null}
+          effectiveUserId={activeFarm ? activeFarm.ownerId ?? user?.id ?? null : user?.id ?? null}
+        />
+      )}
       {activePage === 'reports' && <Reports currentSeasonId={currentSeason?.id || null} />}
       {activePage === 'account-settings' && isOwnFarm && <AccountSettings />}
       {activePage === 'farm-settings' && isOwnFarm && (
