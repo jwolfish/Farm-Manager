@@ -83,7 +83,7 @@ export function SeedBagRequirements({ currentSeasonId, effectiveUserId }: Props)
 
       const built: FieldSeedRow[] = (fields ?? []).map((f: any) => {
         const fc = f.field_costs?.[0] ?? null;
-        const sv = fc?.seed_varieties ?? null;
+        const sv = Array.isArray(fc?.seed_varieties) ? (fc.seed_varieties[0] ?? null) : (fc?.seed_varieties ?? null);
         const seedingRate: number | null =
           fc?.seeding_rate_override != null
             ? Number(fc.seeding_rate_override)
