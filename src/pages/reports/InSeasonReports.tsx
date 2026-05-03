@@ -1,4 +1,5 @@
 import { SeedBagRequirements } from './seeds/SeedBagRequirements';
+import { ChemicalWorkOrders } from './chemicals/ChemicalWorkOrders';
 
 interface Props {
   currentSeasonId: string | null;
@@ -11,7 +12,7 @@ export function InSeasonReports({ currentSeasonId, effectiveUserId, loading, err
   if (loading) {
     return (
       <div className="space-y-6">
-        {[1].map((i) => (
+        {[1, 2].map((i) => (
           <div key={i} className="bg-white rounded-xl border border-gray-200 p-6 animate-pulse">
             <div className="h-5 bg-gray-200 rounded w-48 mb-3" />
             <div className="h-64 bg-gray-100 rounded" />
@@ -32,6 +33,7 @@ export function InSeasonReports({ currentSeasonId, effectiveUserId, loading, err
   return (
     <div className="space-y-8">
       <SeedBagRequirements currentSeasonId={currentSeasonId} effectiveUserId={effectiveUserId} />
+      <ChemicalWorkOrders currentSeasonId={currentSeasonId} effectiveUserId={effectiveUserId} />
     </div>
   );
 }

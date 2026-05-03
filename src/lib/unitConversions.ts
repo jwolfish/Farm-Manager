@@ -152,6 +152,58 @@ export function convertUnits(
   return amount;
 }
 
+const LIQUID_UNITS = new Set(['fl oz', 'fluid ounce', 'liquid ounce', 'pt', 'pint', 'qt', 'quart', 'gal', 'gallon']);
+const DRY_UNITS = new Set(['oz', 'ounce', 'lb', 'lbs', 'pound', 'ton']);
+
+export function toBestPracticalUnit(totalAmount: number, unit: string): { value: number; unit: string; display: string } {
+  const u = unit.toLowerCase().trim();
+
+  if (LIQUID_UNITS.has(u)) {
+    // Convert everything to fl oz first
+    let flOz = totalAmount;
+    if (u === 'gal' || u === 'gallon') flOz = totalAmount * 128;
+    else if (u === 'qt' || u === 'quart') flOz = totalAmount * 32;
+    else if (u === 'pt' || u === 'pint') flOz = totalAmount * 16;
+
+    if (flOz >= 128) {
+      const val = flOz / 128;
+      return { value: val, unit: 'gal', display: `${val.toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 2 })} gal` };
+    } else if (flOz >= 32) {
+      const val = flOz / 32;
+      return { value: val, unit: 'qt', display: `${val.toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 2 })} qt` };
+    } else if (flOz >= 16) {
+      const val = flOz / 16;
+      return { value: val, unit: 'pt', display: `${val.toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 2 })} pt` };
+    } else {
+      return { value: flOz, unit: 'fl oz', display: `${flOz.toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 2 })} fl oz` };
+    }
+  }
+
+  if (DRY_UNITS.has(u)) {
+    // Convert everything to oz first
+    let oz = totalAmount;
+    if (u === 'lb' || u === 'lbs' || u === 'pound') oz = totalAmount * 16;
+    else if (u === 'ton') oz = totalAmount * 32000;
+
+    if (oz >= 32000) {
+      const val = oz / 32000;
+      return { value: val, unit: 'ton', display: `${val.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })} ton` };
+    } else if (oz >= 16) {
+      const val = oz / 16;
+      return { value: val, unit: 'lbs', display: `${val.toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 2 })} lbs` };
+    } else {
+      return { value: oz, unit: 'oz', display: `${oz.toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 2 })} oz` };
+    }
+  }
+
+  // Unknown unit — return as-is
+  return {
+    value: totalAmount,
+    unit,
+    display: `${totalAmount.toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 2 })} ${unit}`,
+  };
+}
+
 export function calculateCostWithConversion(
   applicationRate: number,
   applicationUnit: string,
