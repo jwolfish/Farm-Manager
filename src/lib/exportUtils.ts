@@ -96,10 +96,11 @@ export function exportSeedBagRequirementsPDF(
       doc.text(hybridLines[0], x + 8, y + 23);
 
       doc.setFontSize(14);
+      const bagNumWidth = doc.getTextWidth(`${h.totalBags}`);
       doc.text(`${h.totalBags}`, x + 8, y + 39);
       doc.setFontSize(8);
       doc.setFont('helvetica', 'normal');
-      doc.text('bags', x + 8 + doc.getTextWidth(`${h.totalBags}`) + 3, y + 39);
+      doc.text('bags', x + 8 + bagNumWidth + 3, y + 39);
 
       doc.setFontSize(7);
       doc.setTextColor(rgb[0], rgb[1], rgb[2]);
