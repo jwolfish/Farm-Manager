@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { AlertTriangle, Sprout } from 'lucide-react';
 import { ReportCard } from '../../../components/reports/ReportCard';
-import { exportTableToCSV } from '../../../lib/exportUtils';
+import { exportTableToCSV, exportSeedBagRequirementsPDF } from '../../../lib/exportUtils';
 import { supabase } from '../../../lib/supabase';
 import { CropType } from '../../../lib/database.types';
 
@@ -39,6 +39,7 @@ function fmtNum(n: number, decimals = 1) {
 
 export function SeedBagRequirements({ currentSeasonId, effectiveUserId }: Props) {
   const [rows, setRows] = useState<FieldSeedRow[]>([]);
+  const [seasonName, setSeasonName] = useState<string>('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [cropFilter, setCropFilter] = useState<CropType | 'all'>('all');
@@ -54,9 +55,9 @@ export function SeedBagRequirements({ currentSeasonId, effectiveUserId }: Props)
       setLoading(true);
       setError(null);
 
-      const { data: fields, error: fieldsErr } = await supabase
-        .from('fields')
-        .select(`
+      const [seasonRes, fieldsRes] = await Promise.all([
+        supabase.from('seasons').select('name, year').eq('id', currentSeasonId).maybeSingle(),
+        supabase.from('fields').select(`
           id,
           name,
           crop_type,
@@ -73,7 +74,15 @@ export function SeedBagRequirements({ currentSeasonId, effectiveUserId }: Props)
         `)
         .eq('season_id', currentSeasonId)
         .eq('user_id', effectiveUserId)
-        .order('name');
+        .order('name'),
+      ]);
+
+      if (seasonRes.data) {
+        setSeasonName(`${seasonRes.data.name} (${seasonRes.data.year})`);
+      }
+
+      const fields = fieldsRes.data;
+      const fieldsErr = fieldsRes.error;
 
       if (fieldsErr) {
         setError('Failed to load field data.');
@@ -167,6 +176,14 @@ export function SeedBagRequirements({ currentSeasonId, effectiveUserId }: Props)
     exportTableToCSV('seed-bag-requirements', headers, csvRows);
   };
 
+  const handleExportPDF = () => {
+    exportSeedBagRequirementsPDF(
+      sorted,
+      [...hybridTotals.values()],
+      seasonName
+    );
+  };
+
   if (!currentSeasonId) {
     return (
       <ReportCard title="Seed Bag Requirements" description="Bags of seed needed per field based on the current planting plan">
@@ -182,6 +199,7 @@ export function SeedBagRequirements({ currentSeasonId, effectiveUserId }: Props)
       loading={loading}
       error={error}
       onExportCSV={sorted.length > 0 ? handleExportCSV : undefined}
+      onExportPDF={sorted.length > 0 ? handleExportPDF : undefined}
     >
       {/* Incomplete warning */}
       {incompleteCount > 0 && (
