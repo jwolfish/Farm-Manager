@@ -1,16 +1,19 @@
 import { useEffect, useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
+import { useFarm } from '../contexts/FarmContext';
 import { supabase } from '../lib/supabase';
 import { useReportData } from '../hooks/useReportData';
 import { ProfitabilityReports } from './reports/ProfitabilityReports';
 import { FieldPerformanceReports } from './reports/FieldPerformanceReports';
 import { SalesReports } from './reports/SalesReports';
 import { CostEfficiencyReports } from './reports/CostEfficiencyReports';
+import { InSeasonReports } from './reports/InSeasonReports';
 import {
   DollarSign,
   MapPin,
   TrendingUp,
   Calculator,
+  Tractor,
   ChevronRight,
 } from 'lucide-react';
 
@@ -76,6 +79,18 @@ const CATEGORIES: Category[] = [
     reportCount: 3,
     availableCount: 3,
   },
+  {
+    id: 'inseason',
+    name: 'In-Season Operations',
+    description: 'Seed bag requirements by field, planting plans, and operational checklists',
+    icon: Tractor,
+    color: 'text-teal-700',
+    bgColor: 'bg-teal-50',
+    borderColor: 'border-teal-200',
+    available: true,
+    reportCount: 1,
+    availableCount: 1,
+  },
 ];
 
 interface ReportsProps {
@@ -84,6 +99,7 @@ interface ReportsProps {
 
 export function Reports({ currentSeasonId }: ReportsProps) {
   const { user } = useAuth();
+  const { effectiveUserId } = useFarm();
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
   const [farmName, setFarmName] = useState<string | null>(null);
   const { data, fieldData, salesData, loading, error } = useReportData(user?.id);
@@ -135,6 +151,9 @@ export function Reports({ currentSeasonId }: ReportsProps) {
         )}
         {activeCategory === 'costs' && (
           <CostEfficiencyReports fieldData={fieldData} seasonData={data} farmName={farmName} loading={loading} error={error} currentSeasonId={currentSeasonId} />
+        )}
+        {activeCategory === 'inseason' && (
+          <InSeasonReports currentSeasonId={currentSeasonId} effectiveUserId={effectiveUserId} loading={loading} error={error} />
         )}
 
       </div>
