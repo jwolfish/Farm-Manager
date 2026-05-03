@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { SeasonSummary, CropSummary, CostBreakdown, FieldPerformanceSummary, SaleRecord } from '../lib/reportTypes';
 import { CropType } from '../lib/database.types';
@@ -256,15 +256,7 @@ export function useReportData(userId: string | undefined) {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (!userId) {
-      setLoading(false);
-      return;
-    }
-    loadData();
-  }, [userId]);
-
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     if (!userId) return;
     setLoading(true);
     setError(null);
@@ -369,7 +361,15 @@ export function useReportData(userId: string | undefined) {
     } finally {
       setLoading(false);
     }
-  };
+  }, [userId]);
+
+  useEffect(() => {
+    if (!userId) {
+      setLoading(false);
+      return;
+    }
+    loadData();
+  }, [userId, loadData]);
 
   return { data, fieldData, salesData, loading, error, reload: loadData };
 }

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import { Plus, CreditCard as Edit2, Trash2, Package, Droplet, FlaskConical, Layers, Copy } from 'lucide-react';
@@ -80,14 +80,20 @@ export function Products({ seasonId, readOnly = false }: ProductsProps) {
   const [chemicals, setChemicals] = useState<IndividualChemical[]>([]);
   const [programs, setPrograms] = useState<ChemicalProgram[]>([]);
 
-  useEffect(() => {
-    if (seasonId && user) {
-      loadProducts();
-    }
-  }, [seasonId, user?.id, activeTab]);
+  const loadedTabsRef = useRef<Set<ProductType>>(new Set());
+  const loadedKeyRef = useRef<string | null>(null);
 
-  const loadProducts = async () => {
+  const loadProducts = useCallback(async (options?: { force?: boolean }) => {
     if (!seasonId || !user) return;
+
+    const key = `${seasonId}:${user.id}`;
+    if (loadedKeyRef.current !== key) {
+      loadedTabsRef.current = new Set();
+      loadedKeyRef.current = key;
+    }
+    if (!options?.force && loadedTabsRef.current.has(activeTab)) {
+      return;
+    }
 
     setLoading(true);
     try {
@@ -132,12 +138,29 @@ export function Products({ seasonId, readOnly = false }: ProductsProps) {
           .order('program_name');
         setPrograms(data || []);
       }
+      loadedTabsRef.current.add(activeTab);
     } catch (error) {
       console.error('Error loading products:', error);
     } finally {
       setLoading(false);
     }
-  };
+  }, [seasonId, user, activeTab]);
+
+  useEffect(() => {
+    if (seasonId && user) {
+      loadProducts();
+    }
+  }, [seasonId, user, activeTab, loadProducts]);
+
+  const reloadActiveTab = useCallback(() => {
+    loadedTabsRef.current.delete(activeTab);
+    loadProducts({ force: true });
+  }, [activeTab, loadProducts]);
+
+  const reloadAllTabs = useCallback(() => {
+    loadedTabsRef.current = new Set();
+    loadProducts({ force: true });
+  }, [loadProducts]);
 
   const tabs = [
     { id: 'seeds' as ProductType, name: 'Seed Varieties', icon: Package },
@@ -207,9 +230,9 @@ export function Products({ seasonId, readOnly = false }: ProductsProps) {
         </div>
       )}
 
-      {activeTab === 'seeds' && <SeedsList seeds={seeds} seasonId={seasonId} onReload={loadProducts} showForm={showForm} onHideForm={() => setShowForm(false)} />}
-      {activeTab === 'fertilizers' && <FertilizersList fertilizers={fertilizers} seasonId={seasonId} onReload={loadProducts} showForm={showForm} onHideForm={() => setShowForm(false)} />}
-      {activeTab === 'chemicals' && <ChemicalsList chemicals={chemicals} seasonId={seasonId} onReload={loadProducts} showForm={showForm} onHideForm={() => setShowForm(false)} />}
+      {activeTab === 'seeds' && <SeedsList seeds={seeds} seasonId={seasonId} onReload={reloadActiveTab} showForm={showForm} onHideForm={() => setShowForm(false)} />}
+      {activeTab === 'fertilizers' && <FertilizersList fertilizers={fertilizers} seasonId={seasonId} onReload={reloadActiveTab} showForm={showForm} onHideForm={() => setShowForm(false)} />}
+      {activeTab === 'chemicals' && <ChemicalsList chemicals={chemicals} seasonId={seasonId} onReload={reloadActiveTab} showForm={showForm} onHideForm={() => setShowForm(false)} />}
       {activeTab === 'programs' && (
         <div className="space-y-6">
           <div className="flex gap-2 bg-gray-100 p-1 rounded-lg w-fit">
@@ -259,7 +282,7 @@ export function Products({ seasonId, readOnly = false }: ProductsProps) {
             userId={user.id}
             onComplete={() => {
               setCrossFarmSourceSeasonId(null);
-              loadProducts();
+              reloadAllTabs();
             }}
             onCancel={() => setCrossFarmSourceSeasonId(null)}
           />

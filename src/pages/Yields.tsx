@@ -64,12 +64,6 @@ export function Yields({ seasonId }: YieldsProps) {
   const autosaveTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
 
   useEffect(() => {
-    if (seasonId && user) {
-      loadFieldsAndYields();
-    }
-  }, [seasonId, user?.id]);
-
-  useEffect(() => {
     return () => {
       Object.values(autosaveTimers.current).forEach(timer => clearTimeout(timer));
     };
@@ -91,7 +85,7 @@ export function Yields({ seasonId }: YieldsProps) {
     return { grossRevenue, profit };
   };
 
-  const loadFieldsAndYields = async () => {
+  const loadFieldsAndYields = useCallback(async () => {
     if (!seasonId || !user) return;
 
     try {
@@ -180,7 +174,13 @@ export function Yields({ seasonId }: YieldsProps) {
     } finally {
       setLoading(false);
     }
-  };
+  }, [seasonId, user]);
+
+  useEffect(() => {
+    if (seasonId && user) {
+      loadFieldsAndYields();
+    }
+  }, [seasonId, user, loadFieldsAndYields]);
 
   const getSeasonPrice = (cropType: CropType): number | null => {
     if (!season) return null;

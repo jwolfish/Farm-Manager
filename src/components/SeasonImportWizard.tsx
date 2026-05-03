@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { X, ChevronLeft, ChevronRight, Check, AlertCircle } from 'lucide-react';
 import {
   loadSeasonData,
@@ -97,11 +97,7 @@ export function SeasonImportWizard({ sourceSeasonId, newSeasonId, userId, onComp
     chemicalPrograms: {},
   });
 
-  useEffect(() => {
-    loadData();
-  }, [sourceSeasonId]);
-
-  const loadData = async () => {
+  const loadData = useCallback(async () => {
     setLoading(true);
     try {
       const data = await loadSeasonData(sourceSeasonId, userId);
@@ -175,7 +171,11 @@ export function SeasonImportWizard({ sourceSeasonId, newSeasonId, userId, onComp
     } finally {
       setLoading(false);
     }
-  };
+  }, [sourceSeasonId, userId]);
+
+  useEffect(() => {
+    loadData();
+  }, [loadData]);
 
   const handleCategoryToggle = (category: keyof typeof selectedCategories) => {
     const newCategories = { ...selectedCategories, [category]: !selectedCategories[category] };

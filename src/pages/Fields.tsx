@@ -62,13 +62,7 @@ export function Fields({ seasonId, onViewFieldDetail }: FieldsProps) {
   const wizardActiveRef = useRef(false);
   const beforeUnloadHandlerRef = useRef<((e: BeforeUnloadEvent) => void) | null>(null);
 
-  useEffect(() => {
-    if (seasonId && user) {
-      loadFields();
-    }
-  }, [seasonId, user?.id]);
-
-  const loadFields = async () => {
+  const loadFields = useCallback(async () => {
     if (!seasonId || !user) return;
 
     if (wizardActiveRef.current) {
@@ -136,7 +130,13 @@ export function Fields({ seasonId, onViewFieldDetail }: FieldsProps) {
     } finally {
       setLoading(false);
     }
-  };
+  }, [seasonId, user]);
+
+  useEffect(() => {
+    if (seasonId && user) {
+      loadFields();
+    }
+  }, [seasonId, user, loadFields]);
 
   const enableWizardProtection = useCallback(() => {
     wizardActiveRef.current = true;
@@ -286,7 +286,7 @@ export function Fields({ seasonId, onViewFieldDetail }: FieldsProps) {
     setSeedAssignments([]);
     setSelectedFields(new Set());
     loadFields();
-  }, [disableWizardProtection]);
+  }, [disableWizardProtection, loadFields]);
 
   const handleWizardCancel = useCallback(() => {
     disableWizardProtection();

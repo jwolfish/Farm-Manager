@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import { useNotifications } from '../contexts/NotificationContext';
@@ -102,11 +102,6 @@ export function TemplateForm({ seasonId, template, onClose, onSuccess }: Templat
   const [selectedFertilizerPrograms, setSelectedFertilizerPrograms] = useState<Set<string>>(new Set());
   const [selectedChemicalPrograms, setSelectedChemicalPrograms] = useState<Set<string>>(new Set());
 
-  useEffect(() => {
-    if (seasonId && user) {
-      loadPrograms();
-    }
-  }, [seasonId, user?.id]);
 
   useEffect(() => {
     if (template) {
@@ -137,7 +132,7 @@ export function TemplateForm({ seasonId, template, onClose, onSuccess }: Templat
     }
   }, [template]);
 
-  const loadPrograms = async () => {
+  const loadPrograms = useCallback(async () => {
     if (!seasonId || !user) return;
 
     try {
@@ -203,7 +198,13 @@ export function TemplateForm({ seasonId, template, onClose, onSuccess }: Templat
     } catch (error) {
       console.error('Error loading programs:', error);
     }
-  };
+  }, [seasonId, user]);
+
+  useEffect(() => {
+    if (seasonId && user) {
+      loadPrograms();
+    }
+  }, [seasonId, user, loadPrograms]);
 
   const toggleFertilizerProgram = (programId: string) => {
     const newSet = new Set(selectedFertilizerPrograms);
