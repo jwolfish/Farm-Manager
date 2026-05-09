@@ -64,10 +64,21 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
 
       const newUserId = session?.user?.id ?? null;
+      const accessToken = session?.access_token ?? null;
+      const userChanged = newUserId !== currentUserIdRef.current;
+      const tokenChanged = accessToken !== currentAccessTokenRef.current;
+
       currentUserIdRef.current = newUserId;
-      currentAccessTokenRef.current = session?.access_token ?? null;
+      currentAccessTokenRef.current = accessToken;
+
+      // Always update the session (access token may have rotated).
       setSession(session);
-      setUser(session?.user ?? null);
+      // Only update the user object when the identity actually changed to
+      // avoid propagating a new object reference (and re-triggering effects
+      // that depend on user.id) for SIGNED_IN events fired on tab focus.
+      if (userChanged || tokenChanged) {
+        setUser(session?.user ?? null);
+      }
     });
 
     return () => {

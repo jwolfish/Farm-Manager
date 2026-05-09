@@ -70,21 +70,29 @@ export function useSprayPlanner(currentSeasonId: string | null, effectiveUserId:
   const [expandedCards, setExpandedCards] = useState<Set<string>>(new Set());
 
   const resultsRef = useRef<HTMLDivElement>(null);
+  const loadedSeasonRef = useRef<string | null>(null);
 
   useEffect(() => {
     if (!currentSeasonId || !effectiveUserId) {
       setLoading(false);
       return;
     }
-    loadData();
+    loadData(currentSeasonId);
   }, [currentSeasonId, effectiveUserId]);
 
-  async function loadData() {
+  async function loadData(seasonId: string) {
+    const seasonChanged = seasonId !== loadedSeasonRef.current;
+    loadedSeasonRef.current = seasonId;
+
     setLoading(true);
     setError(null);
-    setWorkOrders(null);
-    setSelectedFields(new Set());
-    setSelectedPrograms(new Set());
+
+    // Only wipe selections when the user navigates to a different season.
+    if (seasonChanged) {
+      setWorkOrders(null);
+      setSelectedFields(new Set());
+      setSelectedPrograms(new Set());
+    }
 
     try {
       const [seasonRes, fieldsRes, progsRes] = await Promise.all([
