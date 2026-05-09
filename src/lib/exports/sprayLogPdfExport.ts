@@ -187,24 +187,21 @@ export function exportSprayLogPDF(workOrders: SprayWorkOrder[], seasonName: stri
       bodyStyles: {
         fontSize: 13,
         textColor: DARK,
-        cellPadding: { top: 3, bottom: 3, left: 2, right: 2 },
-        minCellHeight: 8,
+        valign: 'middle',
+        cellPadding: { top: 2, bottom: 2, left: 2, right: 2 },
+        minCellHeight: 10,
       },
       alternateRowStyles: { fillColor: GREEN_ROW_ALT },
       columnStyles: {
-        0: { halign: 'center', valign: 'middle', cellWidth: 6 },
-        1: { valign: 'middle', cellWidth: 40 },
-        2: { valign: 'middle', cellWidth: 28 },
-        3: { halign: 'right', valign: 'middle', cellWidth: 14 },
-        4: { halign: 'center', valign: 'middle', cellWidth: 14 },
-        5: { halign: 'right', valign: 'middle', cellWidth: 24, fontStyle: 'bold' },
-        6: { valign: 'middle', cellWidth: 'auto' },
+        0: { halign: 'center', cellWidth: 8 },
+        1: { cellWidth: 40 },
+        2: { cellWidth: 28 },
+        3: { halign: 'right', cellWidth: 14 },
+        4: { halign: 'center', cellWidth: 14 },
+        5: { halign: 'right', cellWidth: 24, fontStyle: 'bold' },
+        6: { cellWidth: 'auto' },
       },
       didParseCell(data) {
-        // Ensure column 0 (product numbers) has vertical centering
-        if (data.column.index === 0) {
-          data.cell.styles.valign = 'middle';
-        }
         // Carrier water row — darker green background
         if (data.row.index === productRows.length - 1) {
           data.cell.styles.fillColor = GREEN_ROW_HEADER;
