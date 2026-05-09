@@ -12,9 +12,9 @@ export interface SprayWorkOrder {
     fieldId: string;
     fieldName: string;
     acreage: number;
-    chemicals: Array<{ chemicalId: string; chemicalName: string; ratePerAcre: number; rateUnit: string; totalDisplay: string }>;
+    chemicals: Array<{ chemicalId: string; chemicalName: string; epaRegNumber: string | null; ratePerAcre: number; rateUnit: string; totalDisplay: string; itemNotes: string | null }>;
   }>;
-  chemTotals: Array<{ chemicalId: string; chemicalName: string; ratePerAcre: number; rateUnit: string; totalDisplay: string }>;
+  chemTotals: Array<{ chemicalId: string; chemicalName: string; epaRegNumber: string | null; ratePerAcre: number; rateUnit: string; totalDisplay: string; itemNotes: string | null }>;
 }
 
 export interface CrossTotalRow {

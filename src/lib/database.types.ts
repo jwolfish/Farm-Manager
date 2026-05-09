@@ -236,6 +236,7 @@ export interface Database {
           unit_type: string;
           default_application_rate: number | null;
           default_application_rate_unit: string | null;
+          epa_reg_number: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -248,6 +249,7 @@ export interface Database {
           unit_type: string;
           default_application_rate?: number | null;
           default_application_rate_unit?: string | null;
+          epa_reg_number?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -260,6 +262,7 @@ export interface Database {
           unit_type?: string;
           default_application_rate?: number | null;
           default_application_rate_unit?: string | null;
+          epa_reg_number?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -306,6 +309,7 @@ export interface Database {
           chemical_id: string;
           application_rate: number;
           application_rate_unit: string | null;
+          notes: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -315,6 +319,7 @@ export interface Database {
           chemical_id: string;
           application_rate: number;
           application_rate_unit?: string | null;
+          notes?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -324,6 +329,7 @@ export interface Database {
           chemical_id?: string;
           application_rate?: number;
           application_rate_unit?: string | null;
+          notes?: string | null;
           created_at?: string;
           updated_at?: string;
         };

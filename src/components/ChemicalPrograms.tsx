@@ -19,6 +19,7 @@ interface ProgramItem {
   chemical_id: string;
   application_rate: number;
   application_rate_unit: string;
+  notes: string;
 }
 
 interface ChemicalProgram {
@@ -32,12 +33,14 @@ interface ChemicalProgram {
     chemical_id: string;
     application_rate: number;
     application_rate_unit: string;
+    notes: string | null;
   }[];
   items?: {
     id: string;
     chemical_id: string;
     application_rate: number;
     application_rate_unit: string;
+    notes: string | null;
   }[];
 }
 
@@ -81,7 +84,8 @@ export function ChemicalPrograms({ seasonId }: ChemicalProgramsProps) {
             id,
             chemical_id,
             application_rate,
-            application_rate_unit
+            application_rate_unit,
+            notes
           )
         `)
         .eq('season_id', seasonId)
@@ -153,6 +157,7 @@ export function ChemicalPrograms({ seasonId }: ChemicalProgramsProps) {
           chemical_id: item.chemical_id,
           application_rate: item.application_rate,
           application_rate_unit: item.application_rate_unit || '',
+          notes: item.notes || '',
         })));
       }
     } else {
@@ -160,6 +165,7 @@ export function ChemicalPrograms({ seasonId }: ChemicalProgramsProps) {
         chemical_id: item.chemical_id,
         application_rate: item.application_rate,
         application_rate_unit: item.application_rate_unit || '',
+        notes: item.notes || '',
       })));
     }
 
@@ -215,6 +221,7 @@ export function ChemicalPrograms({ seasonId }: ChemicalProgramsProps) {
           chemical_id: item.chemical_id,
           application_rate: item.application_rate,
           application_rate_unit: item.application_rate_unit,
+          notes: item.notes.trim() || null,
         }));
 
         const { error: itemsError } = await supabase
@@ -280,7 +287,7 @@ export function ChemicalPrograms({ seasonId }: ChemicalProgramsProps) {
   const addProgramItem = () => {
     setProgramItems([
       ...programItems,
-      { chemical_id: '', application_rate: 0, application_rate_unit: 'fl oz' },
+      { chemical_id: '', application_rate: 0, application_rate_unit: 'fl oz', notes: '' },
     ]);
   };
 
@@ -430,8 +437,8 @@ export function ChemicalPrograms({ seasonId }: ChemicalProgramsProps) {
               ) : (
                 <div className="space-y-3">
                   {programItems.map((item, index) => (
-                    <div key={index} className="flex gap-3 items-end">
-                      <div className="flex-1">
+                    <div key={index} className="flex gap-3 items-start">
+                      <div className="flex-1 min-w-0">
                         <select
                           value={item.chemical_id}
                           onChange={(e) => handleChemicalChange(index, e.target.value)}
@@ -445,8 +452,15 @@ export function ChemicalPrograms({ seasonId }: ChemicalProgramsProps) {
                             </option>
                           ))}
                         </select>
+                        <input
+                          type="text"
+                          value={item.notes}
+                          onChange={(e) => updateProgramItem(index, 'notes', e.target.value)}
+                          className="mt-1.5 w-full px-3 py-1.5 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-green-500 focus:border-transparent text-gray-600 placeholder-gray-400"
+                          placeholder="Notes: adjuvant, timing, restrictions (printed on spray log)"
+                        />
                       </div>
-                      <div className="w-32">
+                      <div className="w-28 flex-shrink-0">
                         <input
                           type="number"
                           step="0.01"
@@ -459,7 +473,7 @@ export function ChemicalPrograms({ seasonId }: ChemicalProgramsProps) {
                           required
                         />
                       </div>
-                      <div className="w-32">
+                      <div className="w-28 flex-shrink-0">
                         <select
                           value={item.application_rate_unit}
                           onChange={(e) => updateProgramItem(index, 'application_rate_unit', e.target.value)}
@@ -476,7 +490,7 @@ export function ChemicalPrograms({ seasonId }: ChemicalProgramsProps) {
                       <button
                         type="button"
                         onClick={() => removeProgramItem(index)}
-                        className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                        className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors flex-shrink-0 mt-0.5"
                       >
                         <X className="w-5 h-5" />
                       </button>
@@ -575,13 +589,18 @@ export function ChemicalPrograms({ seasonId }: ChemicalProgramsProps) {
                           chemical.unit_type
                         ) : 0;
                         return (
-                          <div key={item.id} className="flex items-center justify-between text-sm bg-white p-3 rounded border border-gray-200">
-                            <span className="font-medium text-gray-900">
-                              {chemical?.chemical_name || 'Unknown Chemical'}
-                            </span>
-                            <span className="text-gray-600">
-                              {item.application_rate} {applicationUnit}/acre @ ${chemical?.price_per_unit}/{chemical?.unit_type} = ${cost.toFixed(2)}/acre
-                            </span>
+                          <div key={item.id} className="text-sm bg-white p-3 rounded border border-gray-200">
+                            <div className="flex items-center justify-between">
+                              <span className="font-medium text-gray-900">
+                                {chemical?.chemical_name || 'Unknown Chemical'}
+                              </span>
+                              <span className="text-gray-600">
+                                {item.application_rate} {applicationUnit}/acre @ ${chemical?.price_per_unit}/{chemical?.unit_type} = ${cost.toFixed(2)}/acre
+                              </span>
+                            </div>
+                            {item.notes && (
+                              <p className="mt-1 text-xs text-gray-500 italic">{item.notes}</p>
+                            )}
                           </div>
                         );
                       })}

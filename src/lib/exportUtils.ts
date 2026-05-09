@@ -7,5 +7,7 @@ export { exportChemicalWorkOrdersPDF } from './exports/chemicalWorkOrderPdfExpor
 export type { SprayWorkOrder, CrossTotalRow } from './exports/sprayPlannerPdfExport';
 export { exportSprayPlannerPDF } from './exports/sprayPlannerPdfExport';
 
+export { exportSprayLogPDF } from './exports/sprayLogPdfExport';
+
 export { exportTableToCSV } from './exports/csvExporter';
 export { exportElementToPrint } from './exports/printExporter';

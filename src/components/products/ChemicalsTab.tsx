@@ -14,6 +14,7 @@ export interface IndividualChemical {
   unit_type: string;
   default_application_rate: number | null;
   default_application_rate_unit: string | null;
+  epa_reg_number: string | null;
 }
 
 interface Props {
@@ -24,7 +25,7 @@ interface Props {
   onHideForm: () => void;
 }
 
-const defaultForm = { chemical_name: '', price_per_unit: '', unit_type: 'gal', default_application_rate: '', default_application_rate_unit: 'fl oz' };
+const defaultForm = { chemical_name: '', price_per_unit: '', unit_type: 'gal', default_application_rate: '', default_application_rate_unit: 'fl oz', epa_reg_number: '' };
 
 export function ChemicalsTab({ chemicals, seasonId, onReload, showForm, onHideForm }: Props) {
   const { user } = useAuth();
@@ -44,6 +45,7 @@ export function ChemicalsTab({ chemicals, seasonId, onReload, showForm, onHideFo
       unit_type: chemical.unit_type,
       default_application_rate: chemical.default_application_rate?.toString() || '',
       default_application_rate_unit: chemical.default_application_rate_unit || 'fl oz',
+      epa_reg_number: chemical.epa_reg_number || '',
     });
   };
 
@@ -64,6 +66,7 @@ export function ChemicalsTab({ chemicals, seasonId, onReload, showForm, onHideFo
         unit_type: formData.unit_type,
         default_application_rate: appRate,
         default_application_rate_unit: appRate !== null ? formData.default_application_rate_unit : null,
+        epa_reg_number: formData.epa_reg_number.trim() || null,
       };
 
       const isUpdating = !!editingId;
@@ -182,6 +185,16 @@ export function ChemicalsTab({ chemicals, seasonId, onReload, showForm, onHideFo
                 </select>
               </div>
             </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">EPA Registration # <span className="text-gray-400 font-normal">(optional — printed on spray logs)</span></label>
+              <input
+                type="text"
+                value={formData.epa_reg_number}
+                onChange={(e) => setFormData({ ...formData, epa_reg_number: e.target.value })}
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                placeholder="e.g., 432-1547"
+              />
+            </div>
             {formError && (
               <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">{formError}</div>
             )}
@@ -209,6 +222,7 @@ export function ChemicalsTab({ chemicals, seasonId, onReload, showForm, onHideFo
             <thead className="bg-gray-50 border-b border-gray-200">
               <tr>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Chemical Name</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">EPA Reg. #</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Price/Unit</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Unit</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Default Rate</th>
@@ -219,6 +233,7 @@ export function ChemicalsTab({ chemicals, seasonId, onReload, showForm, onHideFo
               {paginatedChemicals.map((chem) => (
                 <tr key={chem.id} className="hover:bg-gray-50 transition-colors">
                   <td className="px-6 py-4 text-sm font-medium text-gray-900">{chem.chemical_name}</td>
+                  <td className="px-6 py-4 text-sm text-gray-500 font-mono">{chem.epa_reg_number || <span className="text-gray-300">—</span>}</td>
                   <td className="px-6 py-4 text-sm text-gray-900">${chem.price_per_unit.toFixed(2)}</td>
                   <td className="px-6 py-4 text-sm text-gray-600">{chem.unit_type}</td>
                   <td className="px-6 py-4 text-sm text-gray-600">

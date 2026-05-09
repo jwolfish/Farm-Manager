@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { toBestPracticalUnit, calculateCostWithConversion } from '../lib/unitConversions';
-import { exportSprayPlannerPDF, exportTableToCSV } from '../lib/exportUtils';
+import { exportSprayPlannerPDF, exportSprayLogPDF, exportTableToCSV } from '../lib/exportUtils';
 import { CropType } from '../lib/database.types';
 import { ProgramReference } from '../lib/templateUtils';
 
@@ -16,10 +16,12 @@ export interface FieldOption {
 export interface ChemicalItem {
   chemicalId: string;
   chemicalName: string;
+  epaRegNumber: string | null;
   ratePerAcre: number;
   rateUnit: string;
   pricePerUnit: number;
   priceUnit: string;
+  itemNotes: string | null;
 }
 
 export interface ProgramOption {
@@ -97,8 +99,8 @@ export function useSprayPlanner(currentSeasonId: string | null, effectiveUserId:
         supabase.from('chemical_programs').select(`
           id, program_name, crop_type, application_cost,
           chemical_program_items (
-            id, application_rate, application_rate_unit,
-            individual_chemicals ( id, chemical_name, price_per_unit, unit_type )
+            id, application_rate, application_rate_unit, notes,
+            individual_chemicals ( id, chemical_name, price_per_unit, unit_type, epa_reg_number )
           )
         `)
           .eq('user_id', effectiveUserId!)
@@ -166,10 +168,12 @@ export function useSprayPlanner(currentSeasonId: string | null, effectiveUserId:
           return {
             chemicalId: chem?.id ?? item.id,
             chemicalName: chem?.chemical_name ?? 'Unknown',
+            epaRegNumber: chem?.epa_reg_number ?? null,
             ratePerAcre: Number(item.application_rate),
             rateUnit: item.application_rate_unit ?? '',
             pricePerUnit: Number(chem?.price_per_unit ?? 0),
             priceUnit: chem?.unit_type ?? '',
+            itemNotes: item.notes ?? null,
           };
         });
         const chemicalCostPerAcre = chemicals.reduce((sum, ch) => {
@@ -331,6 +335,11 @@ export function useSprayPlanner(currentSeasonId: string | null, effectiveUserId:
     exportSprayPlannerPDF(workOrders, crossTotals, seasonName);
   };
 
+  const handleExportSprayLog = () => {
+    if (!workOrders) return;
+    exportSprayLogPDF(workOrders, seasonName);
+  };
+
   const toggleExpandedCard = (programId: string) => {
     setExpandedCards((prev) => {
       const next = new Set(prev);
@@ -370,6 +379,7 @@ export function useSprayPlanner(currentSeasonId: string | null, effectiveUserId:
     generate,
     handleExportCSV,
     handleExportPDF,
+    handleExportSprayLog,
     toggleExpandedCard,
   };
 }
