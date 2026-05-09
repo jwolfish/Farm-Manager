@@ -151,9 +151,9 @@ export function exportSprayLogPDF(workOrders: SprayWorkOrder[], seasonName: stri
     doc.text('HERBICIDE BLEND — PRODUCT MIX SHEET', ML + 3, y + 5);
     y += 9;
 
-    // Ensure at least 6 rows in the table (blank rows for hand-writing)
+    // Show all chemicals; pad to at least 6 rows total for hand-writing extras
     const MIN_ROWS = 6;
-    const productRows = wo.chemTotals.slice(0, MIN_ROWS).map((ct, i) => [
+    const productRows = wo.chemTotals.map((ct, i) => [
       String(i + 1),
       ct.chemicalName,
       ct.epaRegNumber ?? '',
@@ -163,7 +163,7 @@ export function exportSprayLogPDF(workOrders: SprayWorkOrder[], seasonName: stri
       ct.itemNotes ?? '',
     ]);
 
-    // Pad with blank rows up to MIN_ROWS
+    // Pad with blank rows so there are always at least MIN_ROWS total
     while (productRows.length < MIN_ROWS) {
       productRows.push([String(productRows.length + 1), '', '', '', '', '', '']);
     }
