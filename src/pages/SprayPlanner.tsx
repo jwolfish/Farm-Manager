@@ -54,6 +54,7 @@ export function SprayPlanner({ currentSeasonId, effectiveUserId }: Props) {
     toggleField, toggleAllByCrop, toggleAllFields, clearAllFields, toggleProgram,
     generate, setAcreOverride, acreOverrides, setChemOverride, chemOverrides,
     handleExportCSV, handleExportPDF, handleExportSprayLog, toggleExpandedCard,
+    computePreviewTotals,
   } = useSprayPlanner(currentSeasonId, effectiveUserId);
 
   const [fieldPickerOpen, setFieldPickerOpen] = useState(false);
@@ -737,12 +738,12 @@ export function SprayPlanner({ currentSeasonId, effectiveUserId }: Props) {
                           </button>
                         </div>
 
-                        {/* Live totals preview */}
+                        {/* Live totals preview — computed from the current edit state, not the last snapshot */}
                         <div className="mt-3 pt-3 border-t border-gray-100">
                           <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Totals Preview</p>
                           <table className="w-full text-xs">
                             <tbody>
-                              {wo.chemTotals.map((ct) => (
+                              {computePreviewTotals(editChems, wo.effectiveAcres).map((ct) => (
                                 <tr key={ct.chemicalId}>
                                   <td className="py-1 text-gray-600">{ct.chemicalName || <em className="text-gray-300">unnamed</em>}</td>
                                   <td className="py-1 text-right text-gray-500">{ct.ratePerAcre.toLocaleString('en-US', { maximumFractionDigits: 3 })} {ct.rateUnit}/ac</td>

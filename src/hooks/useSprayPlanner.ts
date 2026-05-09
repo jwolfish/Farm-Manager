@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { toBestPracticalUnit, calculateCostWithConversion } from '../lib/unitConversions';
 import { exportSprayPlannerPDF, exportSprayLogPDF, exportTableToCSV } from '../lib/exportUtils';
+import type { CrossTotalRow } from '../lib/exportUtils';
 import { CropType } from '../lib/database.types';
 import { ProgramReference } from '../lib/templateUtils';
 
@@ -50,11 +51,7 @@ export interface WorkOrderResult {
   chemTotals: Array<ChemicalItem & { totalDisplay: string; totalValue: number; totalUnit: string; totalRaw: number }>;
 }
 
-export interface CrossTotalRow {
-  chemicalId: string;
-  chemicalName: string;
-  totalDisplay: string;
-}
+export type { CrossTotalRow };
 
 export function useSprayPlanner(currentSeasonId: string | null, effectiveUserId: string | null) {
   const [fields, setFields] = useState<FieldOption[]>([]);
@@ -256,11 +253,15 @@ export function useSprayPlanner(currentSeasonId: string | null, effectiveUserId:
   };
 
   const buildWorkOrders = (
+    allFields: FieldOption[],
+    allPrograms: ProgramOption[],
+    fieldSelection: Set<string>,
+    programSelection: Set<string>,
     acreOvr: Map<string, number>,
     chemOvr: Map<string, ChemicalItem[]>
   ) => {
-    const chosenFields = fields.filter((f) => selectedFields.has(f.id));
-    const chosenPrograms = programs.filter((p) => selectedPrograms.has(p.id));
+    const chosenFields = allFields.filter((f) => fieldSelection.has(f.id));
+    const chosenPrograms = allPrograms.filter((p) => programSelection.has(p.id));
 
     const results: WorkOrderResult[] = chosenPrograms.map((prog) => {
       // Use chem overrides if present, otherwise fall back to stored program chemicals
@@ -342,7 +343,7 @@ export function useSprayPlanner(currentSeasonId: string | null, effectiveUserId:
   };
 
   const generate = () => {
-    const { results, crossRows } = buildWorkOrders(acreOverrides, chemOverrides);
+    const { results, crossRows } = buildWorkOrders(fields, programs, selectedFields, selectedPrograms, acreOverrides, chemOverrides);
     setWorkOrders(results);
     setCrossTotals(crossRows);
     setExpandedCards(new Set());
@@ -374,28 +375,23 @@ export function useSprayPlanner(currentSeasonId: string | null, effectiveUserId:
   };
 
   const setAcreOverride = (programId: string, acres: number | null) => {
-    setAcreOverrides((prev) => {
-      const next = new Map(prev);
-      if (acres === null) next.delete(programId);
-      else next.set(programId, acres);
-      // Regenerate immediately with the new overrides map (state hasn't flushed yet).
-      const { results, crossRows } = buildWorkOrders(next, chemOverrides);
-      setWorkOrders(results);
-      setCrossTotals(crossRows);
-      return next;
-    });
+    const nextAcreMap = new Map(acreOverrides);
+    if (acres === null) nextAcreMap.delete(programId);
+    else nextAcreMap.set(programId, acres);
+    const { results, crossRows } = buildWorkOrders(fields, programs, selectedFields, selectedPrograms, nextAcreMap, chemOverrides);
+    setAcreOverrides(nextAcreMap);
+    setWorkOrders(results);
+    setCrossTotals(crossRows);
   };
 
   const setChemOverride = (programId: string, chemicals: ChemicalItem[] | null) => {
-    setChemOverridesState((prev) => {
-      const next = new Map(prev);
-      if (chemicals === null) next.delete(programId);
-      else next.set(programId, chemicals);
-      const { results, crossRows } = buildWorkOrders(acreOverrides, next);
-      setWorkOrders(results);
-      setCrossTotals(crossRows);
-      return next;
-    });
+    const nextChemMap = new Map(chemOverrides);
+    if (chemicals === null) nextChemMap.delete(programId);
+    else nextChemMap.set(programId, chemicals);
+    const { results, crossRows } = buildWorkOrders(fields, programs, selectedFields, selectedPrograms, acreOverrides, nextChemMap);
+    setChemOverridesState(nextChemMap);
+    setWorkOrders(results);
+    setCrossTotals(crossRows);
   };
 
   const toggleExpandedCard = (programId: string) => {
@@ -405,6 +401,13 @@ export function useSprayPlanner(currentSeasonId: string | null, effectiveUserId:
       return next;
     });
   };
+
+  const computePreviewTotals = (chems: ChemicalItem[], effectiveAcres: number) =>
+    chems.map((ch) => {
+      const totalRaw = ch.ratePerAcre * effectiveAcres;
+      const practical = toBestPracticalUnit(totalRaw, ch.rateUnit);
+      return { ...ch, totalDisplay: practical.display };
+    });
 
   const cropGroups = new Map<CropType, FieldOption[]>();
   for (const f of fields) {
@@ -443,5 +446,6 @@ export function useSprayPlanner(currentSeasonId: string | null, effectiveUserId:
     handleExportPDF,
     handleExportSprayLog,
     toggleExpandedCard,
+    computePreviewTotals,
   };
 }
