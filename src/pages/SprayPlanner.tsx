@@ -15,6 +15,9 @@ import {
   RotateCcw,
   Plus,
   Trash2,
+  GripVertical,
+  ArrowUp,
+  ArrowDown,
 } from 'lucide-react';
 import { CropType } from '../lib/database.types';
 import { useSprayPlanner, ChemicalItem } from '../hooks/useSprayPlanner';
@@ -108,6 +111,18 @@ export function SprayPlanner({ currentSeasonId, effectiveUserId }: Props) {
     };
     setChemOverride(programId, [...allChems, newItem]);
   };
+
+  const moveChem = (programId: string, fromIdx: number, toIdx: number, allChems: ChemicalItem[]) => {
+    if (toIdx < 0 || toIdx >= allChems.length) return;
+    const updated = [...allChems];
+    const [moved] = updated.splice(fromIdx, 1);
+    updated.splice(toIdx, 0, moved);
+    setChemOverride(programId, updated);
+  };
+
+  // Drag state: { programId, fromIdx } while a row is being dragged
+  const [dragState, setDragState] = useState<{ programId: string; fromIdx: number } | null>(null);
+  const [dragOverIdx, setDragOverIdx] = useState<number | null>(null);
 
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
@@ -601,51 +616,115 @@ export function SprayPlanner({ currentSeasonId, effectiveUserId }: Props) {
                   {editingChemPrograms.has(wo.programId) ? (() => {
                     const editChems = getEditableChems(wo);
                     return (
-                      <div className="space-y-1">
+                      <div className="space-y-0.5">
                         {/* Edit-mode header */}
-                        <div className="grid grid-cols-[1fr_80px_90px_32px] gap-1.5 pb-1 border-b border-gray-100">
+                        <div className="grid grid-cols-[20px_1fr_80px_90px_56px_32px] gap-1.5 pb-1 border-b border-gray-100">
+                          <span />
                           <span className="text-xs font-semibold text-gray-500">Chemical Name</span>
                           <span className="text-xs font-semibold text-gray-500 text-right">Rate/Acre</span>
                           <span className="text-xs font-semibold text-gray-500 text-center">Unit</span>
                           <span />
+                          <span />
                         </div>
 
-                        {editChems.map((ch, idx) => (
-                          <div key={ch.chemicalId} className={`grid grid-cols-[1fr_80px_90px_32px] gap-1.5 items-center py-1 ${idx % 2 === 0 ? 'bg-gray-50 rounded' : ''}`}>
-                            <input
-                              type="text"
-                              value={ch.chemicalName}
-                              onChange={(e) => updateChem(wo.programId, idx, { chemicalName: e.target.value }, editChems)}
-                              placeholder="Chemical name"
-                              className="px-2 py-1 text-sm border border-gray-200 rounded focus:outline-none focus:border-green-400 focus:ring-1 focus:ring-green-200 bg-white w-full"
-                            />
-                            <input
-                              type="number"
-                              min="0"
-                              step="0.1"
-                              value={ch.ratePerAcre || ''}
-                              onChange={(e) => updateChem(wo.programId, idx, { ratePerAcre: parseFloat(e.target.value) || 0 }, editChems)}
-                              placeholder="0"
-                              className="px-2 py-1 text-sm text-right border border-gray-200 rounded focus:outline-none focus:border-green-400 focus:ring-1 focus:ring-green-200 bg-white w-full"
-                            />
-                            <select
-                              value={ch.rateUnit}
-                              onChange={(e) => updateChem(wo.programId, idx, { rateUnit: e.target.value, priceUnit: e.target.value }, editChems)}
-                              className="px-1 py-1 text-sm border border-gray-200 rounded focus:outline-none focus:border-green-400 bg-white w-full"
+                        {editChems.map((ch, idx) => {
+                          const isDragOver = dragOverIdx === idx && dragState?.programId === wo.programId && dragState.fromIdx !== idx;
+                          return (
+                            <div
+                              key={ch.chemicalId}
+                              draggable
+                              onDragStart={(e) => {
+                                e.dataTransfer.effectAllowed = 'move';
+                                setDragState({ programId: wo.programId, fromIdx: idx });
+                                setDragOverIdx(null);
+                              }}
+                              onDragEnd={() => { setDragState(null); setDragOverIdx(null); }}
+                              onDragOver={(e) => { e.preventDefault(); e.dataTransfer.dropEffect = 'move'; }}
+                              onDragEnter={() => {
+                                if (dragState?.programId === wo.programId && dragState.fromIdx !== idx) {
+                                  setDragOverIdx(idx);
+                                }
+                              }}
+                              onDragLeave={() => setDragOverIdx(null)}
+                              onDrop={(e) => {
+                                e.preventDefault();
+                                if (dragState?.programId === wo.programId) {
+                                  moveChem(wo.programId, dragState.fromIdx, idx, editChems);
+                                }
+                                setDragState(null);
+                                setDragOverIdx(null);
+                              }}
+                              className={`grid grid-cols-[20px_1fr_80px_90px_56px_32px] gap-1.5 items-center py-1 rounded transition-colors ${
+                                isDragOver
+                                  ? 'border-t-2 border-green-400 bg-green-50'
+                                  : dragState?.programId === wo.programId && dragState.fromIdx === idx
+                                  ? 'opacity-40 bg-gray-100'
+                                  : idx % 2 === 0
+                                  ? 'bg-gray-50'
+                                  : 'bg-white'
+                              }`}
                             >
-                              {RATE_UNITS.map((u) => (
-                                <option key={u} value={u}>{u}</option>
-                              ))}
-                            </select>
-                            <button
-                              onClick={() => deleteChem(wo.programId, idx, editChems)}
-                              className="p-1 text-red-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors flex items-center justify-center"
-                              title="Remove chemical"
-                            >
-                              <Trash2 className="w-3.5 h-3.5" />
-                            </button>
-                          </div>
-                        ))}
+                              {/* Drag handle */}
+                              <div className="flex items-center justify-center cursor-grab active:cursor-grabbing text-gray-300 hover:text-gray-500 transition-colors">
+                                <GripVertical className="w-4 h-4" />
+                              </div>
+
+                              <input
+                                type="text"
+                                value={ch.chemicalName}
+                                onChange={(e) => updateChem(wo.programId, idx, { chemicalName: e.target.value }, editChems)}
+                                placeholder="Chemical name"
+                                className="px-2 py-1 text-sm border border-gray-200 rounded focus:outline-none focus:border-green-400 focus:ring-1 focus:ring-green-200 bg-white w-full"
+                              />
+                              <input
+                                type="number"
+                                min="0"
+                                step="0.1"
+                                value={ch.ratePerAcre || ''}
+                                onChange={(e) => updateChem(wo.programId, idx, { ratePerAcre: parseFloat(e.target.value) || 0 }, editChems)}
+                                placeholder="0"
+                                className="px-2 py-1 text-sm text-right border border-gray-200 rounded focus:outline-none focus:border-green-400 focus:ring-1 focus:ring-green-200 bg-white w-full"
+                              />
+                              <select
+                                value={ch.rateUnit}
+                                onChange={(e) => updateChem(wo.programId, idx, { rateUnit: e.target.value, priceUnit: e.target.value }, editChems)}
+                                className="px-1 py-1 text-sm border border-gray-200 rounded focus:outline-none focus:border-green-400 bg-white w-full"
+                              >
+                                {RATE_UNITS.map((u) => (
+                                  <option key={u} value={u}>{u}</option>
+                                ))}
+                              </select>
+
+                              {/* Up / Down arrows */}
+                              <div className="flex items-center gap-0.5">
+                                <button
+                                  onClick={() => moveChem(wo.programId, idx, idx - 1, editChems)}
+                                  disabled={idx === 0}
+                                  className="p-1 text-gray-300 hover:text-gray-600 hover:bg-gray-100 rounded transition-colors disabled:opacity-0 disabled:pointer-events-none"
+                                  title="Move up"
+                                >
+                                  <ArrowUp className="w-3 h-3" />
+                                </button>
+                                <button
+                                  onClick={() => moveChem(wo.programId, idx, idx + 1, editChems)}
+                                  disabled={idx === editChems.length - 1}
+                                  className="p-1 text-gray-300 hover:text-gray-600 hover:bg-gray-100 rounded transition-colors disabled:opacity-0 disabled:pointer-events-none"
+                                  title="Move down"
+                                >
+                                  <ArrowDown className="w-3 h-3" />
+                                </button>
+                              </div>
+
+                              <button
+                                onClick={() => deleteChem(wo.programId, idx, editChems)}
+                                className="p-1 text-red-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors flex items-center justify-center"
+                                title="Remove chemical"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            </div>
+                          );
+                        })}
 
                         {/* Add row */}
                         <div className="pt-2 border-t border-dashed border-gray-200 mt-1">
