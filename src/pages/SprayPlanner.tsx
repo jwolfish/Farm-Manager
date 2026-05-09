@@ -12,7 +12,7 @@ import {
   Printer,
 } from 'lucide-react';
 import { supabase } from '../lib/supabase';
-import { toBestPracticalUnit } from '../lib/unitConversions';
+import { toBestPracticalUnit, calculateCostWithConversion } from '../lib/unitConversions';
 import { exportSprayPlannerPDF, exportTableToCSV } from '../lib/exportUtils';
 import { CropType } from '../lib/database.types';
 import { ProgramReference } from '../lib/templateUtils';
@@ -42,6 +42,8 @@ interface ChemicalItem {
   chemicalName: string;
   ratePerAcre: number;
   rateUnit: string;
+  pricePerUnit: number;
+  priceUnit: string;
 }
 
 interface ProgramOption {
@@ -49,6 +51,7 @@ interface ProgramOption {
   name: string;
   cropType: CropType;
   applicationCostPerAcre: number;
+  chemicalCostPerAcre: number;
   chemicals: ChemicalItem[];
 }
 
@@ -57,6 +60,7 @@ interface WorkOrderResult {
   programName: string;
   cropType: CropType;
   applicationCostPerAcre: number;
+  chemicalCostPerAcre: number;
   fields: Array<{
     fieldId: string;
     fieldName: string;
@@ -127,7 +131,7 @@ export function SprayPlanner({ currentSeasonId, effectiveUserId }: Props) {
           id, program_name, crop_type, application_cost,
           chemical_program_items (
             id, application_rate, application_rate_unit,
-            individual_chemicals ( id, chemical_name )
+            individual_chemicals ( id, chemical_name, price_per_unit, unit_type )
           )
         `)
           .eq('user_id', effectiveUserId!)
@@ -198,13 +202,19 @@ export function SprayPlanner({ currentSeasonId, effectiveUserId }: Props) {
             chemicalName: chem?.chemical_name ?? 'Unknown',
             ratePerAcre: Number(item.application_rate),
             rateUnit: item.application_rate_unit ?? '',
+            pricePerUnit: Number(chem?.price_per_unit ?? 0),
+            priceUnit: chem?.unit_type ?? '',
           };
         });
+        const chemicalCostPerAcre = chemicals.reduce((sum, ch) => {
+          return sum + calculateCostWithConversion(ch.ratePerAcre, ch.rateUnit, ch.pricePerUnit, ch.priceUnit);
+        }, 0);
         return {
           id: p.id,
           name: p.program_name,
           cropType: p.crop_type as CropType,
           applicationCostPerAcre: Number(p.application_cost ?? 0),
+          chemicalCostPerAcre,
           chemicals,
         };
       });
@@ -299,6 +309,7 @@ export function SprayPlanner({ currentSeasonId, effectiveUserId }: Props) {
         programName: prog.name,
         cropType: prog.cropType,
         applicationCostPerAcre: prog.applicationCostPerAcre,
+        chemicalCostPerAcre: prog.chemicalCostPerAcre,
         fields: fieldRows,
         totalAcres,
         chemTotals,
@@ -549,8 +560,10 @@ export function SprayPlanner({ currentSeasonId, effectiveUserId }: Props) {
                         </div>
                       )}
                     </div>
-                    {prog.applicationCostPerAcre > 0 && (
-                      <span className="text-xs text-gray-400 flex-shrink-0 mt-0.5">${prog.applicationCostPerAcre}/ac</span>
+                    {(prog.applicationCostPerAcre > 0 || prog.chemicalCostPerAcre > 0) && (
+                      <span className="text-xs text-gray-400 flex-shrink-0 mt-0.5">
+                        ${(prog.applicationCostPerAcre + prog.chemicalCostPerAcre).toFixed(2)}/ac
+                      </span>
                     )}
                   </div>
                 </button>
@@ -644,8 +657,15 @@ export function SprayPlanner({ currentSeasonId, effectiveUserId }: Props) {
                     <div className="text-right flex-shrink-0">
                       <p className={`text-2xl font-bold ${col.headerText}`}>{fmtAcres(wo.totalAcres)}</p>
                       <p className={`text-xs ${col.headerText} opacity-70`}>total acres</p>
-                      {wo.applicationCostPerAcre > 0 && (
-                        <p className="text-xs text-gray-500 mt-1">App: ${wo.applicationCostPerAcre.toFixed(2)}/ac</p>
+                      {(wo.applicationCostPerAcre > 0 || wo.chemicalCostPerAcre > 0) && (
+                        <div className="mt-1 text-right">
+                          <p className="text-sm font-semibold text-gray-700">
+                            ${(wo.applicationCostPerAcre + wo.chemicalCostPerAcre).toFixed(2)}/ac
+                          </p>
+                          <p className="text-xs text-gray-400">
+                            Chem: ${wo.chemicalCostPerAcre.toFixed(2)} + App: ${wo.applicationCostPerAcre.toFixed(2)}
+                          </p>
+                        </div>
                       )}
                     </div>
                   </div>

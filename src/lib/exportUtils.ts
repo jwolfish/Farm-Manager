@@ -357,6 +357,7 @@ export interface SprayWorkOrder {
   programName: string;
   cropType: string;
   applicationCostPerAcre: number;
+  chemicalCostPerAcre: number;
   totalAcres: number;
   fields: Array<{
     fieldId: string;
@@ -378,7 +379,7 @@ export function exportSprayPlannerPDF(
   crossTotals: CrossTotalRow[],
   seasonName: string
 ) {
-  const doc = new jsPDF({ orientation: 'landscape', unit: 'pt', format: 'letter' });
+  const doc = new jsPDF({ orientation: 'portrait', unit: 'pt', format: 'letter' });
   const pageW = doc.internal.pageSize.getWidth();
   const pageH = doc.internal.pageSize.getHeight();
   const margin = 36;
@@ -474,18 +475,24 @@ export function exportSprayPlannerPDF(
       alternateRowStyles: { fillColor: [249, 250, 251] },
       columnStyles: {
         0: { halign: 'left', cellWidth: 'auto' },
-        1: { halign: 'right', cellWidth: 120 },
-        2: { halign: 'right', cellWidth: 120, fontStyle: 'bold' },
+        1: { halign: 'right', cellWidth: 90 },
+        2: { halign: 'right', cellWidth: 90, fontStyle: 'bold' },
       },
     });
 
     cursorY = (doc as any).lastAutoTable?.finalY ?? cursorY;
 
-    if (wo.applicationCostPerAcre > 0) {
-      doc.setFontSize(7);
+    const totalCostPerAcre = wo.applicationCostPerAcre + wo.chemicalCostPerAcre;
+    if (totalCostPerAcre > 0) {
+      doc.setFontSize(7.5);
+      doc.setFont('helvetica', 'bold');
+      doc.setTextColor(31, 41, 55);
+      doc.text(`Total cost: $${totalCostPerAcre.toFixed(2)}/ac`, margin + 10, cursorY + 11);
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(6.5);
       doc.setTextColor(148, 163, 184);
-      doc.text(`Application cost: $${wo.applicationCostPerAcre.toFixed(2)}/ac`, margin + 10, cursorY + 10);
-      cursorY += 14;
+      doc.text(`(Chem: $${wo.chemicalCostPerAcre.toFixed(2)}  +  App: $${wo.applicationCostPerAcre.toFixed(2)})`, margin + 10, cursorY + 21);
+      cursorY += 26;
     }
 
     cursorY += 14;
@@ -527,7 +534,7 @@ export function exportSprayPlannerPDF(
       },
       columnStyles: {
         0: { halign: 'left', cellWidth: 'auto' },
-        1: { halign: 'right', cellWidth: 150 },
+        1: { halign: 'right', cellWidth: 110 },
       },
     });
   }
