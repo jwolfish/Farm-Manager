@@ -185,10 +185,10 @@ export function exportSprayLogPDF(workOrders: SprayWorkOrder[], seasonName: stri
         halign: 'center',
       },
       bodyStyles: {
-        fontSize: 11,
+        fontSize: 13,
         textColor: DARK,
-        cellPadding: { top: 8, bottom: 8, left: 2, right: 2 },
-        minCellHeight: 16,
+        cellPadding: { top: 3, bottom: 3, left: 2, right: 2 },
+        minCellHeight: 8,
       },
       alternateRowStyles: { fillColor: GREEN_ROW_ALT },
       columnStyles: {
