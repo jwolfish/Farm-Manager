@@ -13,9 +13,13 @@ import {
   X,
   Pencil,
   RotateCcw,
+  Plus,
+  Trash2,
 } from 'lucide-react';
 import { CropType } from '../lib/database.types';
-import { useSprayPlanner } from '../hooks/useSprayPlanner';
+import { useSprayPlanner, ChemicalItem } from '../hooks/useSprayPlanner';
+
+const RATE_UNITS = ['fl oz', 'pt', 'qt', 'gal', 'oz', 'lbs', 'lb'] as const;
 
 const CROP_LABELS: Record<CropType, string> = {
   corn: 'Corn',
@@ -45,7 +49,7 @@ export function SprayPlanner({ currentSeasonId, effectiveUserId }: Props) {
     workOrders, crossTotals, expandedCards, resultsRef,
     cropGroups, selectedAcres, canGenerate,
     toggleField, toggleAllByCrop, toggleAllFields, clearAllFields, toggleProgram,
-    generate, setAcreOverride, acreOverrides,
+    generate, setAcreOverride, acreOverrides, setChemOverride, chemOverrides,
     handleExportCSV, handleExportPDF, handleExportSprayLog, toggleExpandedCard,
   } = useSprayPlanner(currentSeasonId, effectiveUserId);
 
@@ -53,9 +57,57 @@ export function SprayPlanner({ currentSeasonId, effectiveUserId }: Props) {
   const [fieldSearch, setFieldSearch] = useState('');
   const pickerRef = useRef<HTMLDivElement>(null);
 
-  // Acre override editing state — tracks which work order card is actively editing
+  // Acre override editing state
   const [editingAcres, setEditingAcres] = useState<string | null>(null);
   const [acresDraft, setAcresDraft] = useState('');
+
+  // Chemical edit mode — set of program IDs whose chemical table is in edit mode
+  const [editingChemPrograms, setEditingChemPrograms] = useState<Set<string>>(new Set());
+
+  const toggleChemEditMode = (programId: string) => {
+    setEditingChemPrograms((prev) => {
+      const next = new Set(prev);
+      next.has(programId) ? next.delete(programId) : next.add(programId);
+      return next;
+    });
+  };
+
+  // Helper to get current editable chemical list for a work order
+  const getEditableChems = (wo: { programId: string; chemTotals: ChemicalItem[] }): ChemicalItem[] =>
+    chemOverrides.get(wo.programId) ?? wo.chemTotals.map((ct) => ({
+      chemicalId: ct.chemicalId,
+      chemicalName: ct.chemicalName,
+      epaRegNumber: ct.epaRegNumber,
+      ratePerAcre: ct.ratePerAcre,
+      rateUnit: ct.rateUnit,
+      pricePerUnit: ct.pricePerUnit,
+      priceUnit: ct.priceUnit,
+      itemNotes: ct.itemNotes,
+    }));
+
+  const updateChem = (programId: string, idx: number, patch: Partial<ChemicalItem>, allChems: ChemicalItem[]) => {
+    const updated = allChems.map((c, i) => i === idx ? { ...c, ...patch } : c);
+    setChemOverride(programId, updated);
+  };
+
+  const deleteChem = (programId: string, idx: number, allChems: ChemicalItem[]) => {
+    const updated = allChems.filter((_, i) => i !== idx);
+    setChemOverride(programId, updated.length > 0 ? updated : null);
+  };
+
+  const addChem = (programId: string, allChems: ChemicalItem[]) => {
+    const newItem: ChemicalItem = {
+      chemicalId: `custom-${Date.now()}`,
+      chemicalName: '',
+      epaRegNumber: null,
+      ratePerAcre: 0,
+      rateUnit: 'fl oz',
+      pricePerUnit: 0,
+      priceUnit: 'fl oz',
+      itemNotes: null,
+    };
+    setChemOverride(programId, [...allChems, newItem]);
+  };
 
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
@@ -512,32 +564,139 @@ export function SprayPlanner({ currentSeasonId, effectiveUserId }: Props) {
                 </div>
 
                 <div className="bg-white px-5 py-4">
-                  <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">
-                    Chemical Mix — {fmtAcres(wo.effectiveAcres)} Combined Acres
-                    {acreOverrides.has(wo.programId) && (
-                      <span className="ml-1.5 text-amber-600 normal-case font-normal">(overridden)</span>
-                    )}
-                  </p>
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="border-b border-gray-100">
-                        <th className="text-left py-2 font-semibold text-gray-600 text-xs">Chemical</th>
-                        <th className="text-right py-2 font-semibold text-gray-600 text-xs">Rate / Acre</th>
-                        <th className="text-right py-2 font-semibold text-gray-600 text-xs">Total Needed</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {wo.chemTotals.map((ct, i) => (
-                        <tr key={ct.chemicalId} className={i % 2 === 0 ? 'bg-gray-50' : 'bg-white'}>
-                          <td className="py-2.5 px-2 font-medium text-gray-900 rounded-l">{ct.chemicalName}</td>
-                          <td className="py-2.5 px-2 text-right text-gray-600">
-                            {ct.ratePerAcre.toLocaleString('en-US', { maximumFractionDigits: 2 })} {ct.rateUnit}
-                          </td>
-                          <td className="py-2.5 px-2 text-right font-bold text-gray-900">{ct.totalDisplay}</td>
+                  {/* Section header with edit toggle */}
+                  <div className="flex items-center justify-between mb-3">
+                    <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide">
+                      Chemical Mix — {fmtAcres(wo.effectiveAcres)} Combined Acres
+                      {(acreOverrides.has(wo.programId) || chemOverrides.has(wo.programId)) && (
+                        <span className="ml-1.5 text-amber-600 normal-case font-normal">(modified)</span>
+                      )}
+                    </p>
+                    <div className="flex items-center gap-1.5">
+                      {chemOverrides.has(wo.programId) && !editingChemPrograms.has(wo.programId) && (
+                        <button
+                          title="Reset to program defaults"
+                          onClick={() => setChemOverride(wo.programId, null)}
+                          className="flex items-center gap-1 px-2 py-1 text-xs text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded transition-colors"
+                        >
+                          <RotateCcw className="w-3 h-3" />
+                          Reset
+                        </button>
+                      )}
+                      <button
+                        title={editingChemPrograms.has(wo.programId) ? 'Done editing' : 'Edit chemicals'}
+                        onClick={() => toggleChemEditMode(wo.programId)}
+                        className={`flex items-center gap-1 px-2 py-1 text-xs rounded transition-colors ${
+                          editingChemPrograms.has(wo.programId)
+                            ? 'bg-green-100 text-green-700 hover:bg-green-200'
+                            : 'text-gray-400 hover:text-gray-600 hover:bg-gray-100'
+                        }`}
+                      >
+                        <Pencil className="w-3 h-3" />
+                        {editingChemPrograms.has(wo.programId) ? 'Done' : 'Edit'}
+                      </button>
+                    </div>
+                  </div>
+
+                  {editingChemPrograms.has(wo.programId) ? (() => {
+                    const editChems = getEditableChems(wo);
+                    return (
+                      <div className="space-y-1">
+                        {/* Edit-mode header */}
+                        <div className="grid grid-cols-[1fr_80px_90px_32px] gap-1.5 pb-1 border-b border-gray-100">
+                          <span className="text-xs font-semibold text-gray-500">Chemical Name</span>
+                          <span className="text-xs font-semibold text-gray-500 text-right">Rate/Acre</span>
+                          <span className="text-xs font-semibold text-gray-500 text-center">Unit</span>
+                          <span />
+                        </div>
+
+                        {editChems.map((ch, idx) => (
+                          <div key={ch.chemicalId} className={`grid grid-cols-[1fr_80px_90px_32px] gap-1.5 items-center py-1 ${idx % 2 === 0 ? 'bg-gray-50 rounded' : ''}`}>
+                            <input
+                              type="text"
+                              value={ch.chemicalName}
+                              onChange={(e) => updateChem(wo.programId, idx, { chemicalName: e.target.value }, editChems)}
+                              placeholder="Chemical name"
+                              className="px-2 py-1 text-sm border border-gray-200 rounded focus:outline-none focus:border-green-400 focus:ring-1 focus:ring-green-200 bg-white w-full"
+                            />
+                            <input
+                              type="number"
+                              min="0"
+                              step="0.1"
+                              value={ch.ratePerAcre || ''}
+                              onChange={(e) => updateChem(wo.programId, idx, { ratePerAcre: parseFloat(e.target.value) || 0 }, editChems)}
+                              placeholder="0"
+                              className="px-2 py-1 text-sm text-right border border-gray-200 rounded focus:outline-none focus:border-green-400 focus:ring-1 focus:ring-green-200 bg-white w-full"
+                            />
+                            <select
+                              value={ch.rateUnit}
+                              onChange={(e) => updateChem(wo.programId, idx, { rateUnit: e.target.value, priceUnit: e.target.value }, editChems)}
+                              className="px-1 py-1 text-sm border border-gray-200 rounded focus:outline-none focus:border-green-400 bg-white w-full"
+                            >
+                              {RATE_UNITS.map((u) => (
+                                <option key={u} value={u}>{u}</option>
+                              ))}
+                            </select>
+                            <button
+                              onClick={() => deleteChem(wo.programId, idx, editChems)}
+                              className="p-1 text-red-400 hover:text-red-600 hover:bg-red-50 rounded transition-colors flex items-center justify-center"
+                              title="Remove chemical"
+                            >
+                              <Trash2 className="w-3.5 h-3.5" />
+                            </button>
+                          </div>
+                        ))}
+
+                        {/* Add row */}
+                        <div className="pt-2 border-t border-dashed border-gray-200 mt-1">
+                          <button
+                            onClick={() => addChem(wo.programId, editChems)}
+                            className="flex items-center gap-1.5 text-xs text-green-700 hover:text-green-800 font-medium py-1 px-2 hover:bg-green-50 rounded transition-colors"
+                          >
+                            <Plus className="w-3.5 h-3.5" />
+                            Add chemical
+                          </button>
+                        </div>
+
+                        {/* Live totals preview */}
+                        <div className="mt-3 pt-3 border-t border-gray-100">
+                          <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">Totals Preview</p>
+                          <table className="w-full text-xs">
+                            <tbody>
+                              {wo.chemTotals.map((ct) => (
+                                <tr key={ct.chemicalId}>
+                                  <td className="py-1 text-gray-600">{ct.chemicalName || <em className="text-gray-300">unnamed</em>}</td>
+                                  <td className="py-1 text-right text-gray-500">{ct.ratePerAcre.toLocaleString('en-US', { maximumFractionDigits: 3 })} {ct.rateUnit}/ac</td>
+                                  <td className="py-1 text-right font-bold text-gray-800 pl-4 w-24">{ct.totalDisplay}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    );
+                  })() : (
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="border-b border-gray-100">
+                          <th className="text-left py-2 font-semibold text-gray-600 text-xs">Chemical</th>
+                          <th className="text-right py-2 font-semibold text-gray-600 text-xs">Rate / Acre</th>
+                          <th className="text-right py-2 font-semibold text-gray-600 text-xs">Total Needed</th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                      </thead>
+                      <tbody>
+                        {wo.chemTotals.map((ct, i) => (
+                          <tr key={ct.chemicalId} className={i % 2 === 0 ? 'bg-gray-50' : 'bg-white'}>
+                            <td className="py-2.5 px-2 font-medium text-gray-900 rounded-l">{ct.chemicalName}</td>
+                            <td className="py-2.5 px-2 text-right text-gray-600">
+                              {ct.ratePerAcre.toLocaleString('en-US', { maximumFractionDigits: 2 })} {ct.rateUnit}
+                            </td>
+                            <td className="py-2.5 px-2 text-right font-bold text-gray-900">{ct.totalDisplay}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  )}
                 </div>
 
                 {wo.fields.length > 1 && (
