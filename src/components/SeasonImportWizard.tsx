@@ -1,16 +1,5 @@
-import { useCallback, useEffect, useState } from 'react';
 import { X, ChevronLeft, ChevronRight, Check, AlertCircle } from 'lucide-react';
-import {
-  loadSeasonData,
-  importSeasonData,
-  validateImport,
-  type Field,
-  type SeedVariety,
-  type FertilizerProduct,
-  type IndividualChemical,
-  type FertilizerProgram,
-  type ChemicalProgram,
-} from '../lib/seasonImport';
+import { useImportWizard } from '../hooks/useImportWizard';
 
 interface SeasonImportWizardProps {
   sourceSeasonId: string;
@@ -20,301 +9,13 @@ interface SeasonImportWizardProps {
   onCancel: () => void;
 }
 
-type Step = 'select-categories' | 'select-fields' | 'select-products' | 'select-programs' | 'update-prices' | 'importing' | 'import-warnings';
-
 export function SeasonImportWizard({ sourceSeasonId, newSeasonId, userId, onComplete, onCancel }: SeasonImportWizardProps) {
-  const [step, setStep] = useState<Step>('select-categories');
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [skippedItems, setSkippedItems] = useState<string[]>([]);
-
-  const [sourceData, setSourceData] = useState<{
-    fields: Field[];
-    seeds: SeedVariety[];
-    fertilizers: FertilizerProduct[];
-    chemicals: IndividualChemical[];
-    fertilizerPrograms: FertilizerProgram[];
-    chemicalPrograms: ChemicalProgram[];
-  }>({
-    fields: [],
-    seeds: [],
-    fertilizers: [],
-    chemicals: [],
-    fertilizerPrograms: [],
-    chemicalPrograms: [],
-  });
-
-  const [selectedCategories, setSelectedCategories] = useState({
-    fields: false,
-    seeds: false,
-    fertilizers: false,
-    chemicals: false,
-    fertilizerPrograms: false,
-    chemicalPrograms: false,
-  });
-
-  const [selectedItems, setSelectedItems] = useState<{
-    fields: string[];
-    seeds: string[];
-    fertilizers: string[];
-    chemicals: string[];
-    fertilizerPrograms: string[];
-    chemicalPrograms: string[];
-  }>({
-    fields: [],
-    seeds: [],
-    fertilizers: [],
-    chemicals: [],
-    fertilizerPrograms: [],
-    chemicalPrograms: [],
-  });
-
-  const [priceUpdates, setPriceUpdates] = useState<{
-    fields: Record<string, { land_rent_per_acre: number; property_tax_per_acre: number }>;
-    seeds: Record<string, number>;
-    fertilizers: Record<string, number>;
-    chemicals: Record<string, number>;
-    fertilizerPrograms: Record<string, number>;
-    chemicalPrograms: Record<string, number>;
-  }>({
-    fields: {},
-    seeds: {},
-    fertilizers: {},
-    chemicals: {},
-    fertilizerPrograms: {},
-    chemicalPrograms: {},
-  });
-
-  const [cropTypeUpdates, setCropTypeUpdates] = useState<{
-    fields: Record<string, string>;
-    seeds: Record<string, string>;
-    chemicals: Record<string, string>;
-    chemicalPrograms: Record<string, string>;
-  }>({
-    fields: {},
-    seeds: {},
-    chemicals: {},
-    chemicalPrograms: {},
-  });
-
-  const loadData = useCallback(async () => {
-    setLoading(true);
-    try {
-      const data = await loadSeasonData(sourceSeasonId, userId);
-      setSourceData(data);
-
-      const initialPriceUpdates: typeof priceUpdates = {
-        fields: {},
-        seeds: {},
-        fertilizers: {},
-        chemicals: {},
-        fertilizerPrograms: {},
-        chemicalPrograms: {},
-      };
-
-      data.fields.forEach((field) => {
-        initialPriceUpdates.fields[field.id] = {
-          land_rent_per_acre: field.land_rent_per_acre,
-          property_tax_per_acre: field.property_tax_per_acre,
-        };
-      });
-
-      data.seeds.forEach((seed) => {
-        initialPriceUpdates.seeds[seed.id] = seed.price_per_unit;
-      });
-
-      data.fertilizers.forEach((fert) => {
-        initialPriceUpdates.fertilizers[fert.id] = fert.price_per_unit;
-      });
-
-      data.chemicals.forEach((chem) => {
-        initialPriceUpdates.chemicals[chem.id] = chem.price_per_unit;
-      });
-
-      data.fertilizerPrograms.forEach((prog) => {
-        initialPriceUpdates.fertilizerPrograms[prog.id] = prog.application_cost;
-      });
-
-      data.chemicalPrograms.forEach((prog) => {
-        initialPriceUpdates.chemicalPrograms[prog.id] = prog.application_cost;
-      });
-
-      setPriceUpdates(initialPriceUpdates);
-
-      const initialCropTypeUpdates: typeof cropTypeUpdates = {
-        fields: {},
-        seeds: {},
-        chemicals: {},
-        chemicalPrograms: {},
-      };
-
-      data.fields.forEach((field) => {
-        initialCropTypeUpdates.fields[field.id] = field.crop_type;
-      });
-
-      data.seeds.forEach((seed) => {
-        initialCropTypeUpdates.seeds[seed.id] = seed.crop_type;
-      });
-
-      data.chemicals.forEach((chem) => {
-        initialCropTypeUpdates.chemicals[chem.id] = chem.crop_type;
-      });
-
-      data.chemicalPrograms.forEach((prog) => {
-        initialCropTypeUpdates.chemicalPrograms[prog.id] = prog.crop_type;
-      });
-
-      setCropTypeUpdates(initialCropTypeUpdates);
-    } catch (err) {
-      console.error('Error loading source data:', err);
-      setError('Failed to load previous season data');
-    } finally {
-      setLoading(false);
-    }
-  }, [sourceSeasonId, userId]);
-
-  useEffect(() => {
-    loadData();
-  }, [loadData]);
-
-  const handleCategoryToggle = (category: keyof typeof selectedCategories) => {
-    const newCategories = { ...selectedCategories, [category]: !selectedCategories[category] };
-    setSelectedCategories(newCategories);
-
-    if (!newCategories[category]) {
-      setSelectedItems((prev) => ({ ...prev, [category]: [] }));
-    }
-  };
-
-  const handleNext = () => {
-    if (step === 'select-categories') {
-      if (selectedCategories.fields && sourceData.fields.length > 0) {
-        setStep('select-fields');
-      } else if (
-        (selectedCategories.seeds || selectedCategories.fertilizers || selectedCategories.chemicals) &&
-        (sourceData.seeds.length > 0 || sourceData.fertilizers.length > 0 || sourceData.chemicals.length > 0)
-      ) {
-        setStep('select-products');
-      } else if (
-        (selectedCategories.fertilizerPrograms || selectedCategories.chemicalPrograms) &&
-        (sourceData.fertilizerPrograms.length > 0 || sourceData.chemicalPrograms.length > 0)
-      ) {
-        setStep('select-programs');
-      } else {
-        setStep('update-prices');
-      }
-    } else if (step === 'select-fields') {
-      if (
-        (selectedCategories.seeds || selectedCategories.fertilizers || selectedCategories.chemicals) &&
-        (sourceData.seeds.length > 0 || sourceData.fertilizers.length > 0 || sourceData.chemicals.length > 0)
-      ) {
-        setStep('select-products');
-      } else if (
-        (selectedCategories.fertilizerPrograms || selectedCategories.chemicalPrograms) &&
-        (sourceData.fertilizerPrograms.length > 0 || sourceData.chemicalPrograms.length > 0)
-      ) {
-        setStep('select-programs');
-      } else {
-        setStep('update-prices');
-      }
-    } else if (step === 'select-products') {
-      if (
-        (selectedCategories.fertilizerPrograms || selectedCategories.chemicalPrograms) &&
-        (sourceData.fertilizerPrograms.length > 0 || sourceData.chemicalPrograms.length > 0)
-      ) {
-        setStep('select-programs');
-      } else {
-        setStep('update-prices');
-      }
-    } else if (step === 'select-programs') {
-      const validation = validateImport(selectedItems, sourceData);
-      if (!validation.valid) {
-        setError(validation.errors.join('\n'));
-        return;
-      }
-      setStep('update-prices');
-    } else if (step === 'update-prices') {
-      handleImport();
-    }
-  };
-
-  const handleBack = () => {
-    if (step === 'update-prices') {
-      if (
-        (selectedCategories.fertilizerPrograms || selectedCategories.chemicalPrograms) &&
-        (sourceData.fertilizerPrograms.length > 0 || sourceData.chemicalPrograms.length > 0)
-      ) {
-        setStep('select-programs');
-      } else if (
-        (selectedCategories.seeds || selectedCategories.fertilizers || selectedCategories.chemicals) &&
-        (sourceData.seeds.length > 0 || sourceData.fertilizers.length > 0 || sourceData.chemicals.length > 0)
-      ) {
-        setStep('select-products');
-      } else if (selectedCategories.fields && sourceData.fields.length > 0) {
-        setStep('select-fields');
-      } else {
-        setStep('select-categories');
-      }
-    } else if (step === 'select-programs') {
-      if (
-        (selectedCategories.seeds || selectedCategories.fertilizers || selectedCategories.chemicals) &&
-        (sourceData.seeds.length > 0 || sourceData.fertilizers.length > 0 || sourceData.chemicals.length > 0)
-      ) {
-        setStep('select-products');
-      } else if (selectedCategories.fields && sourceData.fields.length > 0) {
-        setStep('select-fields');
-      } else {
-        setStep('select-categories');
-      }
-    } else if (step === 'select-products') {
-      if (selectedCategories.fields && sourceData.fields.length > 0) {
-        setStep('select-fields');
-      } else {
-        setStep('select-categories');
-      }
-    } else if (step === 'select-fields') {
-      setStep('select-categories');
-    }
-  };
-
-  const handleImport = async () => {
-    setStep('importing');
-    setError(null);
-    try {
-      const result = await importSeasonData(newSeasonId, userId, selectedItems, sourceData, priceUpdates, cropTypeUpdates);
-      if (result.skippedItems && result.skippedItems.length > 0) {
-        setSkippedItems(result.skippedItems);
-        setStep('import-warnings');
-      } else {
-        onComplete();
-      }
-    } catch (err) {
-      console.error('Import failed:', err);
-      setError('Import failed. Please try again.');
-      setStep('update-prices');
-    }
-  };
-
-  const toggleItemSelection = (category: keyof typeof selectedItems, itemId: string) => {
-    setSelectedItems((prev) => {
-      const current = prev[category];
-      const isSelected = current.includes(itemId);
-      return {
-        ...prev,
-        [category]: isSelected ? current.filter((id) => id !== itemId) : [...current, itemId],
-      };
-    });
-  };
-
-  const toggleAllInCategory = (category: keyof typeof selectedItems, itemIds: string[]) => {
-    setSelectedItems((prev) => {
-      const allSelected = itemIds.every((id) => prev[category].includes(id));
-      return {
-        ...prev,
-        [category]: allSelected ? [] : itemIds,
-      };
-    });
-  };
+  const {
+    step, loading, error, setError, skippedItems,
+    sourceData, selectedCategories, selectedItems, priceUpdates, cropTypeUpdates,
+    setPriceUpdates, setCropTypeUpdates,
+    handleNext, handleBack, handleCategoryToggle, toggleItemSelection, toggleAllInCategory,
+  } = useImportWizard(sourceSeasonId, newSeasonId, userId, onComplete);
 
   if (loading) {
     return (
@@ -357,16 +58,8 @@ export function SeasonImportWizard({ sourceSeasonId, newSeasonId, userId, onComp
                 { key: 'seeds' as const, label: 'Seed Varieties', count: sourceData.seeds.length },
                 { key: 'fertilizers' as const, label: 'Fertilizer Products', count: sourceData.fertilizers.length },
                 { key: 'chemicals' as const, label: 'Individual Chemicals', count: sourceData.chemicals.length },
-                {
-                  key: 'fertilizerPrograms' as const,
-                  label: 'Fertilizer Programs',
-                  count: sourceData.fertilizerPrograms.length,
-                },
-                {
-                  key: 'chemicalPrograms' as const,
-                  label: 'Chemical Programs',
-                  count: sourceData.chemicalPrograms.length,
-                },
+                { key: 'fertilizerPrograms' as const, label: 'Fertilizer Programs', count: sourceData.fertilizerPrograms.length },
+                { key: 'chemicalPrograms' as const, label: 'Chemical Programs', count: sourceData.chemicalPrograms.length },
               ].map((category) => (
                 <label
                   key={category.key}
@@ -450,40 +143,21 @@ export function SeasonImportWizard({ sourceSeasonId, newSeasonId, userId, onComp
                 <div>
                   <div className="flex items-center justify-between mb-3">
                     <h3 className="text-lg font-semibold text-gray-900">Seed Varieties</h3>
-                    <button
-                      onClick={() => toggleAllInCategory('seeds', sourceData.seeds.map((s) => s.id))}
-                      className="text-sm text-green-600 hover:text-green-700 font-medium"
-                    >
+                    <button onClick={() => toggleAllInCategory('seeds', sourceData.seeds.map((s) => s.id))} className="text-sm text-green-600 hover:text-green-700 font-medium">
                       {selectedItems.seeds.length === sourceData.seeds.length ? 'Deselect All' : 'Select All'}
                     </button>
                   </div>
                   <div className="space-y-2">
                     {sourceData.seeds.map((seed) => (
-                      <label
-                        key={seed.id}
-                        className={`flex items-center justify-between p-3 border rounded-lg cursor-pointer transition-all ${
-                          selectedItems.seeds.includes(seed.id)
-                            ? 'border-green-500 bg-green-50'
-                            : 'border-gray-200 hover:border-green-300'
-                        }`}
-                      >
+                      <label key={seed.id} className={`flex items-center justify-between p-3 border rounded-lg cursor-pointer transition-all ${selectedItems.seeds.includes(seed.id) ? 'border-green-500 bg-green-50' : 'border-gray-200 hover:border-green-300'}`}>
                         <div className="flex items-center gap-3">
-                          <input
-                            type="checkbox"
-                            checked={selectedItems.seeds.includes(seed.id)}
-                            onChange={() => toggleItemSelection('seeds', seed.id)}
-                            className="w-4 h-4 text-green-600 rounded focus:ring-2 focus:ring-green-500"
-                          />
+                          <input type="checkbox" checked={selectedItems.seeds.includes(seed.id)} onChange={() => toggleItemSelection('seeds', seed.id)} className="w-4 h-4 text-green-600 rounded focus:ring-2 focus:ring-green-500" />
                           <div>
                             <p className="font-medium text-gray-900">{seed.product_name}</p>
                             <p className="text-sm text-gray-600 capitalize">{seed.crop_type}</p>
                           </div>
                         </div>
-                        <div className="text-right">
-                          <p className="text-sm text-gray-600">
-                            ${seed.price_per_unit.toFixed(2)}/{seed.unit_type}
-                          </p>
-                        </div>
+                        <p className="text-sm text-gray-600">${seed.price_per_unit.toFixed(2)}/{seed.unit_type}</p>
                       </label>
                     ))}
                   </div>
@@ -495,44 +169,18 @@ export function SeasonImportWizard({ sourceSeasonId, newSeasonId, userId, onComp
                 <div>
                   <div className="flex items-center justify-between mb-3">
                     <h3 className="text-lg font-semibold text-gray-900">Fertilizer Products</h3>
-                    <button
-                      onClick={() =>
-                        toggleAllInCategory(
-                          'fertilizers',
-                          sourceData.fertilizers.map((f) => f.id)
-                        )
-                      }
-                      className="text-sm text-green-600 hover:text-green-700 font-medium"
-                    >
-                      {selectedItems.fertilizers.length === sourceData.fertilizers.length
-                        ? 'Deselect All'
-                        : 'Select All'}
+                    <button onClick={() => toggleAllInCategory('fertilizers', sourceData.fertilizers.map((f) => f.id))} className="text-sm text-green-600 hover:text-green-700 font-medium">
+                      {selectedItems.fertilizers.length === sourceData.fertilizers.length ? 'Deselect All' : 'Select All'}
                     </button>
                   </div>
                   <div className="space-y-2">
                     {sourceData.fertilizers.map((fert) => (
-                      <label
-                        key={fert.id}
-                        className={`flex items-center justify-between p-3 border rounded-lg cursor-pointer transition-all ${
-                          selectedItems.fertilizers.includes(fert.id)
-                            ? 'border-green-500 bg-green-50'
-                            : 'border-gray-200 hover:border-green-300'
-                        }`}
-                      >
+                      <label key={fert.id} className={`flex items-center justify-between p-3 border rounded-lg cursor-pointer transition-all ${selectedItems.fertilizers.includes(fert.id) ? 'border-green-500 bg-green-50' : 'border-gray-200 hover:border-green-300'}`}>
                         <div className="flex items-center gap-3">
-                          <input
-                            type="checkbox"
-                            checked={selectedItems.fertilizers.includes(fert.id)}
-                            onChange={() => toggleItemSelection('fertilizers', fert.id)}
-                            className="w-4 h-4 text-green-600 rounded focus:ring-2 focus:ring-green-500"
-                          />
+                          <input type="checkbox" checked={selectedItems.fertilizers.includes(fert.id)} onChange={() => toggleItemSelection('fertilizers', fert.id)} className="w-4 h-4 text-green-600 rounded focus:ring-2 focus:ring-green-500" />
                           <p className="font-medium text-gray-900">{fert.product_name}</p>
                         </div>
-                        <div className="text-right">
-                          <p className="text-sm text-gray-600">
-                            ${fert.price_per_unit.toFixed(2)}/{fert.unit_type}
-                          </p>
-                        </div>
+                        <p className="text-sm text-gray-600">${fert.price_per_unit.toFixed(2)}/{fert.unit_type}</p>
                       </label>
                     ))}
                   </div>
@@ -544,40 +192,21 @@ export function SeasonImportWizard({ sourceSeasonId, newSeasonId, userId, onComp
                 <div>
                   <div className="flex items-center justify-between mb-3">
                     <h3 className="text-lg font-semibold text-gray-900">Individual Chemicals</h3>
-                    <button
-                      onClick={() => toggleAllInCategory('chemicals', sourceData.chemicals.map((c) => c.id))}
-                      className="text-sm text-green-600 hover:text-green-700 font-medium"
-                    >
+                    <button onClick={() => toggleAllInCategory('chemicals', sourceData.chemicals.map((c) => c.id))} className="text-sm text-green-600 hover:text-green-700 font-medium">
                       {selectedItems.chemicals.length === sourceData.chemicals.length ? 'Deselect All' : 'Select All'}
                     </button>
                   </div>
                   <div className="space-y-2">
                     {sourceData.chemicals.map((chem) => (
-                      <label
-                        key={chem.id}
-                        className={`flex items-center justify-between p-3 border rounded-lg cursor-pointer transition-all ${
-                          selectedItems.chemicals.includes(chem.id)
-                            ? 'border-green-500 bg-green-50'
-                            : 'border-gray-200 hover:border-green-300'
-                        }`}
-                      >
+                      <label key={chem.id} className={`flex items-center justify-between p-3 border rounded-lg cursor-pointer transition-all ${selectedItems.chemicals.includes(chem.id) ? 'border-green-500 bg-green-50' : 'border-gray-200 hover:border-green-300'}`}>
                         <div className="flex items-center gap-3">
-                          <input
-                            type="checkbox"
-                            checked={selectedItems.chemicals.includes(chem.id)}
-                            onChange={() => toggleItemSelection('chemicals', chem.id)}
-                            className="w-4 h-4 text-green-600 rounded focus:ring-2 focus:ring-green-500"
-                          />
+                          <input type="checkbox" checked={selectedItems.chemicals.includes(chem.id)} onChange={() => toggleItemSelection('chemicals', chem.id)} className="w-4 h-4 text-green-600 rounded focus:ring-2 focus:ring-green-500" />
                           <div>
                             <p className="font-medium text-gray-900">{chem.chemical_name}</p>
                             <p className="text-sm text-gray-600 capitalize">{chem.crop_type}</p>
                           </div>
                         </div>
-                        <div className="text-right">
-                          <p className="text-sm text-gray-600">
-                            ${chem.price_per_unit.toFixed(2)}/{chem.unit_type}
-                          </p>
-                        </div>
+                        <p className="text-sm text-gray-600">${chem.price_per_unit.toFixed(2)}/{chem.unit_type}</p>
                       </label>
                     ))}
                   </div>
@@ -593,51 +222,25 @@ export function SeasonImportWizard({ sourceSeasonId, newSeasonId, userId, onComp
                 <div>
                   <div className="flex items-center justify-between mb-3">
                     <h3 className="text-lg font-semibold text-gray-900">Fertilizer Programs</h3>
-                    <button
-                      onClick={() =>
-                        toggleAllInCategory(
-                          'fertilizerPrograms',
-                          sourceData.fertilizerPrograms.map((p) => p.id)
-                        )
-                      }
-                      className="text-sm text-green-600 hover:text-green-700 font-medium"
-                    >
-                      {selectedItems.fertilizerPrograms.length === sourceData.fertilizerPrograms.length
-                        ? 'Deselect All'
-                        : 'Select All'}
+                    <button onClick={() => toggleAllInCategory('fertilizerPrograms', sourceData.fertilizerPrograms.map((p) => p.id))} className="text-sm text-green-600 hover:text-green-700 font-medium">
+                      {selectedItems.fertilizerPrograms.length === sourceData.fertilizerPrograms.length ? 'Deselect All' : 'Select All'}
                     </button>
                   </div>
                   <div className="space-y-2">
                     {sourceData.fertilizerPrograms.map((prog) => (
-                      <label
-                        key={prog.id}
-                        className={`flex items-center justify-between p-3 border rounded-lg cursor-pointer transition-all ${
-                          selectedItems.fertilizerPrograms.includes(prog.id)
-                            ? 'border-green-500 bg-green-50'
-                            : 'border-gray-200 hover:border-green-300'
-                        }`}
-                      >
+                      <label key={prog.id} className={`flex items-center justify-between p-3 border rounded-lg cursor-pointer transition-all ${selectedItems.fertilizerPrograms.includes(prog.id) ? 'border-green-500 bg-green-50' : 'border-gray-200 hover:border-green-300'}`}>
                         <div className="flex items-center gap-3">
-                          <input
-                            type="checkbox"
-                            checked={selectedItems.fertilizerPrograms.includes(prog.id)}
-                            onChange={() => toggleItemSelection('fertilizerPrograms', prog.id)}
-                            className="w-4 h-4 text-green-600 rounded focus:ring-2 focus:ring-green-500"
-                          />
+                          <input type="checkbox" checked={selectedItems.fertilizerPrograms.includes(prog.id)} onChange={() => toggleItemSelection('fertilizerPrograms', prog.id)} className="w-4 h-4 text-green-600 rounded focus:ring-2 focus:ring-green-500" />
                           <div>
                             <p className="font-medium text-gray-900">{prog.program_name}</p>
                             <p className="text-sm text-gray-600">{prog.fertilizer_program_items.length} product(s)</p>
                           </div>
                         </div>
-                        <div className="text-right">
-                          <p className="text-sm text-gray-600">App Cost: ${prog.application_cost.toFixed(2)}/acre</p>
-                        </div>
+                        <p className="text-sm text-gray-600">App Cost: ${prog.application_cost.toFixed(2)}/acre</p>
                       </label>
                     ))}
                   </div>
-                  <p className="text-sm text-gray-500 mt-2">
-                    {selectedItems.fertilizerPrograms.length} program(s) selected
-                  </p>
+                  <p className="text-sm text-gray-500 mt-2">{selectedItems.fertilizerPrograms.length} program(s) selected</p>
                 </div>
               )}
 
@@ -645,47 +248,21 @@ export function SeasonImportWizard({ sourceSeasonId, newSeasonId, userId, onComp
                 <div>
                   <div className="flex items-center justify-between mb-3">
                     <h3 className="text-lg font-semibold text-gray-900">Chemical Programs</h3>
-                    <button
-                      onClick={() =>
-                        toggleAllInCategory(
-                          'chemicalPrograms',
-                          sourceData.chemicalPrograms.map((p) => p.id)
-                        )
-                      }
-                      className="text-sm text-green-600 hover:text-green-700 font-medium"
-                    >
-                      {selectedItems.chemicalPrograms.length === sourceData.chemicalPrograms.length
-                        ? 'Deselect All'
-                        : 'Select All'}
+                    <button onClick={() => toggleAllInCategory('chemicalPrograms', sourceData.chemicalPrograms.map((p) => p.id))} className="text-sm text-green-600 hover:text-green-700 font-medium">
+                      {selectedItems.chemicalPrograms.length === sourceData.chemicalPrograms.length ? 'Deselect All' : 'Select All'}
                     </button>
                   </div>
                   <div className="space-y-2">
                     {sourceData.chemicalPrograms.map((prog) => (
-                      <label
-                        key={prog.id}
-                        className={`flex items-center justify-between p-3 border rounded-lg cursor-pointer transition-all ${
-                          selectedItems.chemicalPrograms.includes(prog.id)
-                            ? 'border-green-500 bg-green-50'
-                            : 'border-gray-200 hover:border-green-300'
-                        }`}
-                      >
+                      <label key={prog.id} className={`flex items-center justify-between p-3 border rounded-lg cursor-pointer transition-all ${selectedItems.chemicalPrograms.includes(prog.id) ? 'border-green-500 bg-green-50' : 'border-gray-200 hover:border-green-300'}`}>
                         <div className="flex items-center gap-3">
-                          <input
-                            type="checkbox"
-                            checked={selectedItems.chemicalPrograms.includes(prog.id)}
-                            onChange={() => toggleItemSelection('chemicalPrograms', prog.id)}
-                            className="w-4 h-4 text-green-600 rounded focus:ring-2 focus:ring-green-500"
-                          />
+                          <input type="checkbox" checked={selectedItems.chemicalPrograms.includes(prog.id)} onChange={() => toggleItemSelection('chemicalPrograms', prog.id)} className="w-4 h-4 text-green-600 rounded focus:ring-2 focus:ring-green-500" />
                           <div>
                             <p className="font-medium text-gray-900">{prog.program_name}</p>
-                            <p className="text-sm text-gray-600 capitalize">
-                              {prog.crop_type} - {prog.chemical_program_items.length} chemical(s)
-                            </p>
+                            <p className="text-sm text-gray-600 capitalize">{prog.crop_type} - {prog.chemical_program_items.length} chemical(s)</p>
                           </div>
                         </div>
-                        <div className="text-right">
-                          <p className="text-sm text-gray-600">App Cost: ${prog.application_cost.toFixed(2)}/acre</p>
-                        </div>
+                        <p className="text-sm text-gray-600">App Cost: ${prog.application_cost.toFixed(2)}/acre</p>
                       </label>
                     ))}
                   </div>
@@ -698,9 +275,7 @@ export function SeasonImportWizard({ sourceSeasonId, newSeasonId, userId, onComp
           {step === 'update-prices' && (
             <div className="space-y-6">
               <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
-                <p className="text-sm text-blue-800">
-                  Review and update prices for the new season. The values shown are from the previous season.
-                </p>
+                <p className="text-sm text-blue-800">Review and update prices for the new season. The values shown are from the previous season.</p>
               </div>
 
               {selectedItems.fields.length > 0 && (
@@ -717,71 +292,38 @@ export function SeasonImportWizard({ sourceSeasonId, newSeasonId, userId, onComp
                         </tr>
                       </thead>
                       <tbody>
-                        {sourceData.fields
-                          .filter((f) => selectedItems.fields.includes(f.id))
-                          .map((field) => (
-                            <tr key={field.id} className="border-b border-gray-100">
-                              <td className="p-3 text-sm font-medium text-gray-900">{field.name}</td>
-                              <td className="p-3">
-                                <select
-                                  value={cropTypeUpdates.fields[field.id] ?? field.crop_type}
-                                  onChange={(e) =>
-                                    setCropTypeUpdates((prev) => ({
-                                      ...prev,
-                                      fields: { ...prev.fields, [field.id]: e.target.value },
-                                    }))
-                                  }
-                                  className="w-32 px-3 py-1.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent capitalize"
-                                >
-                                  <option value="corn">Corn</option>
-                                  <option value="soybeans">Soybeans</option>
-                                  <option value="wheat">Wheat</option>
-                                </select>
-                              </td>
-                              <td className="p-3">
-                                <input
-                                  type="number"
-                                  step="0.01"
-                                  value={priceUpdates.fields[field.id]?.land_rent_per_acre ?? field.land_rent_per_acre}
-                                  onChange={(e) =>
-                                    setPriceUpdates((prev) => ({
-                                      ...prev,
-                                      fields: {
-                                        ...prev.fields,
-                                        [field.id]: {
-                                          ...prev.fields[field.id],
-                                          land_rent_per_acre: parseFloat(e.target.value) || 0,
-                                        },
-                                      },
-                                    }))
-                                  }
-                                  className="w-32 px-3 py-1.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                                />
-                              </td>
-                              <td className="p-3">
-                                <input
-                                  type="number"
-                                  step="0.01"
-                                  value={
-                                    priceUpdates.fields[field.id]?.property_tax_per_acre ?? field.property_tax_per_acre
-                                  }
-                                  onChange={(e) =>
-                                    setPriceUpdates((prev) => ({
-                                      ...prev,
-                                      fields: {
-                                        ...prev.fields,
-                                        [field.id]: {
-                                          ...prev.fields[field.id],
-                                          property_tax_per_acre: parseFloat(e.target.value) || 0,
-                                        },
-                                      },
-                                    }))
-                                  }
-                                  className="w-32 px-3 py-1.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                                />
-                              </td>
-                            </tr>
-                          ))}
+                        {sourceData.fields.filter((f) => selectedItems.fields.includes(f.id)).map((field) => (
+                          <tr key={field.id} className="border-b border-gray-100">
+                            <td className="p-3 text-sm font-medium text-gray-900">{field.name}</td>
+                            <td className="p-3">
+                              <select
+                                value={cropTypeUpdates.fields[field.id] ?? field.crop_type}
+                                onChange={(e) => setCropTypeUpdates((prev) => ({ ...prev, fields: { ...prev.fields, [field.id]: e.target.value } }))}
+                                className="w-32 px-3 py-1.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent capitalize"
+                              >
+                                <option value="corn">Corn</option>
+                                <option value="soybeans">Soybeans</option>
+                                <option value="wheat">Wheat</option>
+                              </select>
+                            </td>
+                            <td className="p-3">
+                              <input
+                                type="number" step="0.01"
+                                value={priceUpdates.fields[field.id]?.land_rent_per_acre ?? field.land_rent_per_acre}
+                                onChange={(e) => setPriceUpdates((prev) => ({ ...prev, fields: { ...prev.fields, [field.id]: { ...prev.fields[field.id], land_rent_per_acre: parseFloat(e.target.value) || 0 } } }))}
+                                className="w-32 px-3 py-1.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                              />
+                            </td>
+                            <td className="p-3">
+                              <input
+                                type="number" step="0.01"
+                                value={priceUpdates.fields[field.id]?.property_tax_per_acre ?? field.property_tax_per_acre}
+                                onChange={(e) => setPriceUpdates((prev) => ({ ...prev, fields: { ...prev.fields, [field.id]: { ...prev.fields[field.id], property_tax_per_acre: parseFloat(e.target.value) || 0 } } }))}
+                                className="w-32 px-3 py-1.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                              />
+                            </td>
+                          </tr>
+                        ))}
                       </tbody>
                     </table>
                   </div>
@@ -792,47 +334,34 @@ export function SeasonImportWizard({ sourceSeasonId, newSeasonId, userId, onComp
                 <div>
                   <h3 className="text-lg font-semibold text-gray-900 mb-3">Seed Varieties</h3>
                   <div className="space-y-2">
-                    {sourceData.seeds
-                      .filter((s) => selectedItems.seeds.includes(s.id))
-                      .map((seed) => (
-                        <div key={seed.id} className="flex items-center justify-between p-3 border border-gray-200 rounded-lg">
-                          <div className="flex-1">
-                            <p className="font-medium text-gray-900">{seed.product_name}</p>
-                            <div className="flex items-center gap-2 mt-2">
-                              <span className="text-sm text-gray-600">Crop Type:</span>
-                              <select
-                                value={cropTypeUpdates.seeds[seed.id] ?? seed.crop_type}
-                                onChange={(e) =>
-                                  setCropTypeUpdates((prev) => ({
-                                    ...prev,
-                                    seeds: { ...prev.seeds, [seed.id]: e.target.value },
-                                  }))
-                                }
-                                className="px-3 py-1 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent capitalize text-sm"
-                              >
-                                <option value="corn">Corn</option>
-                                <option value="soybeans">Soybeans</option>
-                                <option value="wheat">Wheat</option>
-                              </select>
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-3">
-                            <span className="text-sm text-gray-600">Price per {seed.unit_type}:</span>
-                            <input
-                              type="number"
-                              step="0.01"
-                              value={priceUpdates.seeds[seed.id] ?? seed.price_per_unit}
-                              onChange={(e) =>
-                                setPriceUpdates((prev) => ({
-                                  ...prev,
-                                  seeds: { ...prev.seeds, [seed.id]: parseFloat(e.target.value) || 0 },
-                                }))
-                              }
-                              className="w-32 px-3 py-1.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                            />
+                    {sourceData.seeds.filter((s) => selectedItems.seeds.includes(s.id)).map((seed) => (
+                      <div key={seed.id} className="flex items-center justify-between p-3 border border-gray-200 rounded-lg">
+                        <div className="flex-1">
+                          <p className="font-medium text-gray-900">{seed.product_name}</p>
+                          <div className="flex items-center gap-2 mt-2">
+                            <span className="text-sm text-gray-600">Crop Type:</span>
+                            <select
+                              value={cropTypeUpdates.seeds[seed.id] ?? seed.crop_type}
+                              onChange={(e) => setCropTypeUpdates((prev) => ({ ...prev, seeds: { ...prev.seeds, [seed.id]: e.target.value } }))}
+                              className="px-3 py-1 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent capitalize text-sm"
+                            >
+                              <option value="corn">Corn</option>
+                              <option value="soybeans">Soybeans</option>
+                              <option value="wheat">Wheat</option>
+                            </select>
                           </div>
                         </div>
-                      ))}
+                        <div className="flex items-center gap-3">
+                          <span className="text-sm text-gray-600">Price per {seed.unit_type}:</span>
+                          <input
+                            type="number" step="0.01"
+                            value={priceUpdates.seeds[seed.id] ?? seed.price_per_unit}
+                            onChange={(e) => setPriceUpdates((prev) => ({ ...prev, seeds: { ...prev.seeds, [seed.id]: parseFloat(e.target.value) || 0 } }))}
+                            className="w-32 px-3 py-1.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                          />
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 </div>
               )}
@@ -841,28 +370,20 @@ export function SeasonImportWizard({ sourceSeasonId, newSeasonId, userId, onComp
                 <div>
                   <h3 className="text-lg font-semibold text-gray-900 mb-3">Fertilizer Products</h3>
                   <div className="space-y-2">
-                    {sourceData.fertilizers
-                      .filter((f) => selectedItems.fertilizers.includes(f.id))
-                      .map((fert) => (
-                        <div key={fert.id} className="flex items-center justify-between p-3 border border-gray-200 rounded-lg">
-                          <p className="font-medium text-gray-900">{fert.product_name}</p>
-                          <div className="flex items-center gap-3">
-                            <span className="text-sm text-gray-600">Price per {fert.unit_type}:</span>
-                            <input
-                              type="number"
-                              step="0.01"
-                              value={priceUpdates.fertilizers[fert.id] ?? fert.price_per_unit}
-                              onChange={(e) =>
-                                setPriceUpdates((prev) => ({
-                                  ...prev,
-                                  fertilizers: { ...prev.fertilizers, [fert.id]: parseFloat(e.target.value) || 0 },
-                                }))
-                              }
-                              className="w-32 px-3 py-1.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                            />
-                          </div>
+                    {sourceData.fertilizers.filter((f) => selectedItems.fertilizers.includes(f.id)).map((fert) => (
+                      <div key={fert.id} className="flex items-center justify-between p-3 border border-gray-200 rounded-lg">
+                        <p className="font-medium text-gray-900">{fert.product_name}</p>
+                        <div className="flex items-center gap-3">
+                          <span className="text-sm text-gray-600">Price per {fert.unit_type}:</span>
+                          <input
+                            type="number" step="0.01"
+                            value={priceUpdates.fertilizers[fert.id] ?? fert.price_per_unit}
+                            onChange={(e) => setPriceUpdates((prev) => ({ ...prev, fertilizers: { ...prev.fertilizers, [fert.id]: parseFloat(e.target.value) || 0 } }))}
+                            className="w-32 px-3 py-1.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                          />
                         </div>
-                      ))}
+                      </div>
+                    ))}
                   </div>
                 </div>
               )}
@@ -871,47 +392,34 @@ export function SeasonImportWizard({ sourceSeasonId, newSeasonId, userId, onComp
                 <div>
                   <h3 className="text-lg font-semibold text-gray-900 mb-3">Individual Chemicals</h3>
                   <div className="space-y-2">
-                    {sourceData.chemicals
-                      .filter((c) => selectedItems.chemicals.includes(c.id))
-                      .map((chem) => (
-                        <div key={chem.id} className="flex items-center justify-between p-3 border border-gray-200 rounded-lg">
-                          <div className="flex-1">
-                            <p className="font-medium text-gray-900">{chem.chemical_name}</p>
-                            <div className="flex items-center gap-2 mt-2">
-                              <span className="text-sm text-gray-600">Crop Type:</span>
-                              <select
-                                value={cropTypeUpdates.chemicals[chem.id] ?? chem.crop_type}
-                                onChange={(e) =>
-                                  setCropTypeUpdates((prev) => ({
-                                    ...prev,
-                                    chemicals: { ...prev.chemicals, [chem.id]: e.target.value },
-                                  }))
-                                }
-                                className="px-3 py-1 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent capitalize text-sm"
-                              >
-                                <option value="corn">Corn</option>
-                                <option value="soybeans">Soybeans</option>
-                                <option value="wheat">Wheat</option>
-                              </select>
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-3">
-                            <span className="text-sm text-gray-600">Price per {chem.unit_type}:</span>
-                            <input
-                              type="number"
-                              step="0.01"
-                              value={priceUpdates.chemicals[chem.id] ?? chem.price_per_unit}
-                              onChange={(e) =>
-                                setPriceUpdates((prev) => ({
-                                  ...prev,
-                                  chemicals: { ...prev.chemicals, [chem.id]: parseFloat(e.target.value) || 0 },
-                                }))
-                              }
-                              className="w-32 px-3 py-1.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                            />
+                    {sourceData.chemicals.filter((c) => selectedItems.chemicals.includes(c.id)).map((chem) => (
+                      <div key={chem.id} className="flex items-center justify-between p-3 border border-gray-200 rounded-lg">
+                        <div className="flex-1">
+                          <p className="font-medium text-gray-900">{chem.chemical_name}</p>
+                          <div className="flex items-center gap-2 mt-2">
+                            <span className="text-sm text-gray-600">Crop Type:</span>
+                            <select
+                              value={cropTypeUpdates.chemicals[chem.id] ?? chem.crop_type}
+                              onChange={(e) => setCropTypeUpdates((prev) => ({ ...prev, chemicals: { ...prev.chemicals, [chem.id]: e.target.value } }))}
+                              className="px-3 py-1 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent capitalize text-sm"
+                            >
+                              <option value="corn">Corn</option>
+                              <option value="soybeans">Soybeans</option>
+                              <option value="wheat">Wheat</option>
+                            </select>
                           </div>
                         </div>
-                      ))}
+                        <div className="flex items-center gap-3">
+                          <span className="text-sm text-gray-600">Price per {chem.unit_type}:</span>
+                          <input
+                            type="number" step="0.01"
+                            value={priceUpdates.chemicals[chem.id] ?? chem.price_per_unit}
+                            onChange={(e) => setPriceUpdates((prev) => ({ ...prev, chemicals: { ...prev.chemicals, [chem.id]: parseFloat(e.target.value) || 0 } }))}
+                            className="w-32 px-3 py-1.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                          />
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 </div>
               )}
@@ -920,31 +428,20 @@ export function SeasonImportWizard({ sourceSeasonId, newSeasonId, userId, onComp
                 <div>
                   <h3 className="text-lg font-semibold text-gray-900 mb-3">Fertilizer Programs</h3>
                   <div className="space-y-2">
-                    {sourceData.fertilizerPrograms
-                      .filter((p) => selectedItems.fertilizerPrograms.includes(p.id))
-                      .map((prog) => (
-                        <div key={prog.id} className="flex items-center justify-between p-3 border border-gray-200 rounded-lg">
-                          <p className="font-medium text-gray-900">{prog.program_name}</p>
-                          <div className="flex items-center gap-3">
-                            <span className="text-sm text-gray-600">Application Cost/acre:</span>
-                            <input
-                              type="number"
-                              step="0.01"
-                              value={priceUpdates.fertilizerPrograms[prog.id] ?? prog.application_cost}
-                              onChange={(e) =>
-                                setPriceUpdates((prev) => ({
-                                  ...prev,
-                                  fertilizerPrograms: {
-                                    ...prev.fertilizerPrograms,
-                                    [prog.id]: parseFloat(e.target.value) || 0,
-                                  },
-                                }))
-                              }
-                              className="w-32 px-3 py-1.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                            />
-                          </div>
+                    {sourceData.fertilizerPrograms.filter((p) => selectedItems.fertilizerPrograms.includes(p.id)).map((prog) => (
+                      <div key={prog.id} className="flex items-center justify-between p-3 border border-gray-200 rounded-lg">
+                        <p className="font-medium text-gray-900">{prog.program_name}</p>
+                        <div className="flex items-center gap-3">
+                          <span className="text-sm text-gray-600">Application Cost/acre:</span>
+                          <input
+                            type="number" step="0.01"
+                            value={priceUpdates.fertilizerPrograms[prog.id] ?? prog.application_cost}
+                            onChange={(e) => setPriceUpdates((prev) => ({ ...prev, fertilizerPrograms: { ...prev.fertilizerPrograms, [prog.id]: parseFloat(e.target.value) || 0 } }))}
+                            className="w-32 px-3 py-1.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                          />
                         </div>
-                      ))}
+                      </div>
+                    ))}
                   </div>
                 </div>
               )}
@@ -953,50 +450,34 @@ export function SeasonImportWizard({ sourceSeasonId, newSeasonId, userId, onComp
                 <div>
                   <h3 className="text-lg font-semibold text-gray-900 mb-3">Chemical Programs</h3>
                   <div className="space-y-2">
-                    {sourceData.chemicalPrograms
-                      .filter((p) => selectedItems.chemicalPrograms.includes(p.id))
-                      .map((prog) => (
-                        <div key={prog.id} className="flex items-center justify-between p-3 border border-gray-200 rounded-lg">
-                          <div className="flex-1">
-                            <p className="font-medium text-gray-900">{prog.program_name}</p>
-                            <div className="flex items-center gap-2 mt-2">
-                              <span className="text-sm text-gray-600">Crop Type:</span>
-                              <select
-                                value={cropTypeUpdates.chemicalPrograms[prog.id] ?? prog.crop_type}
-                                onChange={(e) =>
-                                  setCropTypeUpdates((prev) => ({
-                                    ...prev,
-                                    chemicalPrograms: { ...prev.chemicalPrograms, [prog.id]: e.target.value },
-                                  }))
-                                }
-                                className="px-3 py-1 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent capitalize text-sm"
-                              >
-                                <option value="corn">Corn</option>
-                                <option value="soybeans">Soybeans</option>
-                                <option value="wheat">Wheat</option>
-                              </select>
-                            </div>
-                          </div>
-                          <div className="flex items-center gap-3">
-                            <span className="text-sm text-gray-600">Application Cost/acre:</span>
-                            <input
-                              type="number"
-                              step="0.01"
-                              value={priceUpdates.chemicalPrograms[prog.id] ?? prog.application_cost}
-                              onChange={(e) =>
-                                setPriceUpdates((prev) => ({
-                                  ...prev,
-                                  chemicalPrograms: {
-                                    ...prev.chemicalPrograms,
-                                    [prog.id]: parseFloat(e.target.value) || 0,
-                                  },
-                                }))
-                              }
-                              className="w-32 px-3 py-1.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                            />
+                    {sourceData.chemicalPrograms.filter((p) => selectedItems.chemicalPrograms.includes(p.id)).map((prog) => (
+                      <div key={prog.id} className="flex items-center justify-between p-3 border border-gray-200 rounded-lg">
+                        <div className="flex-1">
+                          <p className="font-medium text-gray-900">{prog.program_name}</p>
+                          <div className="flex items-center gap-2 mt-2">
+                            <span className="text-sm text-gray-600">Crop Type:</span>
+                            <select
+                              value={cropTypeUpdates.chemicalPrograms[prog.id] ?? prog.crop_type}
+                              onChange={(e) => setCropTypeUpdates((prev) => ({ ...prev, chemicalPrograms: { ...prev.chemicalPrograms, [prog.id]: e.target.value } }))}
+                              className="px-3 py-1 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent capitalize text-sm"
+                            >
+                              <option value="corn">Corn</option>
+                              <option value="soybeans">Soybeans</option>
+                              <option value="wheat">Wheat</option>
+                            </select>
                           </div>
                         </div>
-                      ))}
+                        <div className="flex items-center gap-3">
+                          <span className="text-sm text-gray-600">Application Cost/acre:</span>
+                          <input
+                            type="number" step="0.01"
+                            value={priceUpdates.chemicalPrograms[prog.id] ?? prog.application_cost}
+                            onChange={(e) => setPriceUpdates((prev) => ({ ...prev, chemicalPrograms: { ...prev.chemicalPrograms, [prog.id]: parseFloat(e.target.value) || 0 } }))}
+                            className="w-32 px-3 py-1.5 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                          />
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 </div>
               )}
@@ -1026,9 +507,7 @@ export function SeasonImportWizard({ sourceSeasonId, newSeasonId, userId, onComp
               </div>
               <ul className="divide-y divide-gray-100 border border-gray-200 rounded-lg overflow-hidden">
                 {skippedItems.map((item, i) => (
-                  <li key={i} className="px-4 py-3 text-sm text-gray-700 bg-white">
-                    {item}
-                  </li>
+                  <li key={i} className="px-4 py-3 text-sm text-gray-700 bg-white">{item}</li>
                 ))}
               </ul>
               <p className="text-sm text-gray-500">All other data was imported successfully. You can add the missing items manually.</p>
@@ -1040,10 +519,7 @@ export function SeasonImportWizard({ sourceSeasonId, newSeasonId, userId, onComp
           <div className="p-6 border-t border-gray-200 flex items-center justify-between bg-gray-50">
             {step === 'import-warnings' ? (
               <div className="flex w-full justify-end">
-                <button
-                  onClick={onComplete}
-                  className="flex items-center gap-2 px-6 py-2 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700 transition-colors"
-                >
+                <button onClick={onComplete} className="flex items-center gap-2 px-6 py-2 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700 transition-colors">
                   <Check className="w-4 h-4" />
                   Done
                 </button>
@@ -1053,29 +529,16 @@ export function SeasonImportWizard({ sourceSeasonId, newSeasonId, userId, onComp
                 <button
                   onClick={handleBack}
                   disabled={step === 'select-categories'}
-                  className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-colors ${
-                    step === 'select-categories'
-                      ? 'text-gray-400 cursor-not-allowed'
-                      : 'text-gray-700 hover:bg-gray-200'
-                  }`}
+                  className={`flex items-center gap-2 px-4 py-2 rounded-lg font-medium transition-colors ${step === 'select-categories' ? 'text-gray-400 cursor-not-allowed' : 'text-gray-700 hover:bg-gray-200'}`}
                 >
                   <ChevronLeft className="w-4 h-4" />
                   Back
                 </button>
-
                 <div className="flex gap-3">
-                  <button
-                    onClick={onCancel}
-                    className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg font-medium hover:bg-gray-200 transition-colors"
-                  >
-                    Cancel
-                  </button>
+                  <button onClick={onCancel} className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg font-medium hover:bg-gray-200 transition-colors">Cancel</button>
                   <button
                     onClick={handleNext}
-                    disabled={
-                      step === 'select-categories' &&
-                      !Object.values(selectedCategories).some((v) => v)
-                    }
+                    disabled={step === 'select-categories' && !Object.values(selectedCategories).some((v) => v)}
                     className={`flex items-center gap-2 px-6 py-2 rounded-lg font-medium transition-colors ${
                       step === 'select-categories' && !Object.values(selectedCategories).some((v) => v)
                         ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
@@ -1083,15 +546,9 @@ export function SeasonImportWizard({ sourceSeasonId, newSeasonId, userId, onComp
                     }`}
                   >
                     {step === 'update-prices' ? (
-                      <>
-                        <Check className="w-4 h-4" />
-                        Complete Import
-                      </>
+                      <><Check className="w-4 h-4" />Complete Import</>
                     ) : (
-                      <>
-                        Next
-                        <ChevronRight className="w-4 h-4" />
-                      </>
+                      <>Next<ChevronRight className="w-4 h-4" /></>
                     )}
                   </button>
                 </div>
