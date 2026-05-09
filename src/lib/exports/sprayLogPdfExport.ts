@@ -157,23 +157,22 @@ export function exportSprayLogPDF(workOrders: SprayWorkOrder[], seasonName: stri
       ct.epaRegNumber ?? '',
       ct.ratePerAcre.toLocaleString('en-US', { maximumFractionDigits: 3 }),
       ct.rateUnit,
-      '',    // Load Acres — blank; depends on tank size
-      '',    // Amt / Load — blank; filled at application time
+      ct.totalDisplay,
       ct.itemNotes ?? '',
     ]);
 
     // Pad with blank rows up to MIN_ROWS
     while (productRows.length < MIN_ROWS) {
-      productRows.push([String(productRows.length + 1), '', '', '', '', '', '', '']);
+      productRows.push([String(productRows.length + 1), '', '', '', '', '', '']);
     }
 
     // Carrier water row
-    productRows.push(['', 'CARRIER WATER (to fill load)', '', '', '', '', '', 'Mix order: water first, then products per label']);
+    productRows.push(['', 'CARRIER WATER (to fill load)', '', '', '', '', 'Mix order: water first, then products per label']);
 
     autoTable(doc, {
       startY: y,
       margin: { left: ML, right: MR },
-      head: [['#', 'Product Trade Name', 'EPA Reg. #', 'Rate', 'Unit', 'Load Acres', 'Amt / Load', 'Notes (adjuvant, timing, restrictions)']],
+      head: [['#', 'Product Trade Name', 'EPA Reg. #', 'Rate', 'Unit', 'Total Needed', 'Notes (adjuvant, timing, restrictions)']],
       body: productRows,
       headStyles: {
         fillColor: GREEN_DARK,
@@ -192,13 +191,12 @@ export function exportSprayLogPDF(workOrders: SprayWorkOrder[], seasonName: stri
       alternateRowStyles: { fillColor: GREEN_ROW_ALT },
       columnStyles: {
         0: { halign: 'center', cellWidth: 6 },
-        1: { cellWidth: 38 },
+        1: { cellWidth: 40 },
         2: { cellWidth: 28 },
         3: { halign: 'right', cellWidth: 14 },
         4: { halign: 'center', cellWidth: 14 },
-        5: { halign: 'center', cellWidth: 18 },
-        6: { halign: 'center', cellWidth: 18 },
-        7: { cellWidth: 'auto' },
+        5: { halign: 'right', cellWidth: 24, fontStyle: 'bold' },
+        6: { cellWidth: 'auto' },
       },
       didParseCell(data) {
         // Carrier water row — darker green background
