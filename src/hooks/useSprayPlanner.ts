@@ -46,6 +46,7 @@ export interface WorkOrderResult {
     chemicals: Array<ChemicalItem & { totalDisplay: string }>;
   }>;
   totalAcres: number;
+  effectiveAcres: number;
   chemTotals: Array<ChemicalItem & { totalDisplay: string; totalValue: number; totalUnit: string; totalRaw: number }>;
 }
 
@@ -68,6 +69,7 @@ export function useSprayPlanner(currentSeasonId: string | null, effectiveUserId:
   const [workOrders, setWorkOrders] = useState<WorkOrderResult[] | null>(null);
   const [crossTotals, setCrossTotals] = useState<CrossTotalRow[]>([]);
   const [expandedCards, setExpandedCards] = useState<Set<string>>(new Set());
+  const [acreOverrides, setAcreOverrides] = useState<Map<string, number>>(new Map());
 
   const resultsRef = useRef<HTMLDivElement>(null);
   const loadedSeasonRef = useRef<string | null>(null);
@@ -92,6 +94,7 @@ export function useSprayPlanner(currentSeasonId: string | null, effectiveUserId:
       setWorkOrders(null);
       setSelectedFields(new Set());
       setSelectedPrograms(new Set());
+      setAcreOverrides(new Map());
     }
 
     try {
@@ -250,7 +253,7 @@ export function useSprayPlanner(currentSeasonId: string | null, effectiveUserId:
     setWorkOrders(null);
   };
 
-  const generate = () => {
+  const generate = (overrides: Map<string, number> = acreOverrides) => {
     const chosenFields = fields.filter((f) => selectedFields.has(f.id));
     const chosenPrograms = programs.filter((p) => selectedPrograms.has(p.id));
 
@@ -265,16 +268,25 @@ export function useSprayPlanner(currentSeasonId: string | null, effectiveUserId:
       });
 
       const totalAcres = chosenFields.reduce((s, f) => s + f.acreage, 0);
+      const effectiveAcres = overrides.get(prog.id) ?? totalAcres;
 
+      // When an override is set, scale totals proportionally using effectiveAcres
+      // rather than summing per-field (per-field breakdown still uses real acres).
       const chemTotalMap = new Map<string, { ch: ChemicalItem; totalRaw: number }>();
-      for (const fe of fieldRows) {
-        for (let i = 0; i < fe.chemicals.length; i++) {
-          const ch = prog.chemicals[i];
-          const rawTotal = ch.ratePerAcre * fe.acreage;
-          const key = ch.chemicalId;
-          const existing = chemTotalMap.get(key);
-          if (existing) existing.totalRaw += rawTotal;
-          else chemTotalMap.set(key, { ch, totalRaw: rawTotal });
+      if (overrides.has(prog.id)) {
+        for (const ch of prog.chemicals) {
+          chemTotalMap.set(ch.chemicalId, { ch, totalRaw: ch.ratePerAcre * effectiveAcres });
+        }
+      } else {
+        for (const fe of fieldRows) {
+          for (let i = 0; i < fe.chemicals.length; i++) {
+            const ch = prog.chemicals[i];
+            const rawTotal = ch.ratePerAcre * fe.acreage;
+            const key = ch.chemicalId;
+            const existing = chemTotalMap.get(key);
+            if (existing) existing.totalRaw += rawTotal;
+            else chemTotalMap.set(key, { ch, totalRaw: rawTotal });
+          }
         }
       }
 
@@ -291,6 +303,7 @@ export function useSprayPlanner(currentSeasonId: string | null, effectiveUserId:
         chemicalCostPerAcre: prog.chemicalCostPerAcre,
         fields: fieldRows,
         totalAcres,
+        effectiveAcres,
         chemTotals,
       };
     });
@@ -348,6 +361,19 @@ export function useSprayPlanner(currentSeasonId: string | null, effectiveUserId:
     exportSprayLogPDF(workOrders, seasonName);
   };
 
+  const setAcreOverride = (programId: string, acres: number | null) => {
+    setAcreOverrides((prev) => {
+      const next = new Map(prev);
+      if (acres === null) next.delete(programId);
+      else next.set(programId, acres);
+      // Regenerate work orders immediately with the updated overrides map
+      // so totals reflect the new acreage without requiring re-click of Generate.
+      // We pass the next map directly since state hasn't updated yet.
+      setTimeout(() => generate(next), 0);
+      return next;
+    });
+  };
+
   const toggleExpandedCard = (programId: string) => {
     setExpandedCards((prev) => {
       const next = new Set(prev);
@@ -385,6 +411,8 @@ export function useSprayPlanner(currentSeasonId: string | null, effectiveUserId:
     clearAllFields,
     toggleProgram,
     generate,
+    setAcreOverride,
+    acreOverrides,
     handleExportCSV,
     handleExportPDF,
     handleExportSprayLog,

@@ -126,7 +126,9 @@ export function exportSprayLogPDF(workOrders: SprayWorkOrder[], seasonName: stri
       ['Load Size (gal)', '', colW * 0.9],
       ['Application Rate (gal/acre)', '', colW * 0.9],
       ['Acres Per Load', '', colW * 0.9],
-      ['Total Acres', wo.totalAcres.toFixed(1), colW * 1.2],
+      ['Total Acres', wo.effectiveAcres !== wo.totalAcres
+        ? `${wo.effectiveAcres.toFixed(1)} (fields: ${wo.totalAcres.toFixed(1)})`
+        : wo.totalAcres.toFixed(1), colW * 1.2],
     ];
 
     ax = ML;

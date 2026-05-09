@@ -11,6 +11,8 @@ import {
   Printer,
   Search,
   X,
+  Pencil,
+  RotateCcw,
 } from 'lucide-react';
 import { CropType } from '../lib/database.types';
 import { useSprayPlanner } from '../hooks/useSprayPlanner';
@@ -43,12 +45,17 @@ export function SprayPlanner({ currentSeasonId, effectiveUserId }: Props) {
     workOrders, crossTotals, expandedCards, resultsRef,
     cropGroups, selectedAcres, canGenerate,
     toggleField, toggleAllByCrop, toggleAllFields, clearAllFields, toggleProgram,
-    generate, handleExportCSV, handleExportPDF, handleExportSprayLog, toggleExpandedCard,
+    generate, setAcreOverride, acreOverrides,
+    handleExportCSV, handleExportPDF, handleExportSprayLog, toggleExpandedCard,
   } = useSprayPlanner(currentSeasonId, effectiveUserId);
 
   const [fieldPickerOpen, setFieldPickerOpen] = useState(false);
   const [fieldSearch, setFieldSearch] = useState('');
   const pickerRef = useRef<HTMLDivElement>(null);
+
+  // Acre override editing state — tracks which work order card is actively editing
+  const [editingAcres, setEditingAcres] = useState<string | null>(null);
+  const [acresDraft, setAcresDraft] = useState('');
 
   useEffect(() => {
     function handleClickOutside(e: MouseEvent) {
@@ -426,8 +433,70 @@ export function SprayPlanner({ currentSeasonId, effectiveUserId }: Props) {
                       </div>
                     </div>
                     <div className="text-right flex-shrink-0">
-                      <p className={`text-2xl font-bold ${col.headerText}`}>{fmtAcres(wo.totalAcres)}</p>
-                      <p className={`text-xs ${col.headerText} opacity-70`}>total acres</p>
+                      {editingAcres === wo.programId ? (
+                        <div className="flex items-center gap-1.5 justify-end">
+                          <input
+                            type="number"
+                            min="0"
+                            step="0.1"
+                            value={acresDraft}
+                            onChange={(e) => setAcresDraft(e.target.value)}
+                            onKeyDown={(e) => {
+                              if (e.key === 'Enter') {
+                                const v = parseFloat(acresDraft);
+                                if (!isNaN(v) && v > 0) setAcreOverride(wo.programId, v);
+                                else setAcreOverride(wo.programId, null);
+                                setEditingAcres(null);
+                              } else if (e.key === 'Escape') {
+                                setEditingAcres(null);
+                              }
+                            }}
+                            onBlur={() => {
+                              const v = parseFloat(acresDraft);
+                              if (!isNaN(v) && v > 0) setAcreOverride(wo.programId, v);
+                              else setAcreOverride(wo.programId, null);
+                              setEditingAcres(null);
+                            }}
+                            autoFocus
+                            className="w-24 text-right text-xl font-bold bg-white/80 border border-current rounded px-2 py-0.5 focus:outline-none focus:ring-2 focus:ring-white/50"
+                          />
+                          <span className={`text-sm font-medium ${col.headerText} opacity-70`}>ac</span>
+                        </div>
+                      ) : (
+                        <div className="flex items-start gap-1.5 justify-end">
+                          <div>
+                            <p className={`text-2xl font-bold ${col.headerText}`}>{fmtAcres(wo.effectiveAcres)}</p>
+                            {acreOverrides.has(wo.programId) ? (
+                              <p className={`text-xs ${col.headerText} opacity-60`}>
+                                overridden · fields: {fmtAcres(wo.totalAcres)} ac
+                              </p>
+                            ) : (
+                              <p className={`text-xs ${col.headerText} opacity-70`}>total acres</p>
+                            )}
+                          </div>
+                          <div className="flex flex-col gap-0.5 pt-0.5">
+                            <button
+                              title="Override acreage"
+                              onClick={() => {
+                                setAcresDraft(fmtAcres(wo.effectiveAcres));
+                                setEditingAcres(wo.programId);
+                              }}
+                              className={`p-1 rounded hover:bg-black/10 transition-colors ${col.headerText} opacity-60 hover:opacity-100`}
+                            >
+                              <Pencil className="w-3 h-3" />
+                            </button>
+                            {acreOverrides.has(wo.programId) && (
+                              <button
+                                title="Reset to field acres"
+                                onClick={() => setAcreOverride(wo.programId, null)}
+                                className={`p-1 rounded hover:bg-black/10 transition-colors ${col.headerText} opacity-60 hover:opacity-100`}
+                              >
+                                <RotateCcw className="w-3 h-3" />
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      )}
                       {(wo.applicationCostPerAcre > 0 || wo.chemicalCostPerAcre > 0) && (
                         <div className="mt-1 text-right">
                           <p className="text-sm font-semibold text-gray-700">
@@ -444,7 +513,10 @@ export function SprayPlanner({ currentSeasonId, effectiveUserId }: Props) {
 
                 <div className="bg-white px-5 py-4">
                   <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">
-                    Chemical Mix — {fmtAcres(wo.totalAcres)} Combined Acres
+                    Chemical Mix — {fmtAcres(wo.effectiveAcres)} Combined Acres
+                    {acreOverrides.has(wo.programId) && (
+                      <span className="ml-1.5 text-amber-600 normal-case font-normal">(overridden)</span>
+                    )}
                   </p>
                   <table className="w-full text-sm">
                     <thead>

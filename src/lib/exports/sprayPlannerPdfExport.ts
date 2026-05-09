@@ -8,6 +8,7 @@ export interface SprayWorkOrder {
   applicationCostPerAcre: number;
   chemicalCostPerAcre: number;
   totalAcres: number;
+  effectiveAcres: number;
   fields: Array<{
     fieldId: string;
     fieldName: string;
@@ -84,7 +85,10 @@ export function exportSprayPlannerPDF(
     doc.text(wo.programName, margin + 10, cursorY + 18);
     doc.setFontSize(9);
     doc.setFont('helvetica', 'normal');
-    const acresText = `${wo.totalAcres.toFixed(1)} ac · ${wo.fields.length} field${wo.fields.length !== 1 ? 's' : ''}`;
+    const overridden = wo.effectiveAcres !== wo.totalAcres;
+    const acresText = overridden
+      ? `${wo.effectiveAcres.toFixed(1)} ac (override) · ${wo.fields.length} field${wo.fields.length !== 1 ? 's' : ''}`
+      : `${wo.totalAcres.toFixed(1)} ac · ${wo.fields.length} field${wo.fields.length !== 1 ? 's' : ''}`;
     doc.text(acresText, pageW - margin - 10, cursorY + 18, { align: 'right' });
     cursorY += 32;
 
