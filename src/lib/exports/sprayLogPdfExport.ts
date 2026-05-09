@@ -192,13 +192,13 @@ export function exportSprayLogPDF(workOrders: SprayWorkOrder[], seasonName: stri
       },
       alternateRowStyles: { fillColor: GREEN_ROW_ALT },
       columnStyles: {
-        0: { halign: 'center', cellWidth: 6 },
-        1: { cellWidth: 40 },
-        2: { cellWidth: 28 },
-        3: { halign: 'right', cellWidth: 14 },
-        4: { halign: 'center', cellWidth: 14 },
-        5: { halign: 'right', cellWidth: 24, fontStyle: 'bold' },
-        6: { cellWidth: 'auto' },
+        0: { halign: 'center', valign: 'middle', cellWidth: 6 },
+        1: { valign: 'middle', cellWidth: 40 },
+        2: { valign: 'middle', cellWidth: 28 },
+        3: { halign: 'right', valign: 'middle', cellWidth: 14 },
+        4: { halign: 'center', valign: 'middle', cellWidth: 14 },
+        5: { halign: 'right', valign: 'middle', cellWidth: 24, fontStyle: 'bold' },
+        6: { valign: 'middle', cellWidth: 'auto' },
       },
       didParseCell(data) {
         // Carrier water row — darker green background
