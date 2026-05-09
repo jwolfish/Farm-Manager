@@ -201,6 +201,10 @@ export function exportSprayLogPDF(workOrders: SprayWorkOrder[], seasonName: stri
         6: { valign: 'middle', cellWidth: 'auto' },
       },
       didParseCell(data) {
+        // Ensure column 0 (product numbers) has vertical centering
+        if (data.column.index === 0) {
+          data.cell.styles.valign = 'middle';
+        }
         // Carrier water row — darker green background
         if (data.row.index === productRows.length - 1) {
           data.cell.styles.fillColor = GREEN_ROW_HEADER;
