@@ -253,7 +253,7 @@ export function useSprayPlanner(currentSeasonId: string | null, effectiveUserId:
     setWorkOrders(null);
   };
 
-  const generate = (overrides: Map<string, number> = acreOverrides) => {
+  const buildWorkOrders = (overrides: Map<string, number>) => {
     const chosenFields = fields.filter((f) => selectedFields.has(f.id));
     const chosenPrograms = programs.filter((p) => selectedPrograms.has(p.id));
 
@@ -330,10 +330,14 @@ export function useSprayPlanner(currentSeasonId: string | null, effectiveUserId:
       totalDisplay: toBestPracticalUnit(c.totalRaw, c.rateUnit).display,
     }));
 
+    return { results, crossRows };
+  };
+
+  const generate = () => {
+    const { results, crossRows } = buildWorkOrders(acreOverrides);
     setWorkOrders(results);
     setCrossTotals(crossRows);
     setExpandedCards(new Set());
-
     setTimeout(() => resultsRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
   };
 
@@ -366,10 +370,10 @@ export function useSprayPlanner(currentSeasonId: string | null, effectiveUserId:
       const next = new Map(prev);
       if (acres === null) next.delete(programId);
       else next.set(programId, acres);
-      // Regenerate work orders immediately with the updated overrides map
-      // so totals reflect the new acreage without requiring re-click of Generate.
-      // We pass the next map directly since state hasn't updated yet.
-      setTimeout(() => generate(next), 0);
+      // Regenerate immediately with the new overrides map (state hasn't flushed yet).
+      const { results, crossRows } = buildWorkOrders(next);
+      setWorkOrders(results);
+      setCrossTotals(crossRows);
       return next;
     });
   };
