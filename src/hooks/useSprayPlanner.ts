@@ -224,6 +224,11 @@ export function useSprayPlanner(currentSeasonId: string | null, effectiveUserId:
     setWorkOrders(null);
   };
 
+  const clearAllFields = () => {
+    setSelectedFields(new Set());
+    setWorkOrders(null);
+  };
+
   const toggleProgram = (id: string) => {
     setSelectedPrograms((prev) => {
       const next = new Set(prev);
@@ -360,6 +365,7 @@ export function useSprayPlanner(currentSeasonId: string | null, effectiveUserId:
     toggleField,
     toggleAllByCrop,
     toggleAllFields,
+    clearAllFields,
     toggleProgram,
     generate,
     handleExportCSV,

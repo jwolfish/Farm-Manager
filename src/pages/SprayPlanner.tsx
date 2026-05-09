@@ -1,3 +1,4 @@
+import { useEffect, useRef, useState } from 'react';
 import {
   Droplets,
   CheckSquare,
@@ -8,6 +9,8 @@ import {
   AlertTriangle,
   ClipboardList,
   Printer,
+  Search,
+  X,
 } from 'lucide-react';
 import { CropType } from '../lib/database.types';
 import { useSprayPlanner } from '../hooks/useSprayPlanner';
@@ -39,9 +42,24 @@ export function SprayPlanner({ currentSeasonId, effectiveUserId }: Props) {
     selectedFields, selectedPrograms,
     workOrders, crossTotals, expandedCards, resultsRef,
     cropGroups, selectedAcres, canGenerate,
-    toggleField, toggleAllByCrop, toggleAllFields, toggleProgram,
+    toggleField, toggleAllByCrop, toggleAllFields, clearAllFields, toggleProgram,
     generate, handleExportCSV, handleExportPDF, toggleExpandedCard,
   } = useSprayPlanner(currentSeasonId, effectiveUserId);
+
+  const [fieldPickerOpen, setFieldPickerOpen] = useState(false);
+  const [fieldSearch, setFieldSearch] = useState('');
+  const pickerRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    function handleClickOutside(e: MouseEvent) {
+      if (pickerRef.current && !pickerRef.current.contains(e.target as Node)) {
+        setFieldPickerOpen(false);
+        setFieldSearch('');
+      }
+    }
+    if (fieldPickerOpen) document.addEventListener('mousedown', handleClickOutside);
+    return () => document.removeEventListener('mousedown', handleClickOutside);
+  }, [fieldPickerOpen]);
 
   if (!currentSeasonId) {
     return (
@@ -89,7 +107,7 @@ export function SprayPlanner({ currentSeasonId, effectiveUserId }: Props) {
       </div>
 
       {/* Step 1 — Field Selection */}
-      <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-hidden">
+      <div className="bg-white rounded-xl border border-gray-200 shadow-sm overflow-visible" ref={pickerRef}>
         <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
           <div className="flex items-center gap-2.5">
             <span className="w-6 h-6 rounded-full bg-blue-600 text-white text-xs font-bold flex items-center justify-center">1</span>
@@ -97,78 +115,161 @@ export function SprayPlanner({ currentSeasonId, effectiveUserId }: Props) {
           </div>
           <div className="flex items-center gap-3">
             {selectedFields.size > 0 && (
-              <span className="text-sm text-gray-500">
-                <span className="font-semibold text-gray-900">{selectedFields.size}</span> field{selectedFields.size !== 1 ? 's' : ''} · <span className="font-semibold text-gray-900">{fmtAcres(selectedAcres)}</span> ac
-              </span>
+              <>
+                <span className="text-sm text-gray-500">
+                  <span className="font-semibold text-gray-900">{selectedFields.size}</span> field{selectedFields.size !== 1 ? 's' : ''} · <span className="font-semibold text-gray-900">{fmtAcres(selectedAcres)}</span> ac
+                </span>
+                <button
+                  onClick={clearAllFields}
+                  className="text-xs font-medium text-gray-400 hover:text-red-500 transition-colors"
+                >
+                  Clear
+                </button>
+              </>
             )}
-            <button
-              onClick={toggleAllFields}
-              className="text-xs font-medium text-blue-600 hover:text-blue-700 transition-colors"
-            >
-              {selectedFields.size === fields.length ? 'Deselect All' : 'Select All'}
-            </button>
           </div>
         </div>
 
-        {fields.length === 0 ? (
-          <div className="px-6 py-10 text-center text-gray-400">
-            <p>No fields found for the active season.</p>
-          </div>
-        ) : (
-          <div className="divide-y divide-gray-50">
-            {[...cropGroups.entries()].map(([cropType, cropFields]) => {
-              const col = CROP_COLORS[cropType];
-              const allSelected = cropFields.every((f) => selectedFields.has(f.id));
-              const someSelected = cropFields.some((f) => selectedFields.has(f.id));
-              return (
-                <div key={cropType} className="px-6 py-4">
-                  <button
-                    onClick={() => toggleAllByCrop(cropType)}
-                    className="flex items-center gap-2 mb-3 group"
-                  >
-                    <div className={`w-4 h-4 rounded border-2 flex items-center justify-center transition-colors ${
-                      allSelected ? 'bg-blue-600 border-blue-600' : someSelected ? 'bg-blue-100 border-blue-400' : 'border-gray-300 group-hover:border-blue-400'
-                    }`}>
-                      {allSelected && <CheckSquare className="w-3 h-3 text-white" strokeWidth={3} />}
-                      {someSelected && !allSelected && <div className="w-2 h-0.5 bg-blue-600 rounded" />}
-                    </div>
-                    <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${col.badge} ${col.badgeText}`}>
-                      {CROP_LABELS[cropType]}
-                    </span>
-                    <span className="text-xs text-gray-400">{cropFields.length} field{cropFields.length !== 1 ? 's' : ''}</span>
-                  </button>
+        {/* Token picker input */}
+        <div className="relative px-6 py-4">
+          {fields.length === 0 ? (
+            <p className="text-sm text-gray-400 py-1">No fields found for the active season.</p>
+          ) : (
+            <>
+              {/* Token input area */}
+              <button
+                type="button"
+                onClick={() => setFieldPickerOpen((o) => !o)}
+                className={`w-full min-h-[44px] flex flex-wrap items-center gap-1.5 px-3 py-2 rounded-lg border text-left transition-all ${
+                  fieldPickerOpen
+                    ? 'border-blue-400 ring-2 ring-blue-100'
+                    : 'border-gray-300 hover:border-gray-400'
+                } bg-white`}
+              >
+                {selectedFields.size === 0 ? (
+                  <span className="text-sm text-gray-400 flex-1">Click to select fields...</span>
+                ) : (
+                  <>
+                    {fields
+                      .filter((f) => selectedFields.has(f.id))
+                      .map((f) => {
+                        const col = CROP_COLORS[f.cropType];
+                        return (
+                          <span
+                            key={f.id}
+                            className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${col.badge} ${col.badgeText} border border-current border-opacity-20`}
+                          >
+                            {f.name}
+                            <span className="opacity-60 text-xs">{fmtAcres(f.acreage)}ac</span>
+                            <span
+                              role="button"
+                              tabIndex={0}
+                              onMouseDown={(e) => { e.stopPropagation(); toggleField(f.id); }}
+                              onKeyDown={(e) => { if (e.key === 'Enter') { e.stopPropagation(); toggleField(f.id); } }}
+                              className="ml-0.5 opacity-60 hover:opacity-100 cursor-pointer leading-none"
+                            >
+                              <X className="w-3 h-3" />
+                            </span>
+                          </span>
+                        );
+                      })}
+                  </>
+                )}
+                <ChevronDown className={`w-4 h-4 text-gray-400 ml-auto flex-shrink-0 transition-transform ${fieldPickerOpen ? 'rotate-180' : ''}`} />
+              </button>
 
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2 ml-6">
-                    {cropFields.map((f) => {
-                      const selected = selectedFields.has(f.id);
+              {/* Dropdown */}
+              {fieldPickerOpen && (
+                <div className="absolute left-6 right-6 top-full mt-1 bg-white border border-gray-200 rounded-xl shadow-lg z-50 overflow-hidden">
+                  {/* Search + Select All row */}
+                  <div className="flex items-center gap-2 px-3 pt-3 pb-2 border-b border-gray-100">
+                    <div className="relative flex-1">
+                      <Search className="absolute left-2.5 top-2 w-3.5 h-3.5 text-gray-400 pointer-events-none" />
+                      <input
+                        autoFocus
+                        type="text"
+                        value={fieldSearch}
+                        onChange={(e) => setFieldSearch(e.target.value)}
+                        placeholder="Search fields..."
+                        className="w-full pl-7 pr-3 py-1.5 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-100 focus:border-blue-400"
+                        onMouseDown={(e) => e.stopPropagation()}
+                      />
+                    </div>
+                    <button
+                      type="button"
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={toggleAllFields}
+                      className="text-xs font-medium text-blue-600 hover:text-blue-700 whitespace-nowrap transition-colors px-1"
+                    >
+                      {selectedFields.size === fields.length ? 'Deselect All' : 'Select All'}
+                    </button>
+                  </div>
+
+                  {/* Crop groups */}
+                  <div className="overflow-y-auto max-h-72">
+                    {[...cropGroups.entries()].map(([cropType, cropFields]) => {
+                      const filtered = fieldSearch.trim()
+                        ? cropFields.filter((f) => f.name.toLowerCase().includes(fieldSearch.toLowerCase()))
+                        : cropFields;
+                      if (filtered.length === 0) return null;
+
+                      const col = CROP_COLORS[cropType];
+                      const allGroupSelected = filtered.every((f) => selectedFields.has(f.id));
+                      const someGroupSelected = filtered.some((f) => selectedFields.has(f.id));
+
                       return (
-                        <button
-                          key={f.id}
-                          onClick={() => toggleField(f.id)}
-                          className={`flex items-center gap-3 px-3 py-2.5 rounded-lg border text-left transition-all ${
-                            selected
-                              ? 'bg-blue-50 border-blue-300 shadow-sm'
-                              : 'bg-gray-50 border-gray-200 hover:border-blue-200 hover:bg-blue-50/30'
-                          }`}
-                        >
-                          <div className={`w-4 h-4 rounded border-2 flex-shrink-0 flex items-center justify-center transition-colors ${
-                            selected ? 'bg-blue-600 border-blue-600' : 'border-gray-300'
-                          }`}>
-                            {selected && <span className="text-white text-xs leading-none">✓</span>}
-                          </div>
-                          <div className="min-w-0">
-                            <p className="text-sm font-medium text-gray-900 truncate">{f.name}</p>
-                            <p className="text-xs text-gray-400">{fmtAcres(f.acreage)} ac</p>
-                          </div>
-                        </button>
+                        <div key={cropType}>
+                          {/* Group header */}
+                          <button
+                            type="button"
+                            onMouseDown={(e) => e.preventDefault()}
+                            onClick={() => toggleAllByCrop(cropType)}
+                            className="w-full flex items-center gap-2 px-3 py-2 bg-gray-50 hover:bg-gray-100 transition-colors border-b border-gray-100"
+                          >
+                            <div className={`w-3.5 h-3.5 rounded border-2 flex items-center justify-center flex-shrink-0 transition-colors ${
+                              allGroupSelected ? 'bg-blue-600 border-blue-600' : someGroupSelected ? 'bg-blue-100 border-blue-400' : 'border-gray-300'
+                            }`}>
+                              {allGroupSelected && <span className="text-white text-xs leading-none" style={{ fontSize: '8px' }}>✓</span>}
+                              {someGroupSelected && !allGroupSelected && <div className="w-1.5 h-0.5 bg-blue-600 rounded" />}
+                            </div>
+                            <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${col.badge} ${col.badgeText}`}>
+                              {CROP_LABELS[cropType]}
+                            </span>
+                            <span className="text-xs text-gray-400 ml-auto">{filtered.length} field{filtered.length !== 1 ? 's' : ''}</span>
+                          </button>
+
+                          {/* Field rows */}
+                          {filtered.map((f) => {
+                            const selected = selectedFields.has(f.id);
+                            return (
+                              <button
+                                key={f.id}
+                                type="button"
+                                onMouseDown={(e) => e.preventDefault()}
+                                onClick={() => toggleField(f.id)}
+                                className={`w-full flex items-center gap-3 px-4 py-2.5 text-left transition-colors border-b border-gray-50 last:border-0 ${
+                                  selected ? 'bg-blue-50' : 'hover:bg-gray-50'
+                                }`}
+                              >
+                                <div className={`w-4 h-4 rounded border-2 flex-shrink-0 flex items-center justify-center transition-colors ${
+                                  selected ? 'bg-blue-600 border-blue-600' : 'border-gray-300'
+                                }`}>
+                                  {selected && <span className="text-white text-xs leading-none">✓</span>}
+                                </div>
+                                <span className={`text-sm flex-1 ${selected ? 'font-medium text-gray-900' : 'text-gray-700'}`}>{f.name}</span>
+                                <span className="text-xs text-gray-400">{fmtAcres(f.acreage)} ac</span>
+                              </button>
+                            );
+                          })}
+                        </div>
                       );
                     })}
                   </div>
                 </div>
-              );
-            })}
-          </div>
-        )}
+              )}
+            </>
+          )}
+        </div>
       </div>
 
       {/* Step 2 — Program Selection */}
