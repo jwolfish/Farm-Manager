@@ -9,6 +9,8 @@ export interface SprayWorkOrder {
   chemicalCostPerAcre: number;
   totalAcres: number;
   effectiveAcres: number;
+  sprayVolumeGalPerAcre: number | null;
+  totalSprayVolumeGal: number | null;
   fields: Array<{
     fieldId: string;
     fieldName: string;
@@ -132,16 +134,43 @@ export function exportSprayPlannerPDF(
     cursorY = (doc as any).lastAutoTable?.finalY ?? cursorY;
 
     const totalCostPerAcre = wo.applicationCostPerAcre + wo.chemicalCostPerAcre;
-    if (totalCostPerAcre > 0) {
-      doc.setFontSize(7.5);
-      doc.setFont('helvetica', 'bold');
-      doc.setTextColor(31, 41, 55);
-      doc.text(`Total cost: $${totalCostPerAcre.toFixed(2)}/ac`, margin + 10, cursorY + 11);
-      doc.setFont('helvetica', 'normal');
-      doc.setFontSize(6.5);
-      doc.setTextColor(148, 163, 184);
-      doc.text(`(Chem: $${wo.chemicalCostPerAcre.toFixed(2)}  +  App: $${wo.applicationCostPerAcre.toFixed(2)})`, margin + 10, cursorY + 21);
-      cursorY += 26;
+    const hasFooter = totalCostPerAcre > 0 || wo.sprayVolumeGalPerAcre !== null;
+    if (hasFooter) {
+      cursorY += 4;
+      let footerX = margin + 10;
+
+      if (wo.sprayVolumeGalPerAcre !== null) {
+        doc.setFontSize(7.5);
+        doc.setFont('helvetica', 'bold');
+        doc.setTextColor(31, 41, 55);
+        doc.text(
+          `Total spray volume: ${wo.totalSprayVolumeGal!.toLocaleString('en-US', { maximumFractionDigits: 0 })} gal`,
+          footerX,
+          cursorY + 7
+        );
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(6.5);
+        doc.setTextColor(148, 163, 184);
+        doc.text(
+          `(${wo.sprayVolumeGalPerAcre.toLocaleString('en-US', { maximumFractionDigits: 1 })} gal/ac × ${wo.effectiveAcres.toFixed(1)} ac)`,
+          footerX,
+          cursorY + 15
+        );
+        footerX = pageW - margin - 10;
+      }
+
+      if (totalCostPerAcre > 0) {
+        doc.setFontSize(7.5);
+        doc.setFont('helvetica', 'bold');
+        doc.setTextColor(31, 41, 55);
+        doc.text(`Total cost: $${totalCostPerAcre.toFixed(2)}/ac`, footerX, cursorY + 7, { align: wo.sprayVolumeGalPerAcre !== null ? 'right' : 'left' });
+        doc.setFont('helvetica', 'normal');
+        doc.setFontSize(6.5);
+        doc.setTextColor(148, 163, 184);
+        doc.text(`(Chem: $${wo.chemicalCostPerAcre.toFixed(2)}  +  App: $${wo.applicationCostPerAcre.toFixed(2)})`, footerX, cursorY + 15, { align: wo.sprayVolumeGalPerAcre !== null ? 'right' : 'left' });
+      }
+
+      cursorY += 22;
     }
 
     cursorY += 14;

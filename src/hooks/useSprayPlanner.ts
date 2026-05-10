@@ -49,6 +49,8 @@ export interface WorkOrderResult {
   totalAcres: number;
   effectiveAcres: number;
   chemTotals: Array<ChemicalItem & { totalDisplay: string; totalValue: number; totalUnit: string; totalRaw: number }>;
+  sprayVolumeGalPerAcre: number | null;
+  totalSprayVolumeGal: number | null;
 }
 
 export type { CrossTotalRow };
@@ -68,6 +70,7 @@ export function useSprayPlanner(currentSeasonId: string | null, effectiveUserId:
   const [expandedCards, setExpandedCards] = useState<Set<string>>(new Set());
   const [acreOverrides, setAcreOverrides] = useState<Map<string, number>>(new Map());
   const [chemOverrides, setChemOverridesState] = useState<Map<string, ChemicalItem[]>>(new Map());
+  const [sprayVolumeOverrides, setSprayVolumeOverrides] = useState<Map<string, number>>(new Map());
 
   const resultsRef = useRef<HTMLDivElement>(null);
   const loadedSeasonRef = useRef<string | null>(null);
@@ -94,6 +97,7 @@ export function useSprayPlanner(currentSeasonId: string | null, effectiveUserId:
       setSelectedPrograms(new Set());
       setAcreOverrides(new Map());
       setChemOverridesState(new Map());
+      setSprayVolumeOverrides(new Map());
     }
 
     try {
@@ -258,7 +262,8 @@ export function useSprayPlanner(currentSeasonId: string | null, effectiveUserId:
     fieldSelection: Set<string>,
     programSelection: Set<string>,
     acreOvr: Map<string, number>,
-    chemOvr: Map<string, ChemicalItem[]>
+    chemOvr: Map<string, ChemicalItem[]>,
+    sprayVolOvr: Map<string, number>
   ) => {
     const chosenFields = allFields.filter((f) => fieldSelection.has(f.id));
     const chosenPrograms = allPrograms.filter((p) => programSelection.has(p.id));
@@ -304,6 +309,9 @@ export function useSprayPlanner(currentSeasonId: string | null, effectiveUserId:
         return { ...ch, totalDisplay: practical.display, totalValue: practical.value, totalUnit: practical.unit, totalRaw };
       });
 
+      const sprayVolumeGalPerAcre = sprayVolOvr.get(prog.id) ?? null;
+      const totalSprayVolumeGal = sprayVolumeGalPerAcre !== null ? sprayVolumeGalPerAcre * effectiveAcres : null;
+
       return {
         programId: prog.id,
         programName: prog.name,
@@ -314,6 +322,8 @@ export function useSprayPlanner(currentSeasonId: string | null, effectiveUserId:
         totalAcres,
         effectiveAcres,
         chemTotals,
+        sprayVolumeGalPerAcre,
+        totalSprayVolumeGal,
       };
     });
 
@@ -343,7 +353,7 @@ export function useSprayPlanner(currentSeasonId: string | null, effectiveUserId:
   };
 
   const generate = () => {
-    const { results, crossRows } = buildWorkOrders(fields, programs, selectedFields, selectedPrograms, acreOverrides, chemOverrides);
+    const { results, crossRows } = buildWorkOrders(fields, programs, selectedFields, selectedPrograms, acreOverrides, chemOverrides, sprayVolumeOverrides);
     setWorkOrders(results);
     setCrossTotals(crossRows);
     setExpandedCards(new Set());
@@ -378,7 +388,7 @@ export function useSprayPlanner(currentSeasonId: string | null, effectiveUserId:
     const nextAcreMap = new Map(acreOverrides);
     if (acres === null) nextAcreMap.delete(programId);
     else nextAcreMap.set(programId, acres);
-    const { results, crossRows } = buildWorkOrders(fields, programs, selectedFields, selectedPrograms, nextAcreMap, chemOverrides);
+    const { results, crossRows } = buildWorkOrders(fields, programs, selectedFields, selectedPrograms, nextAcreMap, chemOverrides, sprayVolumeOverrides);
     setAcreOverrides(nextAcreMap);
     setWorkOrders(results);
     setCrossTotals(crossRows);
@@ -388,8 +398,18 @@ export function useSprayPlanner(currentSeasonId: string | null, effectiveUserId:
     const nextChemMap = new Map(chemOverrides);
     if (chemicals === null) nextChemMap.delete(programId);
     else nextChemMap.set(programId, chemicals);
-    const { results, crossRows } = buildWorkOrders(fields, programs, selectedFields, selectedPrograms, acreOverrides, nextChemMap);
+    const { results, crossRows } = buildWorkOrders(fields, programs, selectedFields, selectedPrograms, acreOverrides, nextChemMap, sprayVolumeOverrides);
     setChemOverridesState(nextChemMap);
+    setWorkOrders(results);
+    setCrossTotals(crossRows);
+  };
+
+  const setSprayVolumeOverride = (programId: string, galPerAcre: number | null) => {
+    const nextVolMap = new Map(sprayVolumeOverrides);
+    if (galPerAcre === null) nextVolMap.delete(programId);
+    else nextVolMap.set(programId, galPerAcre);
+    const { results, crossRows } = buildWorkOrders(fields, programs, selectedFields, selectedPrograms, acreOverrides, chemOverrides, nextVolMap);
+    setSprayVolumeOverrides(nextVolMap);
     setWorkOrders(results);
     setCrossTotals(crossRows);
   };
@@ -442,6 +462,8 @@ export function useSprayPlanner(currentSeasonId: string | null, effectiveUserId:
     acreOverrides,
     setChemOverride,
     chemOverrides,
+    setSprayVolumeOverride,
+    sprayVolumeOverrides,
     handleExportCSV,
     handleExportPDF,
     handleExportSprayLog,

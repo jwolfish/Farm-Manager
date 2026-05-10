@@ -121,10 +121,13 @@ export function exportSprayLogPDF(workOrders: SprayWorkOrder[], seasonName: stri
     sectionLabel(doc, 'B', 'SPRAYER LOAD PARAMETERS', ML, y);
     y += 7;
 
+    const appRateDisplay = wo.sprayVolumeGalPerAcre !== null
+      ? wo.sprayVolumeGalPerAcre.toLocaleString('en-US', { maximumFractionDigits: 1 })
+      : '';
     const rowBFields: Array<[string, string, number]> = [
       ['Sprayer Tank Capacity (gal)', '', colW * 1.1],
       ['Load Size (gal)', '', colW * 0.9],
-      ['Application Rate (gal/acre)', '', colW * 0.9],
+      ['Application Rate (gal/acre)', appRateDisplay, colW * 0.9],
       ['Acres Per Load', '', colW * 0.9],
       ['Total Acres', wo.effectiveAcres !== wo.totalAcres
         ? `${wo.effectiveAcres.toFixed(1)} (fields: ${wo.totalAcres.toFixed(1)})`
@@ -168,8 +171,18 @@ export function exportSprayLogPDF(workOrders: SprayWorkOrder[], seasonName: stri
       productRows.push([String(productRows.length + 1), '', '', '', '', '', '']);
     }
 
-    // Carrier water row
-    productRows.push(['', 'CARRIER WATER (to fill load)', '', '', '', '', 'Mix order: water first, then products per label']);
+    // Total spray solution row — shows configured volume or a fillable line for carrier water
+    const hasSprayVol = wo.sprayVolumeGalPerAcre !== null && wo.totalSprayVolumeGal !== null;
+    const sprayVolLabel = hasSprayVol
+      ? `TOTAL SPRAY SOLUTION  (${wo.sprayVolumeGalPerAcre!.toLocaleString('en-US', { maximumFractionDigits: 1 })} gal/ac)`
+      : 'CARRIER WATER (to fill load)';
+    const sprayVolTotal = hasSprayVol
+      ? `${wo.totalSprayVolumeGal!.toLocaleString('en-US', { maximumFractionDigits: 0 })} gal`
+      : '';
+    const sprayVolNote = hasSprayVol
+      ? 'Mix order: water first, then products per label'
+      : 'Mix order: water first, then products per label';
+    productRows.push(['', sprayVolLabel, '', hasSprayVol ? wo.sprayVolumeGalPerAcre!.toLocaleString('en-US', { maximumFractionDigits: 1 }) : '', hasSprayVol ? 'gal/ac' : '', sprayVolTotal, sprayVolNote]);
 
     autoTable(doc, {
       startY: y,
@@ -202,7 +215,7 @@ export function exportSprayLogPDF(workOrders: SprayWorkOrder[], seasonName: stri
         6: { cellWidth: 'auto' },
       },
       didParseCell(data) {
-        // Carrier water row — darker green background
+        // Total spray solution / carrier water row — darker green background
         if (data.row.index === productRows.length - 1) {
           data.cell.styles.fillColor = GREEN_ROW_HEADER;
           data.cell.styles.fontStyle = 'bold';

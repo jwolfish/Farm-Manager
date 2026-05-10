@@ -53,6 +53,7 @@ export function SprayPlanner({ currentSeasonId, effectiveUserId }: Props) {
     cropGroups, selectedAcres, canGenerate,
     toggleField, toggleAllByCrop, toggleAllFields, clearAllFields, toggleProgram,
     generate, setAcreOverride, acreOverrides, setChemOverride, chemOverrides,
+    setSprayVolumeOverride, sprayVolumeOverrides,
     handleExportCSV, handleExportPDF, handleExportSprayLog, toggleExpandedCard,
     computePreviewTotals,
   } = useSprayPlanner(currentSeasonId, effectiveUserId);
@@ -64,6 +65,10 @@ export function SprayPlanner({ currentSeasonId, effectiveUserId }: Props) {
   // Acre override editing state
   const [editingAcres, setEditingAcres] = useState<string | null>(null);
   const [acresDraft, setAcresDraft] = useState('');
+
+  // Spray volume editing state
+  const [editingSprayVol, setEditingSprayVol] = useState<string | null>(null);
+  const [sprayVolDraft, setSprayVolDraft] = useState('');
 
   // Chemical edit mode — set of program IDs whose chemical table is in edit mode
   const [editingChemPrograms, setEditingChemPrograms] = useState<Set<string>>(new Set());
@@ -575,6 +580,74 @@ export function SprayPlanner({ currentSeasonId, effectiveUserId }: Props) {
                           </p>
                         </div>
                       )}
+
+                      {/* Spray volume row */}
+                      <div className="mt-2 flex items-center justify-end gap-2">
+                        {editingSprayVol === wo.programId ? (
+                          <div className="flex items-center gap-1.5">
+                            <input
+                              type="number"
+                              min="0"
+                              step="0.1"
+                              value={sprayVolDraft}
+                              onChange={(e) => setSprayVolDraft(e.target.value)}
+                              onKeyDown={(e) => {
+                                if (e.key === 'Enter') {
+                                  const v = parseFloat(sprayVolDraft);
+                                  setSprayVolumeOverride(wo.programId, !isNaN(v) && v > 0 ? v : null);
+                                  setEditingSprayVol(null);
+                                } else if (e.key === 'Escape') {
+                                  setEditingSprayVol(null);
+                                }
+                              }}
+                              onBlur={() => {
+                                const v = parseFloat(sprayVolDraft);
+                                setSprayVolumeOverride(wo.programId, !isNaN(v) && v > 0 ? v : null);
+                                setEditingSprayVol(null);
+                              }}
+                              autoFocus
+                              className="w-20 text-right text-sm font-semibold bg-white/80 border border-current rounded px-2 py-0.5 focus:outline-none focus:ring-2 focus:ring-white/50"
+                            />
+                            <span className={`text-xs font-medium ${col.headerText} opacity-70`}>gal/ac</span>
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-1.5">
+                            {wo.sprayVolumeGalPerAcre !== null ? (
+                              <div className="text-right">
+                                <p className={`text-sm font-semibold ${col.headerText}`}>
+                                  {wo.sprayVolumeGalPerAcre.toLocaleString('en-US', { maximumFractionDigits: 1 })} gal/ac
+                                </p>
+                                <p className={`text-xs ${col.headerText} opacity-60`}>
+                                  {wo.totalSprayVolumeGal!.toLocaleString('en-US', { maximumFractionDigits: 0 })} gal total
+                                </p>
+                              </div>
+                            ) : (
+                              <span className={`text-xs ${col.headerText} opacity-40`}>Set spray vol</span>
+                            )}
+                            <div className="flex flex-col gap-0.5">
+                              <button
+                                title="Set spray volume (gal/ac)"
+                                onClick={() => {
+                                  setSprayVolDraft(wo.sprayVolumeGalPerAcre?.toString() ?? '');
+                                  setEditingSprayVol(wo.programId);
+                                }}
+                                className={`p-1 rounded hover:bg-black/10 transition-colors ${col.headerText} opacity-60 hover:opacity-100`}
+                              >
+                                <Pencil className="w-3 h-3" />
+                              </button>
+                              {wo.sprayVolumeGalPerAcre !== null && (
+                                <button
+                                  title="Clear spray volume"
+                                  onClick={() => setSprayVolumeOverride(wo.programId, null)}
+                                  className={`p-1 rounded hover:bg-black/10 transition-colors ${col.headerText} opacity-60 hover:opacity-100`}
+                                >
+                                  <RotateCcw className="w-3 h-3" />
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        )}
+                      </div>
                     </div>
                   </div>
                 </div>
