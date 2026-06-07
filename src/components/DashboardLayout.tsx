@@ -167,7 +167,7 @@ export function DashboardLayout({
                 <div className={`p-1.5 rounded-lg flex-shrink-0 ${isSharedFarm ? 'bg-amber-500' : 'bg-green-600'}`}>
                   <Wheat className="w-5 h-5 text-white" />
                 </div>
-                <h1 className="font-bold text-gray-900 text-base leading-tight">Crop Tracker</h1>
+                <h1 className="font-bold text-gray-900 text-base leading-tight">Farm Manager</h1>
               </div>
               <NotificationBell onInviteAccepted={onInviteAccepted ?? (() => {})} />
             </div>
