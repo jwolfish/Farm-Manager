@@ -46,6 +46,83 @@ function fieldBlock(
   lineAt(doc, x, y + 10, x + width);
 }
 
+// Renders field names stacked one-per-line, with automatic font-size fallback and
+// hard clipping to MAX_LINES so the block never grows large enough to push content
+// off a single page. Returns the y-advance so subsequent rows shift accordingly.
+const LINE_SPACING = 4; // mm between stacked name lines
+const MAX_LINES = 4;    // hard cap before clipping with "+N more"
+
+function fieldBlockFieldNames(
+  doc: jsPDF,
+  label: string,
+  names: string[],
+  x: number,
+  y: number,
+  width: number
+): number {
+  // Draw the small grey label
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(6.5);
+  doc.setTextColor(GRAY_LABEL[0], GRAY_LABEL[1], GRAY_LABEL[2]);
+  doc.text(label, x, y);
+
+  if (names.length === 0) {
+    lineAt(doc, x, y + 10, x + width);
+    return 20;
+  }
+
+  // Build a flat line list at a given font size (splits only names that exceed width)
+  const buildLines = (fs: number): string[] => {
+    doc.setFontSize(fs);
+    const out: string[] = [];
+    for (const name of names) {
+      const wrapped = doc.splitTextToSize(name, width) as string[];
+      out.push(...wrapped);
+    }
+    return out;
+  };
+
+  // Try preferred size, step down if too many lines
+  let fontSize = 8;
+  let lines = buildLines(fontSize);
+
+  if (lines.length > MAX_LINES) {
+    fontSize = 6.5;
+    lines = buildLines(fontSize);
+  }
+
+  // Hard clip: show as many complete names as fit in MAX_LINES-1 then "+N more"
+  if (lines.length > MAX_LINES) {
+    const clipped: string[] = [];
+    let count = 0;
+    let nameIdx = 0;
+    doc.setFontSize(fontSize);
+    for (; nameIdx < names.length; nameIdx++) {
+      const wrapped = doc.splitTextToSize(names[nameIdx], width) as string[];
+      if (count + wrapped.length > MAX_LINES - 1) break;
+      clipped.push(...wrapped);
+      count += wrapped.length;
+    }
+    clipped.push(`+${names.length - nameIdx} more`);
+    lines = clipped;
+  }
+
+  // Render stacked lines
+  doc.setFont('helvetica', 'normal');
+  doc.setFontSize(fontSize);
+  doc.setTextColor(DARK[0], DARK[1], DARK[2]);
+  lines.forEach((line, i) => {
+    doc.text(line, x, y + 8 + i * LINE_SPACING);
+  });
+
+  // Underline sits 2 mm below the last line
+  const underlineY = y + 8 + (lines.length - 1) * LINE_SPACING + 2;
+  lineAt(doc, x, underlineY, x + width);
+
+  // y-advance: base 20 for a single line + 4 mm per additional line
+  return 20 + (lines.length - 1) * LINE_SPACING;
+}
+
 export function exportSprayLogPDF(workOrders: SprayWorkOrder[], seasonName: string) {
   const doc = new jsPDF({ orientation: 'portrait', unit: 'mm', format: 'letter' });
   const pW = doc.internal.pageSize.getWidth();
@@ -85,7 +162,6 @@ export function exportSprayLogPDF(workOrders: SprayWorkOrder[], seasonName: stri
     y += 7;
 
     const colW = contentW / 5;
-    const fieldNames = wo.fields.map((f) => f.fieldName).join(', ');
     const cropLabel = wo.cropType.charAt(0).toUpperCase() + wo.cropType.slice(1);
 
     const rowAFields: Array<[string, string, number]> = [
@@ -103,19 +179,24 @@ export function exportSprayLogPDF(workOrders: SprayWorkOrder[], seasonName: stri
     }
     y += 16;
 
-    const rowA2Fields: Array<[string, string, number]> = [
-      ['Customer (if applicable)', '', colW * 0.9],
-      ['Farm / Field Name', fieldNames, colW * 1.8],
-      ['Crop & Growth Stage', cropLabel, colW * 0.9],
-      ['Target Pest(s)', '', colW * 1.4],
-    ];
+    // Row A2 — Farm/Field Name uses the wrapping helper; other columns are standard.
+    const fieldNameColW = colW * 1.8;
+    const fieldNameX = ML + colW * 0.9;
 
-    ax = ML;
-    for (const [lbl, val, w] of rowA2Fields) {
-      fieldBlock(doc, lbl, val, ax, y, w - 3);
-      ax += w;
-    }
-    y += 20;
+    fieldBlock(doc, 'Customer (if applicable)', '', ML, y, colW * 0.9 - 3);
+    fieldBlock(doc, 'Crop & Growth Stage', cropLabel, fieldNameX + fieldNameColW, y, colW * 0.9 - 3);
+    fieldBlock(doc, 'Target Pest(s)', '', fieldNameX + fieldNameColW + colW * 0.9, y, colW * 1.4 - 3);
+
+    const fieldNameAdvance = fieldBlockFieldNames(
+      doc,
+      'Farm / Field Name',
+      wo.fields.map((f) => f.fieldName),
+      fieldNameX,
+      y,
+      fieldNameColW - 3,
+    );
+
+    y += fieldNameAdvance;
 
     // ── Section B ───────────────────────────────────────────────────────────
     sectionLabel(doc, 'B', 'SPRAYER LOAD PARAMETERS', ML, y);
