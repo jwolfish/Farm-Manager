@@ -189,6 +189,11 @@ export function ChemicalPrograms({ seasonId }: ChemicalProgramsProps) {
       let programId = editingId;
 
       if (editingId) {
+        const { data: existingItems } = await supabase
+          .from('chemical_program_items')
+          .select('program_id, chemical_id, application_rate, application_rate_unit, notes')
+          .eq('program_id', editingId);
+
         const { error } = await supabase
           .from('chemical_programs')
           .update(payload)
@@ -200,6 +205,27 @@ export function ChemicalPrograms({ seasonId }: ChemicalProgramsProps) {
           .delete()
           .eq('program_id', editingId);
         if (deleteError) throw deleteError;
+
+        if (programItems.length > 0) {
+          const items = programItems.map(item => ({
+            program_id: editingId,
+            chemical_id: item.chemical_id,
+            application_rate: item.application_rate,
+            application_rate_unit: item.application_rate_unit,
+            notes: item.notes.trim() || null,
+          }));
+
+          const { error: itemsError } = await supabase
+            .from('chemical_program_items')
+            .insert(items);
+
+          if (itemsError) {
+            if (existingItems && existingItems.length > 0) {
+              await supabase.from('chemical_program_items').insert(existingItems);
+            }
+            throw itemsError;
+          }
+        }
       } else {
         const { data, error } = await supabase
           .from('chemical_programs')
@@ -215,7 +241,7 @@ export function ChemicalPrograms({ seasonId }: ChemicalProgramsProps) {
         programId = data.id;
       }
 
-      if (programItems.length > 0 && programId) {
+      if (!editingId && programItems.length > 0 && programId) {
         const items = programItems.map(item => ({
           program_id: programId,
           chemical_id: item.chemical_id,

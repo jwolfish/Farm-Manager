@@ -81,7 +81,7 @@ export function WorkOrderEditModal({
 
   function addChem() {
     const newItem: ChemicalItem = {
-      chemicalId: `custom-${Date.now()}`,
+      chemicalId: `custom-${crypto.randomUUID()}`,
       chemicalName: '',
       epaRegNumber: null,
       ratePerAcre: 0,
@@ -129,16 +129,22 @@ export function WorkOrderEditModal({
 
   function handleSave() {
     const acresVal = parseFloat(draft.acres);
-    const acresOut = !isNaN(acresVal) && acresVal > 0 ? acresVal : null;
+    const acresOut = !isNaN(acresVal) && acresVal > 0 && acresVal <= 100000 && isFinite(acresVal) ? acresVal : null;
 
     const sprayVal = parseFloat(draft.sprayVol);
-    const sprayOut = !isNaN(sprayVal) && sprayVal > 0 ? sprayVal : null;
+    const sprayOut = !isNaN(sprayVal) && sprayVal > 0 && sprayVal <= 10000 && isFinite(sprayVal) ? sprayVal : null;
 
-    const originalChemIds = wo.chemTotals.map((c) => c.chemicalId).join(',');
-    const draftChemIds = draft.chemicals.map((c) => c.chemicalId).join(',');
-    const originalChemRates = wo.chemTotals.map((c) => `${c.ratePerAcre}${c.rateUnit}${c.chemicalName}`).join(',');
-    const draftChemRates = draft.chemicals.map((c) => `${c.ratePerAcre}${c.rateUnit}${c.chemicalName}`).join(',');
-    const chemsChanged = originalChemIds !== draftChemIds || originalChemRates !== draftChemRates;
+    const chemsChanged =
+      wo.chemTotals.length !== draft.chemicals.length ||
+      wo.chemTotals.some((orig, i) => {
+        const d = draft.chemicals[i];
+        return (
+          orig.chemicalId !== d.chemicalId ||
+          orig.ratePerAcre !== d.ratePerAcre ||
+          orig.rateUnit !== d.rateUnit ||
+          orig.chemicalName !== d.chemicalName
+        );
+      });
     const chemsOut = chemsChanged ? draft.chemicals : null;
 
     onSave(wo.programId, acresOut, sprayOut, chemsOut);

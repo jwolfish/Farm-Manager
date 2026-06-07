@@ -6,6 +6,38 @@ import type { CrossTotalRow } from '../lib/exportUtils';
 import { CropType } from '../lib/database.types';
 import { ProgramReference } from '../lib/templateUtils';
 
+interface RawFieldRow {
+  id: string;
+  name: string;
+  crop_type: string;
+  acreage: number;
+  field_costs: { template_id: string | null } | { template_id: string | null }[] | null;
+}
+
+interface RawChemical {
+  id: string;
+  chemical_name: string;
+  price_per_unit: number | null;
+  unit_type: string | null;
+  epa_reg_number: string | null;
+}
+
+interface RawProgramItem {
+  id: string;
+  application_rate: number;
+  application_rate_unit: string | null;
+  notes: string | null;
+  individual_chemicals: RawChemical | RawChemical[] | null;
+}
+
+interface RawProgram {
+  id: string;
+  program_name: string;
+  crop_type: string;
+  application_cost: number | null;
+  chemical_program_items: RawProgramItem[] | null;
+}
+
 export interface FieldOption {
   id: string;
   name: string;
@@ -122,17 +154,20 @@ export function useSprayPlanner(currentSeasonId: string | null, effectiveUserId:
           .order('program_name'),
       ]);
 
-      if (seasonRes.data) setSeasonName(`${seasonRes.data.name} (${seasonRes.data.year})`);
+      if (seasonRes.data) {
+        const s = seasonRes.data as { name: string; year: number };
+        setSeasonName(`${s.name} (${s.year})`);
+      }
       if (fieldsRes.error) throw fieldsRes.error;
       if (progsRes.error) throw progsRes.error;
 
-      const rawFields = fieldsRes.data ?? [];
-      const fieldIds = rawFields.map((f: any) => f.id);
+      const rawFields = (fieldsRes.data ?? []) as RawFieldRow[];
+      const fieldIds = rawFields.map((f) => f.id);
       const templateIds = [...new Set(
         rawFields
-          .map((f: any) => {
+          .map((f) => {
             const fc = Array.isArray(f.field_costs) ? f.field_costs[0] : f.field_costs;
-            return fc?.template_id as string | null;
+            return fc?.template_id ?? null;
           })
           .filter(Boolean) as string[]
       )];
@@ -141,10 +176,10 @@ export function useSprayPlanner(currentSeasonId: string | null, effectiveUserId:
         fieldIds.length > 0
           ? supabase.from('field_cost_overrides').select('field_id, cost_item_name, override_value')
               .in('field_id', fieldIds).eq('cost_item_name', 'chemical_programs')
-          : Promise.resolve({ data: [], error: null }),
+          : Promise.resolve({ data: [] as Array<{ field_id: string; cost_item_name: string; override_value: unknown }>, error: null }),
         templateIds.length > 0
           ? supabase.from('cost_templates').select('id, chemical_programs').in('id', templateIds)
-          : Promise.resolve({ data: [], error: null }),
+          : Promise.resolve({ data: [] as Array<{ id: string; chemical_programs: unknown }>, error: null }),
       ]);
 
       if (overridesRes.error) throw overridesRes.error;
@@ -159,7 +194,7 @@ export function useSprayPlanner(currentSeasonId: string | null, effectiveUserId:
         templateMap.set(t.id, (t.chemical_programs as ProgramReference[]) ?? []);
       }
 
-      const builtFields: FieldOption[] = rawFields.map((f: any) => {
+      const builtFields: FieldOption[] = rawFields.map((f) => {
         const fc = Array.isArray(f.field_costs) ? f.field_costs[0] : f.field_costs;
         const templateId: string | null = fc?.template_id ?? null;
         const override = overrideMap.get(f.id);
@@ -173,9 +208,9 @@ export function useSprayPlanner(currentSeasonId: string | null, effectiveUserId:
         };
       });
 
-      const builtPrograms: ProgramOption[] = (progsRes.data ?? []).map((p: any) => {
+      const builtPrograms: ProgramOption[] = ((progsRes.data ?? []) as RawProgram[]).map((p) => {
         const items = Array.isArray(p.chemical_program_items) ? p.chemical_program_items : [];
-        const chemicals: ChemicalItem[] = items.map((item: any) => {
+        const chemicals: ChemicalItem[] = items.map((item) => {
           const chem = Array.isArray(item.individual_chemicals)
             ? item.individual_chemicals[0]
             : item.individual_chemicals;
@@ -295,6 +330,7 @@ export function useSprayPlanner(currentSeasonId: string | null, effectiveUserId:
         for (const fe of fieldRows) {
           for (let i = 0; i < fe.chemicals.length; i++) {
             const ch = activeChems[i];
+            if (!ch) continue;
             const rawTotal = ch.ratePerAcre * fe.acreage;
             const key = ch.chemicalId;
             const existing = chemTotalMap.get(key);

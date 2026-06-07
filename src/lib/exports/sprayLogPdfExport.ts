@@ -1,14 +1,7 @@
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import type { SprayWorkOrder } from './sprayPlannerPdfExport';
-
-const GREEN_DARK: [number, number, number] = [27, 94, 32];
-const GREEN_HEADER: [number, number, number] = [46, 125, 50];
-const GREEN_ROW_ALT: [number, number, number] = [232, 245, 233];
-const GREEN_ROW_HEADER: [number, number, number] = [200, 230, 201];
-const GRAY_LABEL: [number, number, number] = [100, 116, 139];
-const DARK: [number, number, number] = [17, 24, 39];
-const WHITE: [number, number, number] = [255, 255, 255];
+import { GREEN_DARK, GREEN_HEADER, GREEN_ROW_ALT, GREEN_ROW_HEADER, GRAY_LABEL, DARK, WHITE } from './pdfConstants';
 
 function lineAt(doc: jsPDF, x1: number, y: number, x2: number) {
   doc.setDrawColor(180, 180, 180);

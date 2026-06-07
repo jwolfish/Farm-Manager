@@ -1,5 +1,6 @@
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import { CROP_LABELS, CROP_FILL, CROP_TEXT } from './pdfConstants';
 
 export interface ChemWorkOrderCard {
   programId: string;
@@ -15,23 +16,6 @@ export interface ChemWorkOrderCard {
   }>;
   chemTotals: Array<{ chemicalName: string; ratePerAcre: number; rateUnit: string; totalDisplay: string }>;
 }
-
-const CROP_LABELS_EXPORT: Record<string, string> = {
-  corn: 'Corn',
-  soybeans: 'Soybeans',
-  wheat: 'Wheat',
-};
-
-const CROP_FILL: Record<string, [number, number, number]> = {
-  corn:     [254, 243, 199],
-  soybeans: [220, 252, 231],
-  wheat:    [255, 237, 213],
-};
-const CROP_TEXT: Record<string, [number, number, number]> = {
-  corn:     [120, 60, 0],
-  soybeans: [20, 100, 40],
-  wheat:    [130, 60, 0],
-};
 
 export function exportChemicalWorkOrdersPDF(cards: ChemWorkOrderCard[], seasonName: string) {
   const doc = new jsPDF({ orientation: 'landscape', unit: 'pt', format: 'letter' });
@@ -73,7 +57,7 @@ export function exportChemicalWorkOrdersPDF(cards: ChemWorkOrderCard[], seasonNa
     doc.setTextColor(textRgb[0], textRgb[1], textRgb[2]);
     doc.setFontSize(10);
     doc.setFont('helvetica', 'bold');
-    doc.text(CROP_LABELS_EXPORT[cropType] ?? cropType, margin + 10, cursorY + 15);
+    doc.text(CROP_LABELS[cropType] ?? cropType, margin + 10, cursorY + 15);
     cursorY += 30;
 
     for (const card of cropCards) {

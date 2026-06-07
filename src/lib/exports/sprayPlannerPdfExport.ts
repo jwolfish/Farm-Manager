@@ -1,5 +1,6 @@
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import { CROP_FILL, CROP_TEXT } from './pdfConstants';
 
 export interface SprayWorkOrder {
   programId: string;
@@ -25,17 +26,6 @@ export interface CrossTotalRow {
   chemicalName: string;
   totalDisplay: string;
 }
-
-const CROP_FILL_SP: Record<string, [number, number, number]> = {
-  corn:     [254, 243, 199],
-  soybeans: [220, 252, 231],
-  wheat:    [255, 237, 213],
-};
-const CROP_TEXT_SP: Record<string, [number, number, number]> = {
-  corn:     [120, 60, 0],
-  soybeans: [20, 100, 40],
-  wheat:    [130, 60, 0],
-};
 
 export function exportSprayPlannerPDF(
   workOrders: SprayWorkOrder[],
@@ -76,8 +66,8 @@ export function exportSprayPlannerPDF(
       cursorY = 66;
     }
 
-    const fillRgb = CROP_FILL_SP[wo.cropType] ?? [230, 230, 230];
-    const textRgb = CROP_TEXT_SP[wo.cropType] ?? [60, 60, 60];
+    const fillRgb = CROP_FILL[wo.cropType] ?? [230, 230, 230];
+    const textRgb = CROP_TEXT[wo.cropType] ?? [60, 60, 60];
 
     doc.setFillColor(fillRgb[0], fillRgb[1], fillRgb[2]);
     doc.roundedRect(margin, cursorY, pageW - margin * 2, 28, 3, 3, 'F');
