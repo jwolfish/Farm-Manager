@@ -3,7 +3,7 @@ import { supabase } from '../lib/supabase';
 import { toBestPracticalUnit, calculateCostWithConversion } from '../lib/unitConversions';
 import { exportSprayPlannerPDF, exportSprayLogPDF, exportTableToCSV } from '../lib/exportUtils';
 import type { CrossTotalRow } from '../lib/exportUtils';
-import { CropType } from '../lib/database.types';
+import { CropType, Json } from '../lib/database.types';
 import { ProgramReference } from '../lib/templateUtils';
 
 interface RawFieldRow {
@@ -155,8 +155,7 @@ export function useSprayPlanner(currentSeasonId: string | null, effectiveUserId:
       ]);
 
       if (seasonRes.data) {
-        const s = seasonRes.data as { name: string; year: number };
-        setSeasonName(`${s.name} (${s.year})`);
+        setSeasonName(`${seasonRes.data.name} (${seasonRes.data.year})`);
       }
       if (fieldsRes.error) throw fieldsRes.error;
       if (progsRes.error) throw progsRes.error;
@@ -176,10 +175,10 @@ export function useSprayPlanner(currentSeasonId: string | null, effectiveUserId:
         fieldIds.length > 0
           ? supabase.from('field_cost_overrides').select('field_id, cost_item_name, override_value')
               .in('field_id', fieldIds).eq('cost_item_name', 'chemical_programs')
-          : Promise.resolve({ data: [] as Array<{ field_id: string; cost_item_name: string; override_value: unknown }>, error: null }),
+          : Promise.resolve({ data: [] as { field_id: string; cost_item_name: string; override_value: Json }[], error: null }),
         templateIds.length > 0
           ? supabase.from('cost_templates').select('id, chemical_programs').in('id', templateIds)
-          : Promise.resolve({ data: [] as Array<{ id: string; chemical_programs: unknown }>, error: null }),
+          : Promise.resolve({ data: [] as { id: string; chemical_programs: Json }[], error: null }),
       ]);
 
       if (overridesRes.error) throw overridesRes.error;
@@ -187,11 +186,11 @@ export function useSprayPlanner(currentSeasonId: string | null, effectiveUserId:
 
       const overrideMap = new Map<string, ProgramReference[]>();
       for (const o of overridesRes.data ?? []) {
-        overrideMap.set(o.field_id, o.override_value as ProgramReference[]);
+        overrideMap.set(o.field_id, o.override_value as unknown as ProgramReference[]);
       }
       const templateMap = new Map<string, ProgramReference[]>();
       for (const t of templatesRes.data ?? []) {
-        templateMap.set(t.id, (t.chemical_programs as ProgramReference[]) ?? []);
+        templateMap.set(t.id, (t.chemical_programs as unknown as ProgramReference[]) ?? []);
       }
 
       const builtFields: FieldOption[] = rawFields.map((f) => {

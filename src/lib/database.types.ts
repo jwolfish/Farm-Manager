@@ -35,6 +35,7 @@ export interface Database {
           is_active?: boolean | null;
           created_at?: string | null;
         };
+        Relationships: [];
       };
       user_profiles: {
         Row: {
@@ -61,6 +62,7 @@ export interface Database {
           created_at?: string;
           updated_at?: string;
         };
+        Relationships: [];
       };
       seasons: {
         Row: {
@@ -102,6 +104,15 @@ export interface Database {
           created_at?: string;
           updated_at?: string;
         };
+        Relationships: [
+          {
+            foreignKeyName: "seasons_farm_id_fkey";
+            columns: ["farm_id"];
+            isOneToOne: false;
+            referencedRelation: "farms";
+            referencedColumns: ["id"];
+          },
+        ];
       };
       fields: {
         Row: {
@@ -143,6 +154,15 @@ export interface Database {
           created_at?: string;
           updated_at?: string;
         };
+        Relationships: [
+          {
+            foreignKeyName: "fields_season_id_fkey";
+            columns: ["season_id"];
+            isOneToOne: false;
+            referencedRelation: "seasons";
+            referencedColumns: ["id"];
+          },
+        ];
       };
       seed_varieties: {
         Row: {
@@ -184,6 +204,15 @@ export interface Database {
           created_at?: string;
           updated_at?: string;
         };
+        Relationships: [
+          {
+            foreignKeyName: "seed_varieties_season_id_fkey";
+            columns: ["season_id"];
+            isOneToOne: false;
+            referencedRelation: "seasons";
+            referencedColumns: ["id"];
+          },
+        ];
       };
       fertilizer_products: {
         Row: {
@@ -225,6 +254,15 @@ export interface Database {
           created_at?: string;
           updated_at?: string;
         };
+        Relationships: [
+          {
+            foreignKeyName: "fertilizer_products_season_id_fkey";
+            columns: ["season_id"];
+            isOneToOne: false;
+            referencedRelation: "seasons";
+            referencedColumns: ["id"];
+          },
+        ];
       };
       individual_chemicals: {
         Row: {
@@ -266,6 +304,15 @@ export interface Database {
           created_at?: string;
           updated_at?: string;
         };
+        Relationships: [
+          {
+            foreignKeyName: "individual_chemicals_season_id_fkey";
+            columns: ["season_id"];
+            isOneToOne: false;
+            referencedRelation: "seasons";
+            referencedColumns: ["id"];
+          },
+        ];
       };
       chemical_programs: {
         Row: {
@@ -301,6 +348,15 @@ export interface Database {
           created_at?: string;
           updated_at?: string;
         };
+        Relationships: [
+          {
+            foreignKeyName: "chemical_programs_season_id_fkey";
+            columns: ["season_id"];
+            isOneToOne: false;
+            referencedRelation: "seasons";
+            referencedColumns: ["id"];
+          },
+        ];
       };
       chemical_program_items: {
         Row: {
@@ -333,6 +389,22 @@ export interface Database {
           created_at?: string;
           updated_at?: string;
         };
+        Relationships: [
+          {
+            foreignKeyName: "chemical_program_items_program_id_fkey";
+            columns: ["program_id"];
+            isOneToOne: false;
+            referencedRelation: "chemical_programs";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "chemical_program_items_chemical_id_fkey";
+            columns: ["chemical_id"];
+            isOneToOne: false;
+            referencedRelation: "individual_chemicals";
+            referencedColumns: ["id"];
+          },
+        ];
       };
       equipment_rates: {
         Row: {
@@ -371,6 +443,15 @@ export interface Database {
           created_at?: string;
           updated_at?: string;
         };
+        Relationships: [
+          {
+            foreignKeyName: "equipment_rates_season_id_fkey";
+            columns: ["season_id"];
+            isOneToOne: false;
+            referencedRelation: "seasons";
+            referencedColumns: ["id"];
+          },
+        ];
       };
       fertilizer_programs: {
         Row: {
@@ -400,6 +481,15 @@ export interface Database {
           notes?: string | null;
           created_at?: string;
         };
+        Relationships: [
+          {
+            foreignKeyName: "fertilizer_programs_season_id_fkey";
+            columns: ["season_id"];
+            isOneToOne: false;
+            referencedRelation: "seasons";
+            referencedColumns: ["id"];
+          },
+        ];
       };
       fertilizer_program_items: {
         Row: {
@@ -426,6 +516,22 @@ export interface Database {
           application_rate_unit?: string;
           created_at?: string;
         };
+        Relationships: [
+          {
+            foreignKeyName: "fertilizer_program_items_program_id_fkey";
+            columns: ["program_id"];
+            isOneToOne: false;
+            referencedRelation: "fertilizer_programs";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "fertilizer_program_items_fertilizer_product_id_fkey";
+            columns: ["fertilizer_product_id"];
+            isOneToOne: false;
+            referencedRelation: "fertilizer_products";
+            referencedColumns: ["id"];
+          },
+        ];
       };
       field_fertilizer_program_applications: {
         Row: {
@@ -449,6 +555,22 @@ export interface Database {
           cost_per_acre?: number;
           created_at?: string;
         };
+        Relationships: [
+          {
+            foreignKeyName: "field_fertilizer_program_applications_field_id_fkey";
+            columns: ["field_id"];
+            isOneToOne: false;
+            referencedRelation: "fields";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "field_fertilizer_program_applications_fertilizer_program_id_fkey";
+            columns: ["fertilizer_program_id"];
+            isOneToOne: false;
+            referencedRelation: "fertilizer_programs";
+            referencedColumns: ["id"];
+          },
+        ];
       };
       field_chemical_program_applications: {
         Row: {
@@ -472,6 +594,22 @@ export interface Database {
           cost_per_acre?: number;
           created_at?: string;
         };
+        Relationships: [
+          {
+            foreignKeyName: "field_chemical_program_applications_field_id_fkey";
+            columns: ["field_id"];
+            isOneToOne: false;
+            referencedRelation: "fields";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "field_chemical_program_applications_chemical_program_id_fkey";
+            columns: ["chemical_program_id"];
+            isOneToOne: false;
+            referencedRelation: "chemical_programs";
+            referencedColumns: ["id"];
+          },
+        ];
       };
       field_costs: {
         Row: {
@@ -552,6 +690,29 @@ export interface Database {
           created_at?: string;
           updated_at?: string;
         };
+        Relationships: [
+          {
+            foreignKeyName: "field_costs_field_id_fkey";
+            columns: ["field_id"];
+            isOneToOne: false;
+            referencedRelation: "fields";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "field_costs_seed_variety_id_fkey";
+            columns: ["seed_variety_id"];
+            isOneToOne: false;
+            referencedRelation: "seed_varieties";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "field_costs_template_id_fkey";
+            columns: ["template_id"];
+            isOneToOne: false;
+            referencedRelation: "cost_templates";
+            referencedColumns: ["id"];
+          },
+        ];
       };
       cost_templates: {
         Row: {
@@ -617,6 +778,15 @@ export interface Database {
           created_at?: string;
           updated_at?: string;
         };
+        Relationships: [
+          {
+            foreignKeyName: "cost_templates_season_id_fkey";
+            columns: ["season_id"];
+            isOneToOne: false;
+            referencedRelation: "seasons";
+            referencedColumns: ["id"];
+          },
+        ];
       };
       field_cost_overrides: {
         Row: {
@@ -643,6 +813,15 @@ export interface Database {
           created_at?: string;
           updated_at?: string;
         };
+        Relationships: [
+          {
+            foreignKeyName: "field_cost_overrides_field_id_fkey";
+            columns: ["field_id"];
+            isOneToOne: false;
+            referencedRelation: "fields";
+            referencedColumns: ["id"];
+          },
+        ];
       };
       field_yields: {
         Row: {
@@ -681,6 +860,15 @@ export interface Database {
           created_at?: string;
           updated_at?: string;
         };
+        Relationships: [
+          {
+            foreignKeyName: "field_yields_field_id_fkey";
+            columns: ["field_id"];
+            isOneToOne: false;
+            referencedRelation: "fields";
+            referencedColumns: ["id"];
+          },
+        ];
       };
       field_fertilizer_applications: {
         Row: {
@@ -710,6 +898,22 @@ export interface Database {
           created_at?: string;
           updated_at?: string;
         };
+        Relationships: [
+          {
+            foreignKeyName: "field_fertilizer_applications_field_cost_id_fkey";
+            columns: ["field_cost_id"];
+            isOneToOne: false;
+            referencedRelation: "field_costs";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "field_fertilizer_applications_fertilizer_product_id_fkey";
+            columns: ["fertilizer_product_id"];
+            isOneToOne: false;
+            referencedRelation: "fertilizer_products";
+            referencedColumns: ["id"];
+          },
+        ];
       };
       field_chemical_applications: {
         Row: {
@@ -736,6 +940,22 @@ export interface Database {
           created_at?: string;
           updated_at?: string;
         };
+        Relationships: [
+          {
+            foreignKeyName: "field_chemical_applications_field_cost_id_fkey";
+            columns: ["field_cost_id"];
+            isOneToOne: false;
+            referencedRelation: "field_costs";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "field_chemical_applications_chemical_program_id_fkey";
+            columns: ["chemical_program_id"];
+            isOneToOne: false;
+            referencedRelation: "chemical_programs";
+            referencedColumns: ["id"];
+          },
+        ];
       };
       yield_and_price: {
         Row: {
@@ -783,6 +1003,15 @@ export interface Database {
           created_at?: string;
           updated_at?: string;
         };
+        Relationships: [
+          {
+            foreignKeyName: "yield_and_price_field_id_fkey";
+            columns: ["field_id"];
+            isOneToOne: false;
+            referencedRelation: "fields";
+            referencedColumns: ["id"];
+          },
+        ];
       };
       commodity_sales: {
         Row: {
@@ -828,6 +1057,15 @@ export interface Database {
           created_at?: string;
           updated_at?: string;
         };
+        Relationships: [
+          {
+            foreignKeyName: "commodity_sales_season_id_fkey";
+            columns: ["season_id"];
+            isOneToOne: false;
+            referencedRelation: "seasons";
+            referencedColumns: ["id"];
+          },
+        ];
       };
       commodity_hedges: {
         Row: {
@@ -881,6 +1119,15 @@ export interface Database {
           created_at?: string;
           updated_at?: string;
         };
+        Relationships: [
+          {
+            foreignKeyName: "commodity_hedges_season_id_fkey";
+            columns: ["season_id"];
+            isOneToOne: false;
+            referencedRelation: "seasons";
+            referencedColumns: ["id"];
+          },
+        ];
       };
       team_members: {
         Row: {
@@ -916,6 +1163,62 @@ export interface Database {
           invited_at?: string | null;
           accepted_at?: string | null;
         };
+        Relationships: [
+          {
+            foreignKeyName: "team_members_farm_id_fkey";
+            columns: ["farm_id"];
+            isOneToOne: false;
+            referencedRelation: "farms";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      cascade_tasks: {
+        Row: {
+          id: string;
+          user_id: string;
+          season_id: string;
+          task_type: string;
+          target_id: string;
+          target_type: string;
+          program_type: string | null;
+          status: string;
+          created_at: string;
+          completed_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          user_id: string;
+          season_id: string;
+          task_type: string;
+          target_id: string;
+          target_type: string;
+          program_type?: string | null;
+          status?: string;
+          created_at?: string;
+          completed_at?: string | null;
+        };
+        Update: {
+          id?: string;
+          user_id?: string;
+          season_id?: string;
+          task_type?: string;
+          target_id?: string;
+          target_type?: string;
+          program_type?: string | null;
+          status?: string;
+          created_at?: string;
+          completed_at?: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "cascade_tasks_season_id_fkey";
+            columns: ["season_id"];
+            isOneToOne: false;
+            referencedRelation: "seasons";
+            referencedColumns: ["id"];
+          },
+        ];
       };
       app_notifications: {
         Row: {
@@ -945,7 +1248,26 @@ export interface Database {
           is_read?: boolean;
           created_at?: string;
         };
+        Relationships: [];
       };
+    };
+    Views: {
+      [_ in never]: never;
+    };
+    Functions: {
+      set_active_season: {
+        Args: {
+          p_season_id: string;
+          p_user_id: string;
+        };
+        Returns: undefined;
+      };
+    };
+    Enums: {
+      [_ in never]: never;
+    };
+    CompositeTypes: {
+      [_ in never]: never;
     };
   };
 }

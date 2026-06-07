@@ -24,22 +24,26 @@ interface ProgramItem {
 
 interface ChemicalProgram {
   id: string;
+  season_id: string;
+  user_id: string;
   program_name: string;
   crop_type: CropType;
   application_cost: number;
   notes: string | null;
-  chemical_program_items?: {
+  created_at: string;
+  updated_at: string;
+  chemical_program_items: {
     id: string;
     chemical_id: string;
     application_rate: number;
-    application_rate_unit: string;
+    application_rate_unit: string | null;
     notes: string | null;
   }[];
   items?: {
     id: string;
     chemical_id: string;
     application_rate: number;
-    application_rate_unit: string;
+    application_rate_unit: string | null;
     notes: string | null;
   }[];
 }
