@@ -1179,36 +1179,45 @@ export interface Database {
           user_id: string;
           season_id: string;
           task_type: string;
-          target_id: string;
-          target_type: string;
-          program_type: string | null;
           status: string;
-          created_at: string;
+          entity_id: string | null;
+          entity_type: string | null;
+          program_type: string | null;
+          started_at: string | null;
           completed_at: string | null;
+          result_data: Json | null;
+          error_message: string | null;
+          created_at: string | null;
         };
         Insert: {
           id?: string;
           user_id: string;
           season_id: string;
           task_type: string;
-          target_id: string;
-          target_type: string;
-          program_type?: string | null;
           status?: string;
-          created_at?: string;
+          entity_id?: string | null;
+          entity_type?: string | null;
+          program_type?: string | null;
+          started_at?: string | null;
           completed_at?: string | null;
+          result_data?: Json | null;
+          error_message?: string | null;
+          created_at?: string | null;
         };
         Update: {
           id?: string;
           user_id?: string;
           season_id?: string;
           task_type?: string;
-          target_id?: string;
-          target_type?: string;
-          program_type?: string | null;
           status?: string;
-          created_at?: string;
+          entity_id?: string | null;
+          entity_type?: string | null;
+          program_type?: string | null;
+          started_at?: string | null;
           completed_at?: string | null;
+          result_data?: Json | null;
+          error_message?: string | null;
+          created_at?: string | null;
         };
         Relationships: [
           {

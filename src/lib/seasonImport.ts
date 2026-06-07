@@ -163,7 +163,6 @@ export async function importSeasonData(
   cropTypeUpdates: {
     fields: Record<string, string>;
     seeds: Record<string, string>;
-    chemicals: Record<string, string>;
     chemicalPrograms: Record<string, string>;
   }
 ) {

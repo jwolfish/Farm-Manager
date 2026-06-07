@@ -1,7 +1,6 @@
 import { useEffect, useState } from 'react';
-import { ArrowLeft, Sprout, DollarSign, FileText, AlertCircle, Link as LinkIcon, Unlink } from 'lucide-react';
+import { ArrowLeft, Sprout, FileText, AlertCircle, Unlink } from 'lucide-react';
 import { supabase } from '../lib/supabase';
-import { useAuth } from '../contexts/AuthContext';
 import {
   getTemplate,
   getResolvedFieldCosts,
@@ -11,6 +10,7 @@ import {
   unlinkFieldFromTemplate,
   type ResolvedFieldCosts
 } from '../lib/templateUtils';
+import type { FieldCostValues, OverrideValue } from '../lib/templateLib/fieldCostOverrides';
 import { CostItemEditor } from '../components/CostItemEditor';
 import type { CropType } from '../lib/database.types';
 
@@ -30,19 +30,11 @@ interface FieldDetailProps {
   onBack: () => void;
 }
 
-export function FieldDetail({ fieldId, seasonId, onBack }: FieldDetailProps) {
-  const { user } = useAuth();
+export function FieldDetail({ fieldId, onBack }: FieldDetailProps) {
   const [field, setField] = useState<Field | null>(null);
   const [fieldCosts, setFieldCosts] = useState<ResolvedFieldCosts | null>(null);
   const [template, setTemplate] = useState<any>(null);
   const [loading, setLoading] = useState(true);
-  const [expandedSections, setExpandedSections] = useState<Set<string>>(
-    new Set(['seed', 'fertilizer', 'chemical', 'operations'])
-  );
-  const [editingLandRent, setEditingLandRent] = useState(false);
-  const [editingPropertyTax, setEditingPropertyTax] = useState(false);
-  const [landRentValue, setLandRentValue] = useState('');
-  const [propertyTaxValue, setPropertyTaxValue] = useState('');
 
   useEffect(() => {
     loadFieldData();
@@ -74,18 +66,6 @@ export function FieldDetail({ fieldId, seasonId, onBack }: FieldDetailProps) {
     } finally {
       setLoading(false);
     }
-  };
-
-  const toggleSection = (section: string) => {
-    setExpandedSections(prev => {
-      const newSet = new Set(prev);
-      if (newSet.has(section)) {
-        newSet.delete(section);
-      } else {
-        newSet.add(section);
-      }
-      return newSet;
-    });
   };
 
   const handleCostItemUpdate = async (itemName: string, newValue: number) => {
@@ -121,7 +101,6 @@ export function FieldDetail({ fieldId, seasonId, onBack }: FieldDetailProps) {
 
       if (error) throw error;
       await loadFieldData();
-      setEditingLandRent(false);
     } catch (error) {
       console.error('Error updating land rent:', error);
       alert('Failed to update land rent');
@@ -137,7 +116,6 @@ export function FieldDetail({ fieldId, seasonId, onBack }: FieldDetailProps) {
 
       if (error) throw error;
       await loadFieldData();
-      setEditingPropertyTax(false);
     } catch (error) {
       console.error('Error updating property tax:', error);
       alert('Failed to update property tax');
@@ -152,8 +130,24 @@ export function FieldDetail({ fieldId, seasonId, onBack }: FieldDetailProps) {
     );
   }
 
-  const costs = fieldCosts?.costs || {};
-  const overrides = fieldCosts?.overrides || new Map();
+  const defaultCosts: FieldCostValues = {
+    seed_cost_per_acre: 0,
+    fertilizer_cost_per_acre: 0,
+    chemical_cost_per_acre: 0,
+    tillage_cost_per_acre: 0,
+    planting_cost_per_acre: 0,
+    harvest_cost_per_acre: 0,
+    equipment_cost_per_acre: 0,
+    custom_services_cost_per_acre: 0,
+    labor_cost_per_acre: 0,
+    crop_insurance_cost_per_acre: 0,
+    drying_storage_cost_per_acre: 0,
+    hauling_cost_per_acre: 0,
+    other_expenses_per_acre: 0,
+    total_cost_per_acre: 0,
+  };
+  const costs = fieldCosts?.costs ?? defaultCosts;
+  const overrides = fieldCosts?.overrides || new Map<string, OverrideValue>();
   const hasOverrides = overrides.size > 0;
 
   const totalCostPerAcre = costs.total_cost_per_acre || 0;

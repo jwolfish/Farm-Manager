@@ -1,5 +1,5 @@
 import { supabase } from '../supabase';
-import { Database } from '../database.types';
+import { Database, Json } from '../database.types';
 import { ProgramReference } from './templateCrud';
 import { calculateFieldTotalCost } from './templateCalculations';
 
@@ -7,10 +7,28 @@ type FieldCostOverride = Database['public']['Tables']['field_cost_overrides']['R
 
 export type OverrideValue = number | ProgramReference[];
 
+export interface FieldCostValues {
+  seed_cost_per_acre: number;
+  fertilizer_cost_per_acre: number;
+  chemical_cost_per_acre: number;
+  tillage_cost_per_acre: number;
+  planting_cost_per_acre: number;
+  harvest_cost_per_acre: number;
+  equipment_cost_per_acre: number;
+  custom_services_cost_per_acre: number;
+  labor_cost_per_acre: number;
+  crop_insurance_cost_per_acre: number;
+  drying_storage_cost_per_acre: number;
+  hauling_cost_per_acre: number;
+  other_expenses_per_acre: number;
+  total_cost_per_acre: number;
+  [key: string]: unknown;
+}
+
 export interface ResolvedFieldCosts {
   templateId: string | null;
-  costs: Record<string, unknown>;
-  overrides: Map<string, unknown>;
+  costs: FieldCostValues;
+  overrides: Map<string, OverrideValue>;
 }
 
 export async function getFieldOverrides(fieldId: string): Promise<FieldCostOverride[]> {
@@ -34,7 +52,7 @@ export async function createOrUpdateOverride(
   const { data, error } = await supabase
     .from('field_cost_overrides')
     .upsert(
-      { field_id: fieldId, cost_item_name: costItemName, override_value: overrideValue },
+      { field_id: fieldId, cost_item_name: costItemName, override_value: overrideValue as unknown as Json },
       { onConflict: 'field_id,cost_item_name' }
     )
     .select()
@@ -98,11 +116,13 @@ export async function getResolvedFieldCosts(fieldId: string): Promise<ResolvedFi
   if (!fieldCost) return null;
 
   const overrides = await getFieldOverrides(fieldId);
-  const overrideMap = new Map(overrides.map((o) => [o.cost_item_name, o.override_value]));
+  const overrideMap = new Map<string, OverrideValue>(
+    overrides.map((o) => [o.cost_item_name, o.override_value as unknown as OverrideValue])
+  );
 
-  const resolvedCosts: Record<string, unknown> = { ...fieldCost };
+  const resolvedCosts = { ...fieldCost } as unknown as FieldCostValues;
   for (const [itemName, value] of overrideMap.entries()) {
-    resolvedCosts[itemName] = value;
+    (resolvedCosts as Record<string, unknown>)[itemName] = value;
   }
 
   return {

@@ -203,7 +203,7 @@ export function SeasonImportWizard({ sourceSeasonId, newSeasonId, userId, onComp
                           <input type="checkbox" checked={selectedItems.chemicals.includes(chem.id)} onChange={() => toggleItemSelection('chemicals', chem.id)} className="w-4 h-4 text-green-600 rounded focus:ring-2 focus:ring-green-500" />
                           <div>
                             <p className="font-medium text-gray-900">{chem.chemical_name}</p>
-                            <p className="text-sm text-gray-600 capitalize">{chem.crop_type}</p>
+                            <p className="text-sm text-gray-600">{chem.unit_type}</p>
                           </div>
                         </div>
                         <p className="text-sm text-gray-600">${chem.price_per_unit.toFixed(2)}/{chem.unit_type}</p>
@@ -396,18 +396,6 @@ export function SeasonImportWizard({ sourceSeasonId, newSeasonId, userId, onComp
                       <div key={chem.id} className="flex items-center justify-between p-3 border border-gray-200 rounded-lg">
                         <div className="flex-1">
                           <p className="font-medium text-gray-900">{chem.chemical_name}</p>
-                          <div className="flex items-center gap-2 mt-2">
-                            <span className="text-sm text-gray-600">Crop Type:</span>
-                            <select
-                              value={cropTypeUpdates.chemicals[chem.id] ?? chem.crop_type}
-                              onChange={(e) => setCropTypeUpdates((prev) => ({ ...prev, chemicals: { ...prev.chemicals, [chem.id]: e.target.value } }))}
-                              className="px-3 py-1 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent capitalize text-sm"
-                            >
-                              <option value="corn">Corn</option>
-                              <option value="soybeans">Soybeans</option>
-                              <option value="wheat">Wheat</option>
-                            </select>
-                          </div>
                         </div>
                         <div className="flex items-center gap-3">
                           <span className="text-sm text-gray-600">Price per {chem.unit_type}:</span>

@@ -52,7 +52,6 @@ export type PriceUpdates = {
 export type CropTypeUpdates = {
   fields: Record<string, string>;
   seeds: Record<string, string>;
-  chemicals: Record<string, string>;
   chemicalPrograms: Record<string, string>;
 };
 
@@ -60,7 +59,7 @@ const emptySourceData: SourceData = { fields: [], seeds: [], fertilizers: [], ch
 const emptySelectedCategories: SelectedCategories = { fields: false, seeds: false, fertilizers: false, chemicals: false, fertilizerPrograms: false, chemicalPrograms: false };
 const emptySelectedItems: SelectedItems = { fields: [], seeds: [], fertilizers: [], chemicals: [], fertilizerPrograms: [], chemicalPrograms: [] };
 const emptyPriceUpdates: PriceUpdates = { fields: {}, seeds: {}, fertilizers: {}, chemicals: {}, fertilizerPrograms: {}, chemicalPrograms: {} };
-const emptyCropTypeUpdates: CropTypeUpdates = { fields: {}, seeds: {}, chemicals: {}, chemicalPrograms: {} };
+const emptyCropTypeUpdates: CropTypeUpdates = { fields: {}, seeds: {}, chemicalPrograms: {} };
 
 export function useImportWizard(sourceSeasonId: string, newSeasonId: string, userId: string, onComplete: () => void) {
   const [step, setStep] = useState<WizardStep>('select-categories');
@@ -88,10 +87,9 @@ export function useImportWizard(sourceSeasonId: string, newSeasonId: string, use
       data.chemicalPrograms.forEach((p) => { initialPrices.chemicalPrograms[p.id] = p.application_cost; });
       setPriceUpdates(initialPrices);
 
-      const initialCropTypes: CropTypeUpdates = { fields: {}, seeds: {}, chemicals: {}, chemicalPrograms: {} };
+      const initialCropTypes: CropTypeUpdates = { fields: {}, seeds: {}, chemicalPrograms: {} };
       data.fields.forEach((f) => { initialCropTypes.fields[f.id] = f.crop_type; });
       data.seeds.forEach((s) => { initialCropTypes.seeds[s.id] = s.crop_type; });
-      data.chemicals.forEach((c) => { initialCropTypes.chemicals[c.id] = c.crop_type; });
       data.chemicalPrograms.forEach((p) => { initialCropTypes.chemicalPrograms[p.id] = p.crop_type; });
       setCropTypeUpdates(initialCropTypes);
     } catch (err) {
