@@ -46,11 +46,32 @@ function fieldBlock(
   lineAt(doc, x, y + 10, x + width);
 }
 
-// Renders field names stacked one-per-line, with automatic font-size fallback and
-// hard clipping to MAX_LINES so the block never grows large enough to push content
-// off a single page. Returns the y-advance so subsequent rows shift accordingly.
-const LINE_SPACING = 4; // mm between stacked name lines
-const MAX_LINES = 4;    // hard cap before clipping with "+N more"
+// Renders field names inside the Farm/Field Name block.
+// Uses a single column for ≤4 names and automatically switches to two columns
+// for larger selections, fitting up to 8 names at the same block height.
+// Returns the y-advance so subsequent rows shift accordingly.
+const LINE_SPACING = 4;      // mm between stacked name lines
+const MAX_LINES_PER_COL = 4; // lines per column before font-size step-down
+const COL_GUTTER = 4;        // mm gap between the two sub-columns
+
+function buildNameLines(doc: jsPDF, names: string[], colWidth: number): { lines: string[]; fontSize: number } {
+  const tryBuild = (fs: number): string[] => {
+    doc.setFontSize(fs);
+    const out: string[] = [];
+    for (const name of names) {
+      const wrapped = doc.splitTextToSize(name, colWidth) as string[];
+      out.push(...wrapped);
+    }
+    return out;
+  };
+
+  let lines = tryBuild(8);
+  if (lines.length > MAX_LINES_PER_COL) {
+    lines = tryBuild(6.5);
+    return { lines, fontSize: 6.5 };
+  }
+  return { lines, fontSize: 8 };
+}
 
 function fieldBlockFieldNames(
   doc: jsPDF,
@@ -71,56 +92,61 @@ function fieldBlockFieldNames(
     return 20;
   }
 
-  // Build a flat line list at a given font size (splits only names that exceed width)
-  const buildLines = (fs: number): string[] => {
-    doc.setFontSize(fs);
-    const out: string[] = [];
-    for (const name of names) {
-      const wrapped = doc.splitTextToSize(name, width) as string[];
-      out.push(...wrapped);
-    }
-    return out;
-  };
+  // Decide layout: single column for ≤4 names, two columns otherwise
+  const useDoubleCol = names.length > MAX_LINES_PER_COL;
+  const colWidth = useDoubleCol ? (width - COL_GUTTER) / 2 : width;
 
-  // Try preferred size, step down if too many lines
-  let fontSize = 8;
-  let lines = buildLines(fontSize);
+  if (!useDoubleCol) {
+    // ── Single-column path ─────────────────────────────────────────────────
+    const { lines, fontSize } = buildNameLines(doc, names, colWidth);
 
-  if (lines.length > MAX_LINES) {
-    fontSize = 6.5;
-    lines = buildLines(fontSize);
-  }
-
-  // Hard clip: show as many complete names as fit in MAX_LINES-1 then "+N more"
-  if (lines.length > MAX_LINES) {
-    const clipped: string[] = [];
-    let count = 0;
-    let nameIdx = 0;
+    doc.setFont('helvetica', 'normal');
     doc.setFontSize(fontSize);
-    for (; nameIdx < names.length; nameIdx++) {
-      const wrapped = doc.splitTextToSize(names[nameIdx], width) as string[];
-      if (count + wrapped.length > MAX_LINES - 1) break;
-      clipped.push(...wrapped);
-      count += wrapped.length;
-    }
-    clipped.push(`+${names.length - nameIdx} more`);
-    lines = clipped;
+    doc.setTextColor(DARK[0], DARK[1], DARK[2]);
+    lines.forEach((line, i) => {
+      doc.text(line, x, y + 8 + i * LINE_SPACING);
+    });
+
+    const underlineY = y + 8 + (lines.length - 1) * LINE_SPACING + 2;
+    lineAt(doc, x, underlineY, x + width);
+    return 20 + (lines.length - 1) * LINE_SPACING;
   }
 
-  // Render stacked lines
+  // ── Two-column path ──────────────────────────────────────────────────────
+  // Split names evenly: left gets the first ceil(N/2), right gets the rest
+  const splitAt = Math.ceil(names.length / 2);
+  const leftNames = names.slice(0, splitAt);
+  const rightNames = names.slice(splitAt);
+
+  const left = buildNameLines(doc, leftNames, colWidth);
+  const right = buildNameLines(doc, rightNames, colWidth);
+
+  // Use the smaller of the two font sizes so both columns look consistent
+  const fontSize = Math.min(left.fontSize, right.fontSize);
+
+  // Re-build both columns at the unified font size if needed
+  const finalLeft = fontSize < left.fontSize ? buildNameLines(doc, leftNames, colWidth).lines : left.lines;
+  const finalRight = fontSize < right.fontSize ? buildNameLines(doc, rightNames, colWidth).lines : right.lines;
+
   doc.setFont('helvetica', 'normal');
   doc.setFontSize(fontSize);
   doc.setTextColor(DARK[0], DARK[1], DARK[2]);
-  lines.forEach((line, i) => {
+
+  const rightX = x + colWidth + COL_GUTTER;
+
+  finalLeft.forEach((line, i) => {
     doc.text(line, x, y + 8 + i * LINE_SPACING);
   });
+  finalRight.forEach((line, i) => {
+    doc.text(line, rightX, y + 8 + i * LINE_SPACING);
+  });
 
-  // Underline sits 2 mm below the last line
-  const underlineY = y + 8 + (lines.length - 1) * LINE_SPACING + 2;
+  // Single underline spanning the full block width, below the taller column
+  const tallest = Math.max(finalLeft.length, finalRight.length);
+  const underlineY = y + 8 + (tallest - 1) * LINE_SPACING + 2;
   lineAt(doc, x, underlineY, x + width);
 
-  // y-advance: base 20 for a single line + 4 mm per additional line
-  return 20 + (lines.length - 1) * LINE_SPACING;
+  return 20 + (tallest - 1) * LINE_SPACING;
 }
 
 export function exportSprayLogPDF(workOrders: SprayWorkOrder[], seasonName: string) {
