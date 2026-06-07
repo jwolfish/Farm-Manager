@@ -414,6 +414,29 @@ export function useSprayPlanner(currentSeasonId: string | null, effectiveUserId:
     setCrossTotals(crossRows);
   };
 
+  const setWorkOrderOverrides = (
+    programId: string,
+    acres: number | null,
+    galPerAcre: number | null,
+    chemicals: ChemicalItem[] | null,
+  ) => {
+    const nextAcreMap = new Map(acreOverrides);
+    if (acres === null) nextAcreMap.delete(programId); else nextAcreMap.set(programId, acres);
+
+    const nextVolMap = new Map(sprayVolumeOverrides);
+    if (galPerAcre === null) nextVolMap.delete(programId); else nextVolMap.set(programId, galPerAcre);
+
+    const nextChemMap = new Map(chemOverrides);
+    if (chemicals === null) nextChemMap.delete(programId); else nextChemMap.set(programId, chemicals);
+
+    const { results, crossRows } = buildWorkOrders(fields, programs, selectedFields, selectedPrograms, nextAcreMap, nextChemMap, nextVolMap);
+    setAcreOverrides(nextAcreMap);
+    setSprayVolumeOverrides(nextVolMap);
+    setChemOverridesState(nextChemMap);
+    setWorkOrders(results);
+    setCrossTotals(crossRows);
+  };
+
   const toggleExpandedCard = (programId: string) => {
     setExpandedCards((prev) => {
       const next = new Set(prev);
@@ -464,6 +487,7 @@ export function useSprayPlanner(currentSeasonId: string | null, effectiveUserId:
     chemOverrides,
     setSprayVolumeOverride,
     sprayVolumeOverrides,
+    setWorkOrderOverrides,
     handleExportCSV,
     handleExportPDF,
     handleExportSprayLog,
