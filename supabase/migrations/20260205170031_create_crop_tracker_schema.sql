@@ -1,8 +1,8 @@
 /*
-  # Crop Input Cost Tracker - Complete Database Schema
+  # Farm Manager - Complete Database Schema
 
   ## Overview
-  This migration creates the complete database schema for the Crop Input Cost Tracker application,
+  This migration creates the complete database schema for the Farm Manager application,
   enabling farmers to track input costs across multiple seasons, calculate break-even costs per bushel,
   and make data-driven grain marketing decisions.
 

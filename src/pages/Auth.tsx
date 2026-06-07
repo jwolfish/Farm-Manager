@@ -93,7 +93,7 @@ export function Auth() {
           </div>
 
           <h1 className="text-2xl font-bold text-center text-gray-900 mb-2">
-            Crop Input Cost Tracker
+            Farm Manager
           </h1>
           <p className="text-center text-gray-600 mb-8">{subtitle[mode]}</p>
 
