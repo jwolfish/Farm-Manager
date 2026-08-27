@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { ShoppingCart, RefreshCw, Check, CreditCard as Edit2, DollarSign, Package, AlertTriangle } from 'lucide-react';
+import { ShoppingCart, RefreshCw, Check, CreditCard as Edit2, DollarSign, Package, AlertTriangle, FileDown } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { createShoppingList } from '../../lib/shoppingListGeneration';
 import { queueCascadeTask } from '../../lib/backgroundTasks';
@@ -7,6 +7,7 @@ import { useAuth } from '../../contexts/AuthContext';
 import { useFarm } from '../../contexts/FarmContext';
 import { Pagination } from '../Pagination';
 import { MarkPurchasedModal } from './MarkPurchasedModal';
+import { exportShoppingListPDF } from '../../lib/exports/shoppingListPdfExport';
 
 type Category = 'chemical' | 'fertilizer' | 'seed';
 
@@ -62,7 +63,7 @@ const STATUS_STYLES: Record<string, string> = {
 
 export function ShoppingListsTab({ seasonId, readOnly = false }: Props) {
   const { user } = useAuth();
-  const { activeFarmId, effectiveUserId } = useFarm();
+  const { activeFarmId, effectiveUserId, activeFarm } = useFarm();
   const [category, setCategory] = useState<Category>('chemical');
   const [lists, setLists] = useState<ShoppingList[]>([]);
   const [selectedListId, setSelectedListId] = useState<string | null>(null);
@@ -74,8 +75,10 @@ export function ShoppingListsTab({ seasonId, readOnly = false }: Props) {
   const [editValues, setEditValues] = useState<{ adjusted_quantity: string; supplier: string; quoted_price_per_unit: string }>({ adjusted_quantity: '', supplier: '', quoted_price_per_unit: '' });
   const [purchaseTarget, setPurchaseTarget] = useState<ShoppingLine | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
+  const [seasonName, setSeasonName] = useState('');
 
   const farmId = activeFarmId;
+  const farmName = activeFarm?.farmName ?? undefined;
   const userId = effectiveUserId ?? user?.id ?? null;
 
   const loadLists = useCallback(async () => {
@@ -112,6 +115,13 @@ export function ShoppingListsTab({ seasonId, readOnly = false }: Props) {
   }, [category]);
 
   useEffect(() => { loadLists(); }, [loadLists]);
+
+  useEffect(() => {
+    if (!seasonId) return;
+    supabase.from('seasons').select('name, year').eq('id', seasonId).maybeSingle().then(({ data }) => {
+      if (data) setSeasonName(`${data.name} (${data.year})`);
+    });
+  }, [seasonId]);
   useEffect(() => { loadLines(); }, [loadLines]);
 
   const handleGenerate = async () => {
@@ -200,20 +210,34 @@ export function ShoppingListsTab({ seasonId, readOnly = false }: Props) {
           ))}
         </div>
 
-        {!readOnly && (
-          <button
-            onClick={handleGenerate}
-            disabled={generating || !farmId}
-            className="ml-auto flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            {generating ? (
-              <RefreshCw className="w-4 h-4 animate-spin" />
-            ) : (
-              <ShoppingCart className="w-4 h-4" />
-            )}
-            Generate {CATEGORY_LABELS[category]} List
-          </button>
-        )}
+        <div className="ml-auto flex items-center gap-2">
+          {lines.length > 0 && (
+            <button
+              onClick={() => {
+                const selectedList = lists.find((l) => l.id === selectedListId);
+                exportShoppingListPDF(lines, selectedList?.label ?? '', seasonName, farmName);
+              }}
+              className="flex items-center gap-2 px-4 py-2 bg-white border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors text-sm"
+            >
+              <FileDown className="w-4 h-4" />
+              Export PDF
+            </button>
+          )}
+          {!readOnly && (
+            <button
+              onClick={handleGenerate}
+              disabled={generating || !farmId}
+              className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            >
+              {generating ? (
+                <RefreshCw className="w-4 h-4 animate-spin" />
+              ) : (
+                <ShoppingCart className="w-4 h-4" />
+              )}
+              Generate {CATEGORY_LABELS[category]} List
+            </button>
+          )}
+        </div>
       </div>
 
       {error && (
