@@ -151,7 +151,7 @@ export function WorkOrderDetailModal({ workOrder: wo, onApply, onUnapply, onClos
                     const isLow = onHand !== null && neededInInvUnit > onHand;
                     const totalDisplay = toBestPracticalUnit(line.total_needed, line.rate_unit).display;
                     const onHandDisplay = onHand !== null
-                      ? toBestPracticalUnit(onHand, inv!.unitType).display
+                      ? `${onHand.toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 2 })} ${inv!.unitType}`
                       : '—';
 
                     return (

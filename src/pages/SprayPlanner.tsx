@@ -559,7 +559,7 @@ export function SprayPlanner({ currentSeasonId, effectiveUserId, farmId }: Props
                         const onHand = inv?.onHand ?? null;
                         const isLow = onHand !== null && convertUnits(ct.rateUnit, inv!.unitType, ct.totalRaw) > onHand;
                         const onHandDisplay = onHand !== null
-                          ? toBestPracticalUnit(onHand, inv!.unitType).display
+                          ? `${onHand.toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 2 })} ${inv!.unitType}`
                           : '\u2014';
                         return (
                           <tr key={ct.chemicalId} className={`${isLow ? 'bg-amber-50' : i % 2 === 0 ? 'bg-gray-50' : 'bg-white'}`}>
