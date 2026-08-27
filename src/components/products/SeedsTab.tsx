@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Package, Plus, Minus } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/AuthContext';
+import { useFarm } from '../../contexts/FarmContext';
 import { Pagination } from '../Pagination';
 import type { CropType } from '../../lib/database.types';
 import { InventoryAdjustModal } from './InventoryAdjustModal';
@@ -52,6 +53,7 @@ const defaultForm = { product_name: '', crop_type: 'corn' as CropType, price_per
 
 export function SeedsTab({ seeds, seasonId, onReload, showForm, onHideForm, readOnly = false }: Props) {
   const { user } = useAuth();
+  const { activeFarmId } = useFarm();
   const [editingId, setEditingId] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
@@ -100,7 +102,30 @@ export function SeedsTab({ seeds, seasonId, onReload, showForm, onHideForm, read
         const { error } = await supabase.from('seed_varieties').update(payload).eq('id', editingId);
         if (error) throw error;
       } else {
-        const { error } = await supabase.from('seed_varieties').insert({ season_id: seasonId, user_id: user.id, ...payload });
+        let masterProductId: string | null = null;
+        if (activeFarmId) {
+          const { data: mpData } = await supabase
+            .from('master_products')
+            .upsert(
+              {
+                farm_id: activeFarmId,
+                product_category: 'seed',
+                canonical_name: formData.product_name,
+                unit_type: formData.unit_type,
+              },
+              { onConflict: 'farm_id,product_category,canonical_name' }
+            )
+            .select('id')
+            .single();
+          if (mpData) masterProductId = mpData.id;
+        }
+
+        const { error } = await supabase.from('seed_varieties').insert({
+          season_id: seasonId,
+          user_id: user.id,
+          master_product_id: masterProductId,
+          ...payload,
+        });
         if (error) throw error;
       }
 

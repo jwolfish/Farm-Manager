@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { FlaskConical, Plus, Minus } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/AuthContext';
+import { useFarm } from '../../contexts/FarmContext';
 import { Pagination } from '../Pagination';
 import { queueCascadeTask } from '../../lib/backgroundTasks';
 import { InventoryAdjustModal } from './InventoryAdjustModal';
@@ -35,6 +36,7 @@ const defaultForm = { chemical_name: '', price_per_unit: '', unit_type: 'gal', d
 
 export function ChemicalsTab({ chemicals, seasonId, onReload, showForm, onHideForm, readOnly = false }: Props) {
   const { user } = useAuth();
+  const { activeFarmId } = useFarm();
   const [editingId, setEditingId] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
@@ -84,7 +86,30 @@ export function ChemicalsTab({ chemicals, seasonId, onReload, showForm, onHideFo
         const { error } = await supabase.from('individual_chemicals').update(payload).eq('id', editingId);
         if (error) throw error;
       } else {
-        const { error } = await supabase.from('individual_chemicals').insert({ season_id: seasonId, user_id: user.id, ...payload });
+        let masterProductId: string | null = null;
+        if (activeFarmId) {
+          const { data: mpData } = await supabase
+            .from('master_products')
+            .upsert(
+              {
+                farm_id: activeFarmId,
+                product_category: 'chemical',
+                canonical_name: formData.chemical_name,
+                unit_type: formData.unit_type,
+              },
+              { onConflict: 'farm_id,product_category,canonical_name' }
+            )
+            .select('id')
+            .single();
+          if (mpData) masterProductId = mpData.id;
+        }
+
+        const { error } = await supabase.from('individual_chemicals').insert({
+          season_id: seasonId,
+          user_id: user.id,
+          master_product_id: masterProductId,
+          ...payload,
+        });
         if (error) throw error;
       }
 

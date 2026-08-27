@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Droplet } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/AuthContext';
+import { useFarm } from '../../contexts/FarmContext';
 import { Pagination } from '../Pagination';
 import { queueCascadeTask } from '../../lib/backgroundTasks';
 
@@ -30,6 +31,7 @@ const defaultForm = { product_name: '', price_per_unit: '', unit_type: 'gallon',
 
 export function FertilizersTab({ fertilizers, seasonId, onReload, showForm, onHideForm }: Props) {
   const { user } = useAuth();
+  const { activeFarmId } = useFarm();
   const [editingId, setEditingId] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
@@ -77,7 +79,30 @@ export function FertilizersTab({ fertilizers, seasonId, onReload, showForm, onHi
         const { error } = await supabase.from('fertilizer_products').update(payload).eq('id', editingId);
         if (error) throw error;
       } else {
-        const { error } = await supabase.from('fertilizer_products').insert({ season_id: seasonId, user_id: user.id, ...payload });
+        let masterProductId: string | null = null;
+        if (activeFarmId) {
+          const { data: mpData } = await supabase
+            .from('master_products')
+            .upsert(
+              {
+                farm_id: activeFarmId,
+                product_category: 'fertilizer',
+                canonical_name: formData.product_name,
+                unit_type: formData.unit_type,
+              },
+              { onConflict: 'farm_id,product_category,canonical_name' }
+            )
+            .select('id')
+            .single();
+          if (mpData) masterProductId = mpData.id;
+        }
+
+        const { error } = await supabase.from('fertilizer_products').insert({
+          season_id: seasonId,
+          user_id: user.id,
+          master_product_id: masterProductId,
+          ...payload,
+        });
         if (error) throw error;
       }
 
