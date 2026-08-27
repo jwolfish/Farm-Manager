@@ -252,7 +252,7 @@ export async function generateFertilizerLines(
   // Accumulate total needed per fertilizer product
   const fertAccum = new Map<
     string,
-    { prodId: string; name: string; totalRaw: number; rateUnit: string }
+    { prodId: string; name: string; totalRaw: number; rateUnit: string; priceUnit: string }
   >();
 
   for (const f of fields as any[]) {
@@ -272,6 +272,7 @@ export async function generateFertilizerLines(
         if (!prod) continue;
         const rate = Number(item.application_rate);
         const rateUnit: string = item.application_rate_unit ?? prod.unit_type ?? '';
+        const priceUnit: string = prod.unit_type ?? rateUnit;
         const total = rate * acreage;
         const existing = fertAccum.get(prod.id);
         if (existing) {
@@ -282,6 +283,7 @@ export async function generateFertilizerLines(
             name: prod.product_name,
             totalRaw: total,
             rateUnit,
+            priceUnit,
           });
         }
       }
@@ -291,13 +293,14 @@ export async function generateFertilizerLines(
   // Fertilizer has no on-hand tracking in this release
   const lines: ShoppingLineInput[] = [];
   for (const acc of fertAccum.values()) {
+    const neededInPriceUnit = convertUnits(acc.rateUnit, acc.priceUnit, acc.totalRaw);
     lines.push({
       masterProductId: null,
       productName: acc.name,
       productCategory: 'fertilizer',
-      neededQuantity: acc.totalRaw,
+      neededQuantity: neededInPriceUnit,
       onHandAtGeneration: 0,
-      unitType: acc.rateUnit,
+      unitType: acc.priceUnit,
     });
   }
 
