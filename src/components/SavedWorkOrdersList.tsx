@@ -256,6 +256,3 @@ export function SavedWorkOrdersList({ workOrders, loading, onView, onDelete, onA
     </div>
   );
 }
-
-
-export { SavedWorkOrdersList }
