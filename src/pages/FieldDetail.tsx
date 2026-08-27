@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { ArrowLeft, Sprout, FileText, AlertCircle, Unlink } from 'lucide-react';
 import { FieldApplicationHistory } from '../components/fields/FieldApplicationHistory';
+import { FieldProgramDetails } from '../components/fields/FieldProgramDetails';
 import { supabase } from '../lib/supabase';
 import {
   getTemplate,
@@ -246,51 +247,12 @@ export function FieldDetail({ fieldId, onBack }: FieldDetailProps) {
 
         {fieldCosts && (
           <div className="space-y-4">
-            <div className="bg-white rounded-lg shadow-sm border border-gray-200">
-              <div className="border-b border-gray-200 p-4">
-                <h2 className="text-lg font-semibold text-gray-900">Seed</h2>
-              </div>
-              <div className="p-4">
-                <div className="flex items-center justify-between py-2 px-3">
-                  <span className="text-sm text-gray-700">Seed Cost</span>
-                  <span className="font-medium text-gray-900">${(costs.seed_cost_per_acre || 0).toFixed(2)}/acre</span>
-                </div>
-              </div>
-            </div>
-
-            <div className="bg-white rounded-lg shadow-sm border border-gray-200">
-              <div className="border-b border-gray-200 p-4">
-                <h2 className="text-lg font-semibold text-gray-900">Fertilizer Programs</h2>
-              </div>
-              <div className="p-4">
-                <CostItemEditor
-                  label="Total Fertilizer Cost"
-                  value={costs.fertilizer_cost_per_acre || 0}
-                  isOverridden={overrides.has('fertilizer_cost_per_acre')}
-                  templateValue={template ? Number(template.fertilizer_cost_per_acre || 0) : undefined}
-                  onSave={(val) => handleCostItemUpdate('fertilizer_cost_per_acre', val)}
-                  onReset={overrides.has('fertilizer_cost_per_acre') ? () => handleResetOverride('fertilizer_cost_per_acre') : undefined}
-                  disabled={!template}
-                />
-              </div>
-            </div>
-
-            <div className="bg-white rounded-lg shadow-sm border border-gray-200">
-              <div className="border-b border-gray-200 p-4">
-                <h2 className="text-lg font-semibold text-gray-900">Chemical Programs</h2>
-              </div>
-              <div className="p-4">
-                <CostItemEditor
-                  label="Total Chemical Cost"
-                  value={costs.chemical_cost_per_acre || 0}
-                  isOverridden={overrides.has('chemical_cost_per_acre')}
-                  templateValue={template ? Number(template.chemical_cost_per_acre || 0) : undefined}
-                  onSave={(val) => handleCostItemUpdate('chemical_cost_per_acre', val)}
-                  onReset={overrides.has('chemical_cost_per_acre') ? () => handleResetOverride('chemical_cost_per_acre') : undefined}
-                  disabled={!template}
-                />
-              </div>
-            </div>
+            <FieldProgramDetails
+              fieldId={fieldId}
+              seedCostPerAcre={costs.seed_cost_per_acre || 0}
+              fertilizerCostPerAcre={costs.fertilizer_cost_per_acre || 0}
+              chemicalCostPerAcre={costs.chemical_cost_per_acre || 0}
+            />
 
             <div className="bg-white rounded-lg shadow-sm border border-gray-200">
               <div className="border-b border-gray-200 p-4">
