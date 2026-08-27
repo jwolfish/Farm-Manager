@@ -11,10 +11,17 @@ import {
   Search,
   X,
   Pencil,
+  Save,
+  Loader2,
+  Package,
 } from 'lucide-react';
 import { CropType } from '../lib/database.types';
 import { useSprayPlanner, ChemicalItem } from '../hooks/useSprayPlanner';
 import { WorkOrderEditModal } from '../components/WorkOrderEditModal';
+import { SavedWorkOrdersList } from '../components/SavedWorkOrdersList';
+import { WorkOrderDetailModal } from '../components/WorkOrderDetailModal';
+import type { SavedWorkOrder } from '../lib/workOrderCrud';
+import { toBestPracticalUnit } from '../lib/unitConversions';
 
 const CROP_LABELS: Record<CropType, string> = {
   corn: 'Corn',
@@ -31,13 +38,14 @@ const CROP_COLORS: Record<CropType, { badge: string; badgeText: string; section:
 interface Props {
   currentSeasonId: string | null;
   effectiveUserId: string | null;
+  farmId: string | null;
 }
 
 function fmtAcres(n: number) {
   return n.toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
 }
 
-export function SprayPlanner({ currentSeasonId, effectiveUserId }: Props) {
+export function SprayPlanner({ currentSeasonId, effectiveUserId, farmId }: Props) {
   const {
     fields, programs, loading, error,
     selectedFields, selectedPrograms,
@@ -48,18 +56,23 @@ export function SprayPlanner({ currentSeasonId, effectiveUserId }: Props) {
     setWorkOrderOverrides,
     handleExportCSV, handleExportPDF, handleExportSprayLog, toggleExpandedCard,
     computePreviewTotals,
-  } = useSprayPlanner(currentSeasonId, effectiveUserId);
+    savedWorkOrders, savedLoading,
+    handleSaveWorkOrder, handleDeleteSavedWorkOrder,
+    handleApplyWorkOrder, handleUnapplyWorkOrder,
+    savingProgramId,
+    inventoryMap,
+  } = useSprayPlanner(currentSeasonId, effectiveUserId, farmId);
 
   const [fieldPickerOpen, setFieldPickerOpen] = useState(false);
   const [fieldSearch, setFieldSearch] = useState('');
   const pickerRef = useRef<HTMLDivElement>(null);
 
-  // Single master edit modal state
   const [editingWorkOrderId, setEditingWorkOrderId] = useState<string | null>(null);
+  const [viewingSavedWo, setViewingSavedWo] = useState<SavedWorkOrder | null>(null);
 
   const editingWorkOrder = workOrders?.find((wo) => wo.programId === editingWorkOrderId) ?? null;
 
-  function handleSaveWorkOrder(
+  function handleSaveWorkOrderOverrides(
     programId: string,
     acres: number | null,
     sprayVol: number | null,
@@ -385,6 +398,29 @@ export function SprayPlanner({ currentSeasonId, effectiveUserId }: Props) {
       {/* Work Order Results */}
       {workOrders && (
         <div ref={resultsRef} className="space-y-5">
+          {/* Low-stock alert banner */}
+          {(() => {
+            const lowItems = workOrders.flatMap((wo) =>
+              wo.chemTotals
+                .filter((ct) => {
+                  const inv = inventoryMap.get(ct.chemicalName);
+                  return inv && inv.onHand < ct.totalRaw;
+                })
+                .map((ct) => ct.chemicalName)
+            );
+            const unique = [...new Set(lowItems)];
+            if (unique.length === 0) return null;
+            return (
+              <div className="flex items-start gap-3 bg-amber-50 border border-amber-200 rounded-xl px-5 py-3.5 text-sm text-amber-800">
+                <Package className="w-4 h-4 flex-shrink-0 text-amber-500 mt-0.5" />
+                <div>
+                  <span className="font-semibold">{unique.length} chemical{unique.length !== 1 ? 's' : ''} exceed{unique.length === 1 ? 's' : ''} current on-hand inventory: </span>
+                  {unique.join(', ')}
+                </div>
+              </div>
+            );
+          })()}
+
           <div className="flex items-center justify-between">
             <div>
               <h2 className="text-xl font-bold text-gray-900">Spray Work Order</h2>
@@ -474,13 +510,23 @@ export function SprayPlanner({ currentSeasonId, effectiveUserId }: Props) {
                           </p>
                         </div>
                       )}
-                      <button
-                        onClick={() => setEditingWorkOrderId(wo.programId)}
-                        className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-white/60 hover:bg-white/90 border border-white/50 transition-colors ${col.headerText}`}
-                      >
-                        <Pencil className="w-3 h-3" />
-                        Edit
-                      </button>
+                      <div className="flex items-center gap-1.5">
+                        <button
+                          onClick={() => setEditingWorkOrderId(wo.programId)}
+                          className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-white/60 hover:bg-white/90 border border-white/50 transition-colors ${col.headerText}`}
+                        >
+                          <Pencil className="w-3 h-3" />
+                          Edit
+                        </button>
+                        <button
+                          onClick={() => handleSaveWorkOrder(wo)}
+                          disabled={savingProgramId === wo.programId}
+                          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-blue-600 hover:bg-blue-700 text-white border border-blue-600 transition-colors disabled:opacity-50"
+                        >
+                          {savingProgramId === wo.programId ? <Loader2 className="w-3 h-3 animate-spin" /> : <Save className="w-3 h-3" />}
+                          Save
+                        </button>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -502,18 +548,33 @@ export function SprayPlanner({ currentSeasonId, effectiveUserId }: Props) {
                         <th className="text-left py-2 font-semibold text-gray-600 text-xs">Chemical</th>
                         <th className="text-right py-2 font-semibold text-gray-600 text-xs">Rate / Acre</th>
                         <th className="text-right py-2 font-semibold text-gray-600 text-xs">Total Needed</th>
+                        <th className="text-right py-2 font-semibold text-gray-600 text-xs">On Hand</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {wo.chemTotals.map((ct, i) => (
-                        <tr key={ct.chemicalId} className={i % 2 === 0 ? 'bg-gray-50' : 'bg-white'}>
-                          <td className="py-2.5 px-2 font-medium text-gray-900 rounded-l">{ct.chemicalName}</td>
-                          <td className="py-2.5 px-2 text-right text-gray-600">
-                            {ct.ratePerAcre.toLocaleString('en-US', { maximumFractionDigits: 2 })} {ct.rateUnit}
-                          </td>
-                          <td className="py-2.5 px-2 text-right font-bold text-gray-900">{ct.totalDisplay}</td>
-                        </tr>
-                      ))}
+                      {wo.chemTotals.map((ct, i) => {
+                        const inv = inventoryMap.get(ct.chemicalName);
+                        const onHand = inv?.onHand ?? null;
+                        const isLow = onHand !== null && onHand < ct.totalRaw;
+                        const onHandDisplay = onHand !== null
+                          ? toBestPracticalUnit(onHand, inv!.unitType).display
+                          : '\u2014';
+                        return (
+                          <tr key={ct.chemicalId} className={`${isLow ? 'bg-amber-50' : i % 2 === 0 ? 'bg-gray-50' : 'bg-white'}`}>
+                            <td className="py-2.5 px-2 font-medium text-gray-900 rounded-l">
+                              <span className="flex items-center gap-1">
+                                {ct.chemicalName}
+                                {isLow && <AlertTriangle className="w-3 h-3 text-amber-500" />}
+                              </span>
+                            </td>
+                            <td className="py-2.5 px-2 text-right text-gray-600">
+                              {ct.ratePerAcre.toLocaleString('en-US', { maximumFractionDigits: 2 })} {ct.rateUnit}
+                            </td>
+                            <td className="py-2.5 px-2 text-right font-bold text-gray-900">{ct.totalDisplay}</td>
+                            <td className={`py-2.5 px-2 text-right ${isLow ? 'font-semibold text-amber-600' : 'text-gray-500'}`}>{onHandDisplay}</td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>
@@ -577,6 +638,16 @@ export function SprayPlanner({ currentSeasonId, effectiveUserId }: Props) {
         </div>
       )}
 
+      {/* Saved Work Orders */}
+      <SavedWorkOrdersList
+        workOrders={savedWorkOrders}
+        loading={savedLoading}
+        onView={(wo) => setViewingSavedWo(wo)}
+        onDelete={handleDeleteSavedWorkOrder}
+        onApply={handleApplyWorkOrder}
+        onUnapply={handleUnapplyWorkOrder}
+      />
+
       {/* Master edit modal */}
       {editingWorkOrder && (
         <WorkOrderEditModal
@@ -584,9 +655,21 @@ export function SprayPlanner({ currentSeasonId, effectiveUserId }: Props) {
           acreOverrideActive={acreOverrides.has(editingWorkOrder.programId)}
           sprayVolActive={sprayVolumeOverrides.has(editingWorkOrder.programId)}
           chemOverrideActive={chemOverrides.has(editingWorkOrder.programId)}
+          farmId={farmId}
           computePreviewTotals={computePreviewTotals}
-          onSave={handleSaveWorkOrder}
+          onSave={handleSaveWorkOrderOverrides}
           onClose={() => setEditingWorkOrderId(null)}
+        />
+      )}
+
+      {/* Saved work order detail modal */}
+      {viewingSavedWo && (
+        <WorkOrderDetailModal
+          workOrder={viewingSavedWo}
+          inventoryMap={inventoryMap}
+          onApply={(wo) => { handleApplyWorkOrder(wo); setViewingSavedWo(null); }}
+          onUnapply={(wo) => { handleUnapplyWorkOrder(wo); setViewingSavedWo(null); }}
+          onClose={() => setViewingSavedWo(null)}
         />
       )}
     </div>

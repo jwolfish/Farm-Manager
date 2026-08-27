@@ -12,6 +12,7 @@ export type InvitationStatus = 'pending' | 'accepted' | 'declined';
 export type ProductCategory = 'chemical' | 'fertilizer' | 'seed';
 export type LedgerEntryType = 'purchase' | 'consumption' | 'manual_adjustment' | 'reversal';
 export type LedgerSourceType = 'shopping_list_line' | 'work_order' | 'manual';
+export type WorkOrderStatus = 'draft' | 'applied' | 'unapplied';
 
 export interface Database {
   public: {
@@ -1383,6 +1384,164 @@ export interface Database {
           },
           {
             foreignKeyName: "inventory_ledger_entries_master_product_id_fkey";
+            columns: ["master_product_id"];
+            isOneToOne: false;
+            referencedRelation: "master_products";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      work_orders: {
+        Row: {
+          id: string;
+          farm_id: string;
+          season_id: string;
+          program_id: string | null;
+          program_name: string;
+          crop_type: string;
+          status: WorkOrderStatus;
+          total_acreage: number;
+          spray_volume_gal_per_acre: number | null;
+          applied_at: string | null;
+          unapplied_at: string | null;
+          created_by: string;
+          created_at: string | null;
+          updated_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          farm_id: string;
+          season_id: string;
+          program_id?: string | null;
+          program_name: string;
+          crop_type: string;
+          status?: WorkOrderStatus;
+          total_acreage: number;
+          spray_volume_gal_per_acre?: number | null;
+          applied_at?: string | null;
+          unapplied_at?: string | null;
+          created_by: string;
+          created_at?: string | null;
+          updated_at?: string | null;
+        };
+        Update: {
+          id?: string;
+          farm_id?: string;
+          season_id?: string;
+          program_id?: string | null;
+          program_name?: string;
+          crop_type?: string;
+          status?: WorkOrderStatus;
+          total_acreage?: number;
+          spray_volume_gal_per_acre?: number | null;
+          applied_at?: string | null;
+          unapplied_at?: string | null;
+          created_by?: string;
+          created_at?: string | null;
+          updated_at?: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "work_orders_farm_id_fkey";
+            columns: ["farm_id"];
+            isOneToOne: false;
+            referencedRelation: "farms";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "work_orders_season_id_fkey";
+            columns: ["season_id"];
+            isOneToOne: false;
+            referencedRelation: "seasons";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      work_order_fields: {
+        Row: {
+          id: string;
+          work_order_id: string;
+          field_id: string | null;
+          field_name: string;
+          acreage: number;
+          created_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          work_order_id: string;
+          field_id?: string | null;
+          field_name: string;
+          acreage: number;
+          created_at?: string | null;
+        };
+        Update: {
+          id?: string;
+          work_order_id?: string;
+          field_id?: string | null;
+          field_name?: string;
+          acreage?: number;
+          created_at?: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "work_order_fields_work_order_id_fkey";
+            columns: ["work_order_id"];
+            isOneToOne: false;
+            referencedRelation: "work_orders";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      work_order_lines: {
+        Row: {
+          id: string;
+          work_order_id: string;
+          master_product_id: string | null;
+          chemical_name: string;
+          rate_per_acre: number;
+          rate_unit: string;
+          total_needed: number;
+          price_per_unit: number | null;
+          price_unit: string | null;
+          sort_order: number;
+          created_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          work_order_id: string;
+          master_product_id?: string | null;
+          chemical_name: string;
+          rate_per_acre: number;
+          rate_unit: string;
+          total_needed: number;
+          price_per_unit?: number | null;
+          price_unit?: string | null;
+          sort_order?: number;
+          created_at?: string | null;
+        };
+        Update: {
+          id?: string;
+          work_order_id?: string;
+          master_product_id?: string | null;
+          chemical_name?: string;
+          rate_per_acre?: number;
+          rate_unit?: string;
+          total_needed?: number;
+          price_per_unit?: number | null;
+          price_unit?: string | null;
+          sort_order?: number;
+          created_at?: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "work_order_lines_work_order_id_fkey";
+            columns: ["work_order_id"];
+            isOneToOne: false;
+            referencedRelation: "work_orders";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "work_order_lines_master_product_id_fkey";
             columns: ["master_product_id"];
             isOneToOne: false;
             referencedRelation: "master_products";

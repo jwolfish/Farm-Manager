@@ -720,6 +720,7 @@ function AppContent() {
         <SprayPlanner
           currentSeasonId={currentSeason?.id || null}
           effectiveUserId={activeFarm ? activeFarm.ownerId ?? user?.id ?? null : user?.id ?? null}
+          farmId={activeFarm?.farmId ?? null}
         />
       )}
       {activePage === 'reports' && <Reports currentSeasonId={currentSeason?.id || null} />}

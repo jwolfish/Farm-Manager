@@ -8,8 +8,10 @@ import {
   Trash2,
   RotateCcw,
   Save,
+  Search,
 } from 'lucide-react';
 import type { WorkOrderResult, ChemicalItem } from '../hooks/useSprayPlanner';
+import { ChemicalProductPicker } from './ChemicalProductPicker';
 
 const RATE_UNITS = ['fl oz', 'pt', 'qt', 'gal', 'oz', 'lbs', 'lb'] as const;
 
@@ -28,6 +30,7 @@ interface Props {
   acreOverrideActive: boolean;
   sprayVolActive: boolean;
   chemOverrideActive: boolean;
+  farmId: string | null;
   computePreviewTotals: (chems: ChemicalItem[], effectiveAcres: number) => Array<ChemicalItem & { totalDisplay: string }>;
   onSave: (programId: string, acres: number | null, sprayVol: number | null, chemicals: ChemicalItem[] | null) => void;
   onClose: () => void;
@@ -38,6 +41,7 @@ export function WorkOrderEditModal({
   acreOverrideActive,
   sprayVolActive,
   chemOverrideActive,
+  farmId,
   computePreviewTotals,
   onSave,
   onClose,
@@ -59,6 +63,7 @@ export function WorkOrderEditModal({
 
   const [dragState, setDragState] = useState<{ fromIdx: number } | null>(null);
   const [dragOverIdx, setDragOverIdx] = useState<number | null>(null);
+  const [showPicker, setShowPicker] = useState(false);
 
   const previewAcres = (() => {
     const v = parseFloat(draft.acres);
@@ -80,17 +85,22 @@ export function WorkOrderEditModal({
   }
 
   function addChem() {
+    setShowPicker(true);
+  }
+
+  function handlePickerSelect(result: { masterProductId: string | null; chemicalName: string; unitType: string }) {
     const newItem: ChemicalItem = {
-      chemicalId: `custom-${crypto.randomUUID()}`,
-      chemicalName: '',
+      chemicalId: result.masterProductId ?? `custom-${crypto.randomUUID()}`,
+      chemicalName: result.chemicalName,
       epaRegNumber: null,
       ratePerAcre: 0,
-      rateUnit: 'fl oz',
+      rateUnit: result.unitType || 'fl oz',
       pricePerUnit: 0,
-      priceUnit: 'fl oz',
+      priceUnit: result.unitType || 'fl oz',
       itemNotes: null,
     };
     setDraft((prev) => ({ ...prev, chemicals: [...prev.chemicals, newItem] }));
+    setShowPicker(false);
   }
 
   function moveChem(fromIdx: number, toIdx: number) {
@@ -360,14 +370,21 @@ export function WorkOrderEditModal({
               </div>
 
               {/* Add row */}
-              <div className="px-3 py-2 border-t border-dashed border-gray-200">
+              <div className="px-3 py-2 border-t border-dashed border-gray-200 relative">
                 <button
                   onClick={addChem}
                   className="flex items-center gap-1.5 text-xs text-blue-600 hover:text-blue-800 font-medium py-1 px-2 hover:bg-blue-50 rounded transition-colors"
                 >
-                  <Plus className="w-3.5 h-3.5" />
-                  Add chemical
+                  {farmId ? <Search className="w-3.5 h-3.5" /> : <Plus className="w-3.5 h-3.5" />}
+                  {farmId ? 'Search & add chemical' : 'Add chemical'}
                 </button>
+                {showPicker && farmId && (
+                  <ChemicalProductPicker
+                    farmId={farmId}
+                    onSelect={handlePickerSelect}
+                    onClose={() => setShowPicker(false)}
+                  />
+                )}
               </div>
             </div>
 

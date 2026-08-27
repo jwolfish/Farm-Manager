@@ -1,10 +1,20 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import { supabase } from '../lib/supabase';
 import { toBestPracticalUnit, calculateCostWithConversion } from '../lib/unitConversions';
 import { exportSprayPlannerPDF, exportSprayLogPDF, exportTableToCSV } from '../lib/exportUtils';
 import type { CrossTotalRow } from '../lib/exportUtils';
 import { CropType, Json } from '../lib/database.types';
 import { ProgramReference } from '../lib/templateUtils';
+import {
+  saveWorkOrder,
+  loadWorkOrders,
+  deleteWorkOrder,
+  applyWorkOrder,
+  unapplyWorkOrder,
+  fetchInventoryForChemicals,
+  type SavedWorkOrder,
+  type WorkOrderSavePayload,
+} from '../lib/workOrderCrud';
 
 interface RawFieldRow {
   id: string;
@@ -87,7 +97,7 @@ export interface WorkOrderResult {
 
 export type { CrossTotalRow };
 
-export function useSprayPlanner(currentSeasonId: string | null, effectiveUserId: string | null) {
+export function useSprayPlanner(currentSeasonId: string | null, effectiveUserId: string | null, farmId: string | null) {
   const [fields, setFields] = useState<FieldOption[]>([]);
   const [programs, setPrograms] = useState<ProgramOption[]>([]);
   const [seasonName, setSeasonName] = useState('');
@@ -104,6 +114,11 @@ export function useSprayPlanner(currentSeasonId: string | null, effectiveUserId:
   const [chemOverrides, setChemOverridesState] = useState<Map<string, ChemicalItem[]>>(new Map());
   const [sprayVolumeOverrides, setSprayVolumeOverrides] = useState<Map<string, number>>(new Map());
 
+  const [savedWorkOrders, setSavedWorkOrders] = useState<SavedWorkOrder[]>([]);
+  const [savedLoading, setSavedLoading] = useState(false);
+  const [inventoryMap, setInventoryMap] = useState<Map<string, { masterProductId: string; onHand: number; unitType: string }>>(new Map());
+  const [savingProgramId, setSavingProgramId] = useState<string | null>(null);
+
   const resultsRef = useRef<HTMLDivElement>(null);
   const loadedSeasonRef = useRef<string | null>(null);
 
@@ -114,6 +129,11 @@ export function useSprayPlanner(currentSeasonId: string | null, effectiveUserId:
     }
     loadData(currentSeasonId);
   }, [currentSeasonId, effectiveUserId]);
+
+  useEffect(() => {
+    if (!currentSeasonId || !farmId) return;
+    loadSavedWorkOrders();
+  }, [currentSeasonId, farmId]);
 
   async function loadData(seasonId: string) {
     const seasonChanged = seasonId !== loadedSeasonRef.current;
@@ -487,6 +507,91 @@ export function useSprayPlanner(currentSeasonId: string | null, effectiveUserId:
       return { ...ch, totalDisplay: practical.display };
     });
 
+  // --- Saved work orders ---
+
+  const loadSavedWorkOrders = useCallback(async () => {
+    if (!farmId || !currentSeasonId) return;
+    setSavedLoading(true);
+    const data = await loadWorkOrders(farmId, currentSeasonId);
+    setSavedWorkOrders(data);
+    setSavedLoading(false);
+  }, [farmId, currentSeasonId]);
+
+  const handleSaveWorkOrder = async (wo: WorkOrderResult) => {
+    if (!farmId || !currentSeasonId || !effectiveUserId) return;
+    setSavingProgramId(wo.programId);
+
+    const payload: WorkOrderSavePayload = {
+      farmId,
+      seasonId: currentSeasonId,
+      programId: wo.programId,
+      programName: wo.programName,
+      cropType: wo.cropType,
+      totalAcreage: wo.effectiveAcres,
+      sprayVolumeGalPerAcre: wo.sprayVolumeGalPerAcre,
+      createdBy: effectiveUserId,
+      fields: wo.fields.map((f) => ({
+        fieldId: f.fieldId,
+        fieldName: f.fieldName,
+        acreage: f.acreage,
+      })),
+      lines: wo.chemTotals.map((ct, idx) => {
+        const inv = inventoryMap.get(ct.chemicalName);
+        return {
+          masterProductId: inv?.masterProductId ?? null,
+          chemicalName: ct.chemicalName,
+          ratePerAcre: ct.ratePerAcre,
+          rateUnit: ct.rateUnit,
+          totalNeeded: ct.totalRaw,
+          pricePerUnit: ct.pricePerUnit,
+          priceUnit: ct.priceUnit,
+          sortOrder: idx,
+        };
+      }),
+    };
+
+    await saveWorkOrder(payload);
+    await loadSavedWorkOrders();
+    setSavingProgramId(null);
+  };
+
+  const handleDeleteSavedWorkOrder = async (woId: string) => {
+    await deleteWorkOrder(woId);
+    await loadSavedWorkOrders();
+  };
+
+  const handleApplyWorkOrder = async (wo: SavedWorkOrder) => {
+    if (!effectiveUserId) return;
+    const success = await applyWorkOrder(wo.id, wo.farm_id, effectiveUserId, wo.lines);
+    if (success) await loadSavedWorkOrders();
+  };
+
+  const handleUnapplyWorkOrder = async (wo: SavedWorkOrder) => {
+    if (!effectiveUserId) return;
+    const success = await unapplyWorkOrder(wo.id, wo.farm_id, effectiveUserId, wo.lines);
+    if (success) await loadSavedWorkOrders();
+  };
+
+  // --- Inventory fetch ---
+
+  const refreshInventory = useCallback(async (chemNames: string[]) => {
+    if (!farmId || chemNames.length === 0) return;
+    const map = await fetchInventoryForChemicals(farmId, chemNames);
+    setInventoryMap(map);
+  }, [farmId]);
+
+  // When work orders are generated, fetch inventory for all chemicals
+  const generateWithInventory = () => {
+    const { results, crossRows } = buildWorkOrders(fields, programs, selectedFields, selectedPrograms, acreOverrides, chemOverrides, sprayVolumeOverrides);
+    setWorkOrders(results);
+    setCrossTotals(crossRows);
+    setExpandedCards(new Set());
+    setTimeout(() => resultsRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
+
+    const allChemNames = [...new Set(results.flatMap((r) => r.chemTotals.map((c) => c.chemicalName)))];
+    refreshInventory(allChemNames);
+  };
+
   const cropGroups = new Map<CropType, FieldOption[]>();
   for (const f of fields) {
     if (!cropGroups.has(f.cropType)) cropGroups.set(f.cropType, []);
@@ -515,7 +620,7 @@ export function useSprayPlanner(currentSeasonId: string | null, effectiveUserId:
     toggleAllFields,
     clearAllFields,
     toggleProgram,
-    generate,
+    generate: generateWithInventory,
     setAcreOverride,
     acreOverrides,
     setChemOverride,
@@ -528,5 +633,16 @@ export function useSprayPlanner(currentSeasonId: string | null, effectiveUserId:
     handleExportSprayLog,
     toggleExpandedCard,
     computePreviewTotals,
+    // Saved work orders
+    savedWorkOrders,
+    savedLoading,
+    handleSaveWorkOrder,
+    handleDeleteSavedWorkOrder,
+    handleApplyWorkOrder,
+    handleUnapplyWorkOrder,
+    savingProgramId,
+    // Inventory
+    inventoryMap,
+    refreshInventory,
   };
 }
