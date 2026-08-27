@@ -30,6 +30,7 @@ interface RawChemical {
   price_per_unit: number | null;
   unit_type: string | null;
   epa_reg_number: string | null;
+  master_product_id: string | null;
 }
 
 interface RawProgramItem {
@@ -60,6 +61,7 @@ export interface ChemicalItem {
   chemicalId: string;
   chemicalName: string;
   epaRegNumber: string | null;
+  masterProductId: string | null;
   ratePerAcre: number;
   rateUnit: string;
   pricePerUnit: number;
@@ -166,7 +168,7 @@ export function useSprayPlanner(currentSeasonId: string | null, effectiveUserId:
           id, program_name, crop_type, application_cost,
           chemical_program_items (
             id, application_rate, application_rate_unit, notes,
-            individual_chemicals ( id, chemical_name, price_per_unit, unit_type, epa_reg_number )
+            individual_chemicals ( id, chemical_name, price_per_unit, unit_type, epa_reg_number, master_product_id )
           )
         `)
           .eq('user_id', effectiveUserId!)
@@ -237,6 +239,7 @@ export function useSprayPlanner(currentSeasonId: string | null, effectiveUserId:
             chemicalId: chem?.id ?? item.id,
             chemicalName: chem?.chemical_name ?? 'Unknown',
             epaRegNumber: chem?.epa_reg_number ?? null,
+            masterProductId: chem?.master_product_id ?? null,
             ratePerAcre: Number(item.application_rate),
             rateUnit: item.application_rate_unit ?? '',
             pricePerUnit: Number(chem?.price_per_unit ?? 0),
@@ -538,7 +541,7 @@ export function useSprayPlanner(currentSeasonId: string | null, effectiveUserId:
       lines: wo.chemTotals.map((ct, idx) => {
         const inv = inventoryMap.get(ct.chemicalName);
         return {
-          masterProductId: inv?.masterProductId ?? null,
+          masterProductId: ct.masterProductId ?? inv?.masterProductId ?? null,
           chemicalName: ct.chemicalName,
           ratePerAcre: ct.ratePerAcre,
           rateUnit: ct.rateUnit,
