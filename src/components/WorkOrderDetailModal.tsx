@@ -147,7 +147,8 @@ export function WorkOrderDetailModal({ workOrder: wo, onApply, onUnapply, onClos
                   {wo.lines.map((line, i) => {
                     const inv = line.master_product_id ? invMap.get(line.master_product_id) : undefined;
                     const onHand = inv?.onHand ?? null;
-                    const isLow = onHand !== null && onHand < line.total_needed;
+                    const neededInInvUnit = inv ? convertUnits(line.rate_unit, inv.unitType, line.total_needed) : line.total_needed;
+                    const isLow = onHand !== null && neededInInvUnit > onHand;
                     const totalDisplay = toBestPracticalUnit(line.total_needed, line.rate_unit).display;
                     const onHandDisplay = onHand !== null
                       ? toBestPracticalUnit(onHand, inv!.unitType).display

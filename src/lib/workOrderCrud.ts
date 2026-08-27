@@ -1,4 +1,5 @@
 import { supabase } from './supabase';
+import { convertUnits } from './unitConversions';
 import type { WorkOrderStatus } from './database.types';
 
 export interface SavedWorkOrder {
@@ -205,17 +206,32 @@ export async function applyWorkOrder(
   const linesToApply = lines.filter((l) => l.master_product_id != null);
   if (linesToApply.length === 0) return false;
 
-  const ledgerEntries = linesToApply.map((l) => ({
-    farm_id: farmId,
-    master_product_id: l.master_product_id!,
-    product_category: 'chemical' as const,
-    entry_type: 'consumption' as const,
-    quantity_delta: -Math.abs(l.total_needed),
-    source_type: 'work_order' as const,
-    source_id: workOrderId,
-    note: `Applied from work order: ${l.chemical_name}`,
-    created_by: userId,
-  }));
+  const productIds = linesToApply.map((l) => l.master_product_id!);
+  const { data: products } = await supabase
+    .from('master_products')
+    .select('id, unit_type')
+    .in('id', productIds);
+
+  const unitMap = new Map<string, string>();
+  if (products) {
+    for (const p of products) unitMap.set(p.id, p.unit_type);
+  }
+
+  const ledgerEntries = linesToApply.map((l) => {
+    const invUnit = unitMap.get(l.master_product_id!) ?? l.rate_unit;
+    const converted = convertUnits(l.rate_unit, invUnit, l.total_needed);
+    return {
+      farm_id: farmId,
+      master_product_id: l.master_product_id!,
+      product_category: 'chemical' as const,
+      entry_type: 'consumption' as const,
+      quantity_delta: -Math.abs(converted),
+      source_type: 'work_order' as const,
+      source_id: workOrderId,
+      note: `Applied from work order: ${l.chemical_name}`,
+      created_by: userId,
+    };
+  });
 
   const { error: ledgerErr } = await supabase
     .from('inventory_ledger_entries')
@@ -248,17 +264,32 @@ export async function unapplyWorkOrder(
   const linesToReverse = lines.filter((l) => l.master_product_id != null);
   if (linesToReverse.length === 0) return false;
 
-  const reversalEntries = linesToReverse.map((l) => ({
-    farm_id: farmId,
-    master_product_id: l.master_product_id!,
-    product_category: 'chemical' as const,
-    entry_type: 'reversal' as const,
-    quantity_delta: Math.abs(l.total_needed),
-    source_type: 'work_order' as const,
-    source_id: workOrderId,
-    note: `Reversed from work order: ${l.chemical_name}`,
-    created_by: userId,
-  }));
+  const productIds = linesToReverse.map((l) => l.master_product_id!);
+  const { data: products } = await supabase
+    .from('master_products')
+    .select('id, unit_type')
+    .in('id', productIds);
+
+  const unitMap = new Map<string, string>();
+  if (products) {
+    for (const p of products) unitMap.set(p.id, p.unit_type);
+  }
+
+  const reversalEntries = linesToReverse.map((l) => {
+    const invUnit = unitMap.get(l.master_product_id!) ?? l.rate_unit;
+    const converted = convertUnits(l.rate_unit, invUnit, l.total_needed);
+    return {
+      farm_id: farmId,
+      master_product_id: l.master_product_id!,
+      product_category: 'chemical' as const,
+      entry_type: 'reversal' as const,
+      quantity_delta: Math.abs(converted),
+      source_type: 'work_order' as const,
+      source_id: workOrderId,
+      note: `Reversed from work order: ${l.chemical_name}`,
+      created_by: userId,
+    };
+  });
 
   const { error: ledgerErr } = await supabase
     .from('inventory_ledger_entries')
@@ -434,3 +465,5 @@ export async function searchFarmChemicals(
 
   return data.map((r) => ({ id: r.id, name: r.canonical_name, unitType: r.unit_type }));
 }
+
+export { searchFarmChemicals }
