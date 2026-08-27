@@ -539,7 +539,7 @@ export function useSprayPlanner(currentSeasonId: string | null, effectiveUserId:
         acreage: f.acreage,
       })),
       lines: wo.chemTotals.map((ct, idx) => {
-        const inv = inventoryMap.get(ct.masterProductId ?? '');
+        const inv = inventoryMap.get(ct.masterProductId ?? '') ?? inventoryMap.get(ct.chemicalName);
         return {
           masterProductId: ct.masterProductId ?? inv?.masterProductId ?? null,
           chemicalName: ct.chemicalName,
@@ -577,9 +577,9 @@ export function useSprayPlanner(currentSeasonId: string | null, effectiveUserId:
 
   // --- Inventory fetch ---
 
-  const refreshInventory = useCallback(async (productIds: string[]) => {
-    if (!farmId || productIds.length === 0) return;
-    const map = await fetchInventoryForChemicals(farmId, productIds);
+  const refreshInventory = useCallback(async (productIds: string[], chemNames: string[]) => {
+    if (!farmId || (productIds.length === 0 && chemNames.length === 0)) return;
+    const map = await fetchInventoryForChemicals(farmId, productIds, chemNames);
     setInventoryMap(map);
   }, [farmId]);
 
@@ -592,7 +592,8 @@ export function useSprayPlanner(currentSeasonId: string | null, effectiveUserId:
     setTimeout(() => resultsRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
 
     const allProductIds = [...new Set(results.flatMap((r) => r.chemTotals.map((c) => c.masterProductId)).filter((id): id is string => id != null))];
-    refreshInventory(allProductIds);
+    const allChemNames = [...new Set(results.flatMap((r) => r.chemTotals.map((c) => c.chemicalName)))];
+    refreshInventory(allProductIds, allChemNames);
   };
 
   const cropGroups = new Map<CropType, FieldOption[]>();

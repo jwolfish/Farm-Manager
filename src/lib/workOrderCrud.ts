@@ -369,27 +369,48 @@ async function createSeasonChemical(
 
 export async function fetchInventoryForChemicals(
   farmId: string,
-  productIds: string[]
+  productIds: string[],
+  chemicalNames?: string[]
 ): Promise<Map<string, { masterProductId: string; onHand: number; unitType: string }>> {
-  if (productIds.length === 0) return new Map();
-
-  const { data, error } = await supabase
-    .from('master_products')
-    .select('id, canonical_name, on_hand_quantity, unit_type')
-    .eq('farm_id', farmId)
-    .eq('product_category', 'chemical')
-    .in('id', productIds);
-
-  if (error || !data) return new Map();
+  if (productIds.length === 0 && (!chemicalNames || chemicalNames.length === 0)) return new Map();
 
   const map = new Map<string, { masterProductId: string; onHand: number; unitType: string }>();
-  for (const row of data) {
-    map.set(row.id, {
-      masterProductId: row.id,
-      onHand: Number(row.on_hand_quantity ?? 0),
-      unitType: row.unit_type,
-    });
+
+  if (productIds.length > 0) {
+    const { data } = await supabase
+      .from('master_products')
+      .select('id, canonical_name, on_hand_quantity, unit_type')
+      .eq('farm_id', farmId)
+      .eq('product_category', 'chemical')
+      .in('id', productIds);
+    if (data) {
+      for (const row of data) {
+        const entry = { masterProductId: row.id, onHand: Number(row.on_hand_quantity ?? 0), unitType: row.unit_type };
+        map.set(row.id, entry);
+        map.set(row.canonical_name, entry);
+      }
+    }
   }
+
+  if (chemicalNames && chemicalNames.length > 0) {
+    const missingNames = chemicalNames.filter((n) => !map.has(n));
+    if (missingNames.length > 0) {
+      const { data } = await supabase
+        .from('master_products')
+        .select('id, canonical_name, on_hand_quantity, unit_type')
+        .eq('farm_id', farmId)
+        .eq('product_category', 'chemical')
+        .in('canonical_name', missingNames);
+      if (data) {
+        for (const row of data) {
+          const entry = { masterProductId: row.id, onHand: Number(row.on_hand_quantity ?? 0), unitType: row.unit_type };
+          map.set(row.id, entry);
+          map.set(row.canonical_name, entry);
+        }
+      }
+    }
+  }
+
   return map;
 }
 
@@ -414,3 +435,6 @@ export async function searchFarmChemicals(
 
   return data.map((r) => ({ id: r.id, name: r.canonical_name, unitType: r.unit_type }));
 }
+
+
+export { searchFarmChemicals }

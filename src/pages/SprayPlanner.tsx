@@ -403,7 +403,7 @@ export function SprayPlanner({ currentSeasonId, effectiveUserId, farmId }: Props
             const lowItems = workOrders.flatMap((wo) =>
               wo.chemTotals
                 .filter((ct) => {
-                  const inv = inventoryMap.get(ct.masterProductId ?? '');
+                  const inv = inventoryMap.get(ct.masterProductId ?? '') ?? inventoryMap.get(ct.chemicalName);
                   return inv && inv.onHand < ct.totalRaw;
                 })
                 .map((ct) => ct.chemicalName)
@@ -553,7 +553,7 @@ export function SprayPlanner({ currentSeasonId, effectiveUserId, farmId }: Props
                     </thead>
                     <tbody>
                       {wo.chemTotals.map((ct, i) => {
-                        const inv = inventoryMap.get(ct.masterProductId ?? '');
+                        const inv = inventoryMap.get(ct.masterProductId ?? '') ?? inventoryMap.get(ct.chemicalName);
                         const onHand = inv?.onHand ?? null;
                         const isLow = onHand !== null && onHand < ct.totalRaw;
                         const onHandDisplay = onHand !== null
