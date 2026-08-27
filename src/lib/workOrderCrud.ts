@@ -435,6 +435,3 @@ export async function searchFarmChemicals(
 
   return data.map((r) => ({ id: r.id, name: r.canonical_name, unitType: r.unit_type }));
 }
-
-
-export { searchFarmChemicals }
