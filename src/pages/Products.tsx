@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
-import { Plus, Package, Droplet, FlaskConical, Layers, Copy } from 'lucide-react';
+import { Plus, Package, Droplet, FlaskConical, Layers, Copy, ShoppingCart } from 'lucide-react';
 import { FertilizerPrograms } from '../components/FertilizerPrograms';
 import { ChemicalPrograms } from '../components/ChemicalPrograms';
 import { CrossFarmCopyModal } from '../components/CrossFarmCopyModal';
@@ -13,13 +13,14 @@ import { FertilizersTab } from '../components/products/FertilizersTab';
 import type { FertilizerProduct } from '../components/products/FertilizersTab';
 import { ChemicalsTab } from '../components/products/ChemicalsTab';
 import type { IndividualChemical } from '../components/products/ChemicalsTab';
+import { ShoppingListsTab } from '../components/products/ShoppingListsTab';
 
 interface ProductsProps {
   seasonId: string | null;
   readOnly?: boolean;
 }
 
-type ProductType = 'seeds' | 'fertilizers' | 'chemicals' | 'programs';
+type ProductType = 'seeds' | 'fertilizers' | 'chemicals' | 'programs' | 'shopping';
 
 export function Products({ seasonId, readOnly = false }: ProductsProps) {
   const { user } = useAuth();
@@ -112,6 +113,7 @@ export function Products({ seasonId, readOnly = false }: ProductsProps) {
     { id: 'fertilizers' as ProductType, name: 'Fertilizers', icon: Droplet },
     { id: 'chemicals' as ProductType, name: 'Chemicals', icon: FlaskConical },
     { id: 'programs' as ProductType, name: 'Application Programs', icon: Layers },
+    { id: 'shopping' as ProductType, name: 'Shopping Lists', icon: ShoppingCart },
   ];
 
   if (!seasonId) {
@@ -151,7 +153,7 @@ export function Products({ seasonId, readOnly = false }: ProductsProps) {
         })}
       </div>
 
-      {activeTab !== 'programs' && !readOnly && (
+      {activeTab !== 'programs' && activeTab !== 'shopping' && !readOnly && (
         <div className="mb-6 flex items-center gap-3">
           <button
             onClick={() => setShowForm(true)}
@@ -204,6 +206,9 @@ export function Products({ seasonId, readOnly = false }: ProductsProps) {
           {programType === 'fertilizer' && <FertilizerPrograms seasonId={seasonId} />}
           {programType === 'chemical' && <ChemicalPrograms seasonId={seasonId} />}
         </div>
+      )}
+      {activeTab === 'shopping' && (
+        <ShoppingListsTab seasonId={seasonId} readOnly={readOnly} />
       )}
 
       {showCrossFarmModal && seasonId && user && (
