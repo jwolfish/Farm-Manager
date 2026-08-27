@@ -1,9 +1,11 @@
 import { useState } from 'react';
-import { Package } from 'lucide-react';
+import { Package, Plus, Minus } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/AuthContext';
 import { Pagination } from '../Pagination';
 import type { CropType } from '../../lib/database.types';
+import { InventoryAdjustModal } from './InventoryAdjustModal';
+import { LedgerHistoryModal } from './LedgerHistoryModal';
 
 const PAGE_SIZE = 25;
 
@@ -16,6 +18,8 @@ export interface SeedVariety {
   standard_seeding_rate: number | null;
   units_per_bag: number | null;
   master_product_id: string | null;
+  on_hand_quantity?: number | null;
+  master_unit_type?: string | null;
 }
 
 interface Props {
@@ -24,6 +28,7 @@ interface Props {
   onReload: () => void;
   showForm: boolean;
   onHideForm: () => void;
+  readOnly?: boolean;
 }
 
 function getDefaultUnitsPerBag(cropType: CropType): string {
@@ -45,12 +50,14 @@ function getUnitsPerBagLabel(cropType: CropType): string {
 
 const defaultForm = { product_name: '', crop_type: 'corn' as CropType, price_per_unit: '', unit_type: 'bag', standard_seeding_rate: '', units_per_bag: '' };
 
-export function SeedsTab({ seeds, seasonId, onReload, showForm, onHideForm }: Props) {
+export function SeedsTab({ seeds, seasonId, onReload, showForm, onHideForm, readOnly = false }: Props) {
   const { user } = useAuth();
   const [editingId, setEditingId] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [formData, setFormData] = useState(defaultForm);
+  const [adjustTarget, setAdjustTarget] = useState<SeedVariety | null>(null);
+  const [historyTarget, setHistoryTarget] = useState<SeedVariety | null>(null);
 
   const totalPages = Math.ceil(seeds.length / PAGE_SIZE);
   const paginatedSeeds = seeds.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
@@ -225,6 +232,7 @@ export function SeedsTab({ seeds, seasonId, onReload, showForm, onHideForm }: Pr
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Price/Bag</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Units/Bag</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Seeding Rate</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">On Hand</th>
                 <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Actions</th>
               </tr>
             </thead>
@@ -239,6 +247,39 @@ export function SeedsTab({ seeds, seasonId, onReload, showForm, onHideForm }: Pr
                   </td>
                   <td className="px-6 py-4 text-sm text-gray-600">
                     {seed.standard_seeding_rate ? `${seed.standard_seeding_rate.toLocaleString()}${seed.crop_type === 'wheat' ? ' lbs' : ' seeds'}/acre` : 'N/A'}
+                  </td>
+                  <td className="px-6 py-4 text-sm">
+                    {seed.master_product_id && seed.on_hand_quantity != null ? (
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => setHistoryTarget(seed)}
+                          className={`font-medium hover:underline ${seed.on_hand_quantity < 0 ? 'text-red-600' : 'text-gray-900'}`}
+                          title="View inventory history"
+                        >
+                          {seed.on_hand_quantity.toLocaleString()} {seed.master_unit_type || seed.unit_type}
+                        </button>
+                        {!readOnly && (
+                          <>
+                            <button
+                              onClick={() => setAdjustTarget(seed)}
+                              className="text-gray-400 hover:text-green-600"
+                              title="Adjust inventory"
+                            >
+                              <Plus className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              onClick={() => setAdjustTarget(seed)}
+                              className="text-gray-400 hover:text-red-600"
+                              title="Adjust inventory"
+                            >
+                              <Minus className="w-3.5 h-3.5" />
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    ) : (
+                      <span className="text-gray-300">—</span>
+                    )}
                   </td>
                   <td className="px-6 py-4 text-right">
                     <div className="flex items-center justify-end gap-3">
@@ -256,6 +297,28 @@ export function SeedsTab({ seeds, seasonId, onReload, showForm, onHideForm }: Pr
             </div>
           )}
         </div>
+      )}
+
+      {adjustTarget && adjustTarget.master_product_id && (
+        <InventoryAdjustModal
+          productName={adjustTarget.product_name}
+          masterProductId={adjustTarget.master_product_id}
+          productCategory="seed"
+          currentOnHand={adjustTarget.on_hand_quantity ?? 0}
+          unitType={adjustTarget.master_unit_type || adjustTarget.unit_type}
+          onClose={() => setAdjustTarget(null)}
+          onSaved={() => { setAdjustTarget(null); onReload(); }}
+        />
+      )}
+
+      {historyTarget && historyTarget.master_product_id && (
+        <LedgerHistoryModal
+          productName={historyTarget.product_name}
+          masterProductId={historyTarget.master_product_id}
+          currentOnHand={historyTarget.on_hand_quantity ?? 0}
+          unitType={historyTarget.master_unit_type || historyTarget.unit_type}
+          onClose={() => setHistoryTarget(null)}
+        />
       )}
     </div>
   );

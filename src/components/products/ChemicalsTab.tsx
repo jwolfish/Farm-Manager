@@ -1,9 +1,11 @@
 import { useState } from 'react';
-import { FlaskConical } from 'lucide-react';
+import { FlaskConical, Plus, Minus } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/AuthContext';
 import { Pagination } from '../Pagination';
 import { queueCascadeTask } from '../../lib/backgroundTasks';
+import { InventoryAdjustModal } from './InventoryAdjustModal';
+import { LedgerHistoryModal } from './LedgerHistoryModal';
 
 const PAGE_SIZE = 25;
 
@@ -16,6 +18,8 @@ export interface IndividualChemical {
   default_application_rate_unit: string | null;
   epa_reg_number: string | null;
   master_product_id: string | null;
+  on_hand_quantity?: number | null;
+  master_unit_type?: string | null;
 }
 
 interface Props {
@@ -24,16 +28,19 @@ interface Props {
   onReload: () => void;
   showForm: boolean;
   onHideForm: () => void;
+  readOnly?: boolean;
 }
 
 const defaultForm = { chemical_name: '', price_per_unit: '', unit_type: 'gal', default_application_rate: '', default_application_rate_unit: 'fl oz', epa_reg_number: '' };
 
-export function ChemicalsTab({ chemicals, seasonId, onReload, showForm, onHideForm }: Props) {
+export function ChemicalsTab({ chemicals, seasonId, onReload, showForm, onHideForm, readOnly = false }: Props) {
   const { user } = useAuth();
   const [editingId, setEditingId] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [formData, setFormData] = useState(defaultForm);
+  const [adjustTarget, setAdjustTarget] = useState<IndividualChemical | null>(null);
+  const [historyTarget, setHistoryTarget] = useState<IndividualChemical | null>(null);
 
   const totalPages = Math.ceil(chemicals.length / PAGE_SIZE);
   const paginatedChemicals = chemicals.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
@@ -227,6 +234,7 @@ export function ChemicalsTab({ chemicals, seasonId, onReload, showForm, onHideFo
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Price/Unit</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Unit</th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">Default Rate</th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase">On Hand</th>
                 <th className="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase">Actions</th>
               </tr>
             </thead>
@@ -239,6 +247,39 @@ export function ChemicalsTab({ chemicals, seasonId, onReload, showForm, onHideFo
                   <td className="px-6 py-4 text-sm text-gray-600">{chem.unit_type}</td>
                   <td className="px-6 py-4 text-sm text-gray-600">
                     {chem.default_application_rate ? `${chem.default_application_rate} ${chem.default_application_rate_unit}` : '-'}
+                  </td>
+                  <td className="px-6 py-4 text-sm">
+                    {chem.master_product_id && chem.on_hand_quantity != null ? (
+                      <div className="flex items-center gap-2">
+                        <button
+                          onClick={() => setHistoryTarget(chem)}
+                          className={`font-medium hover:underline ${chem.on_hand_quantity < 0 ? 'text-red-600' : 'text-gray-900'}`}
+                          title="View inventory history"
+                        >
+                          {chem.on_hand_quantity.toLocaleString()} {chem.master_unit_type || chem.unit_type}
+                        </button>
+                        {!readOnly && (
+                          <>
+                            <button
+                              onClick={() => setAdjustTarget(chem)}
+                              className="text-gray-400 hover:text-green-600"
+                              title="Adjust inventory"
+                            >
+                              <Plus className="w-3.5 h-3.5" />
+                            </button>
+                            <button
+                              onClick={() => setAdjustTarget(chem)}
+                              className="text-gray-400 hover:text-red-600"
+                              title="Adjust inventory"
+                            >
+                              <Minus className="w-3.5 h-3.5" />
+                            </button>
+                          </>
+                        )}
+                      </div>
+                    ) : (
+                      <span className="text-gray-300">—</span>
+                    )}
                   </td>
                   <td className="px-6 py-4 text-right">
                     <div className="flex items-center justify-end gap-3">
@@ -256,6 +297,28 @@ export function ChemicalsTab({ chemicals, seasonId, onReload, showForm, onHideFo
             </div>
           )}
         </div>
+      )}
+
+      {adjustTarget && adjustTarget.master_product_id && (
+        <InventoryAdjustModal
+          productName={adjustTarget.chemical_name}
+          masterProductId={adjustTarget.master_product_id}
+          productCategory="chemical"
+          currentOnHand={adjustTarget.on_hand_quantity ?? 0}
+          unitType={adjustTarget.master_unit_type || adjustTarget.unit_type}
+          onClose={() => setAdjustTarget(null)}
+          onSaved={() => { setAdjustTarget(null); onReload(); }}
+        />
+      )}
+
+      {historyTarget && historyTarget.master_product_id && (
+        <LedgerHistoryModal
+          productName={historyTarget.chemical_name}
+          masterProductId={historyTarget.master_product_id}
+          currentOnHand={historyTarget.on_hand_quantity ?? 0}
+          unitType={historyTarget.master_unit_type || historyTarget.unit_type}
+          onClose={() => setHistoryTarget(null)}
+        />
       )}
     </div>
   );

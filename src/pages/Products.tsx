@@ -2,7 +2,6 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import { Plus, Package, Droplet, FlaskConical, Layers, Copy } from 'lucide-react';
-import type { CropType } from '../lib/database.types';
 import { FertilizerPrograms } from '../components/FertilizerPrograms';
 import { ChemicalPrograms } from '../components/ChemicalPrograms';
 import { CrossFarmCopyModal } from '../components/CrossFarmCopyModal';
@@ -27,7 +26,7 @@ export function Products({ seasonId, readOnly = false }: ProductsProps) {
   const { ownedFarms } = useFarm();
   const [activeTab, setActiveTab] = useState<ProductType>('seeds');
   const [programType, setProgramType] = useState<'fertilizer' | 'chemical'>('fertilizer');
-  const [loading, setLoading] = useState(true);
+  const [, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
   const [showCrossFarmModal, setShowCrossFarmModal] = useState(false);
   const [crossFarmSourceSeasonId, setCrossFarmSourceSeasonId] = useState<string | null>(null);
@@ -54,11 +53,16 @@ export function Products({ seasonId, readOnly = false }: ProductsProps) {
       if (activeTab === 'seeds') {
         const { data } = await supabase
           .from('seed_varieties')
-          .select('*')
+          .select('*, master_products!master_product_id(on_hand_quantity, unit_type)')
           .eq('season_id', seasonId)
           .eq('user_id', user.id)
           .order('product_name');
-        setSeeds(data || []);
+        const enriched = (data || []).map((row: any) => ({
+          ...row,
+          on_hand_quantity: row.master_products?.on_hand_quantity ?? null,
+          master_unit_type: row.master_products?.unit_type ?? null,
+        })) as SeedVariety[];
+        setSeeds(enriched);
       } else if (activeTab === 'fertilizers') {
         const { data } = await supabase
           .from('fertilizer_products')
@@ -70,11 +74,16 @@ export function Products({ seasonId, readOnly = false }: ProductsProps) {
       } else if (activeTab === 'chemicals') {
         const { data } = await supabase
           .from('individual_chemicals')
-          .select('*')
+          .select('*, master_products!master_product_id(on_hand_quantity, unit_type)')
           .eq('season_id', seasonId)
           .eq('user_id', user.id)
           .order('chemical_name');
-        setChemicals(data || []);
+        const enriched = (data || []).map((row: any) => ({
+          ...row,
+          on_hand_quantity: row.master_products?.on_hand_quantity ?? null,
+          master_unit_type: row.master_products?.unit_type ?? null,
+        })) as IndividualChemical[];
+        setChemicals(enriched);
       }
       loadedTabsRef.current.add(activeTab);
     } catch (error) {
@@ -164,13 +173,13 @@ export function Products({ seasonId, readOnly = false }: ProductsProps) {
       )}
 
       {activeTab === 'seeds' && (
-        <SeedsTab seeds={seeds} seasonId={seasonId} onReload={reloadActiveTab} showForm={showForm} onHideForm={() => setShowForm(false)} />
+        <SeedsTab seeds={seeds} seasonId={seasonId} onReload={reloadActiveTab} showForm={showForm} onHideForm={() => setShowForm(false)} readOnly={readOnly} />
       )}
       {activeTab === 'fertilizers' && (
         <FertilizersTab fertilizers={fertilizers} seasonId={seasonId} onReload={reloadActiveTab} showForm={showForm} onHideForm={() => setShowForm(false)} />
       )}
       {activeTab === 'chemicals' && (
-        <ChemicalsTab chemicals={chemicals} seasonId={seasonId} onReload={reloadActiveTab} showForm={showForm} onHideForm={() => setShowForm(false)} />
+        <ChemicalsTab chemicals={chemicals} seasonId={seasonId} onReload={reloadActiveTab} showForm={showForm} onHideForm={() => setShowForm(false)} readOnly={readOnly} />
       )}
       {activeTab === 'programs' && (
         <div className="space-y-6">
