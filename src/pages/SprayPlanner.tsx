@@ -22,6 +22,8 @@ import { SavedWorkOrdersList } from '../components/SavedWorkOrdersList';
 import { WorkOrderDetailModal } from '../components/WorkOrderDetailModal';
 import type { SavedWorkOrder } from '../lib/workOrderCrud';
 import { toBestPracticalUnit, convertUnits } from '../lib/unitConversions';
+import { convertSavedWorkOrdersToSprayFormat } from '../lib/exports/savedWorkOrderAdapter';
+import { exportSprayLogPDF } from '../lib/exports/sprayLogPdfExport';
 
 const CROP_LABELS: Record<CropType, string> = {
   corn: 'Corn',
@@ -61,6 +63,7 @@ export function SprayPlanner({ currentSeasonId, effectiveUserId, farmId }: Props
     handleApplyWorkOrder, handleUnapplyWorkOrder,
     savingProgramId,
     inventoryMap,
+    seasonName,
   } = useSprayPlanner(currentSeasonId, effectiveUserId, farmId);
 
   const [fieldPickerOpen, setFieldPickerOpen] = useState(false);
@@ -69,6 +72,18 @@ export function SprayPlanner({ currentSeasonId, effectiveUserId, farmId }: Props
 
   const [editingWorkOrderId, setEditingWorkOrderId] = useState<string | null>(null);
   const [viewingSavedWo, setViewingSavedWo] = useState<SavedWorkOrder | null>(null);
+  const [generatingLogs, setGeneratingLogs] = useState(false);
+
+  const handleGenerateSprayLogs = async (selected: SavedWorkOrder[]) => {
+    if (selected.length === 0 || generatingLogs) return;
+    setGeneratingLogs(true);
+    try {
+      const sprayWorkOrders = await convertSavedWorkOrdersToSprayFormat(selected);
+      exportSprayLogPDF(sprayWorkOrders, seasonName);
+    } finally {
+      setGeneratingLogs(false);
+    }
+  };
 
   const editingWorkOrder = workOrders?.find((wo) => wo.programId === editingWorkOrderId) ?? null;
 
@@ -648,6 +663,7 @@ export function SprayPlanner({ currentSeasonId, effectiveUserId, farmId }: Props
         onDelete={handleDeleteSavedWorkOrder}
         onApply={handleApplyWorkOrder}
         onUnapply={handleUnapplyWorkOrder}
+        onGenerateSprayLogs={handleGenerateSprayLogs}
       />
 
       {/* Master edit modal */}

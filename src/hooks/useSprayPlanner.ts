@@ -648,5 +648,6 @@ export function useSprayPlanner(currentSeasonId: string | null, effectiveUserId:
     // Inventory
     inventoryMap,
     refreshInventory,
+    seasonName,
   };
 }
