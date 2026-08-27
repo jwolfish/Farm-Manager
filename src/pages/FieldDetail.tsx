@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { ArrowLeft, Sprout, FileText, AlertCircle, Unlink } from 'lucide-react';
+import { FieldApplicationHistory } from '../components/fields/FieldApplicationHistory';
 import { supabase } from '../lib/supabase';
 import {
   getTemplate,
@@ -417,6 +418,10 @@ export function FieldDetail({ fieldId, onBack }: FieldDetailProps) {
             </div>
           </div>
         )}
+
+        <div className="mt-6">
+          <FieldApplicationHistory fieldId={fieldId} />
+        </div>
 
         <div className="bg-gray-900 text-white rounded-lg shadow-lg p-6 mt-6 sticky bottom-6">
           <div className="grid grid-cols-3 gap-6">
