@@ -15,6 +15,7 @@ export interface IndividualChemical {
   default_application_rate: number | null;
   default_application_rate_unit: string | null;
   epa_reg_number: string | null;
+  master_product_id: string | null;
 }
 
 interface Props {

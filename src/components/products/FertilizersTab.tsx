@@ -15,6 +15,7 @@ export interface FertilizerProduct {
   application_rate: number | null;
   application_rate_unit: string | null;
   notes: string | null;
+  master_product_id: string | null;
 }
 
 interface Props {

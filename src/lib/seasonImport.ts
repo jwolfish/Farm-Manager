@@ -19,6 +19,7 @@ export interface SeedVariety {
   unit_type: string;
   standard_seeding_rate: number | null;
   units_per_bag: number | null;
+  master_product_id: string | null;
 }
 
 export interface FertilizerProduct {
@@ -29,6 +30,7 @@ export interface FertilizerProduct {
   application_rate: number | null;
   application_rate_unit: string | null;
   notes: string | null;
+  master_product_id: string | null;
 }
 
 export interface IndividualChemical {
@@ -38,6 +40,7 @@ export interface IndividualChemical {
   unit_type: string;
   default_application_rate: number | null;
   default_application_rate_unit: string | null;
+  master_product_id: string | null;
 }
 
 export interface FertilizerProgram {
@@ -205,6 +208,7 @@ export async function importSeasonData(
         unit_type: seed.unit_type,
         standard_seeding_rate: seed.standard_seeding_rate,
         units_per_bag: seed.units_per_bag,
+        master_product_id: seed.master_product_id,
       }));
 
     const { error } = await supabase.from('seed_varieties').insert(seedsToImport);
@@ -223,6 +227,7 @@ export async function importSeasonData(
         application_rate: fert.application_rate,
         application_rate_unit: fert.application_rate_unit,
         notes: fert.notes,
+        master_product_id: fert.master_product_id,
       }));
 
     const { data: insertedFertilizers, error } = await supabase
@@ -254,6 +259,7 @@ export async function importSeasonData(
         unit_type: chem.unit_type,
         default_application_rate: chem.default_application_rate,
         default_application_rate_unit: chem.default_application_rate_unit,
+        master_product_id: chem.master_product_id,
       }));
 
     const { data: insertedChemicals, error } = await supabase

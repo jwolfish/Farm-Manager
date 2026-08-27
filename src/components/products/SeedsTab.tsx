@@ -15,6 +15,7 @@ export interface SeedVariety {
   unit_type: string;
   standard_seeding_rate: number | null;
   units_per_bag: number | null;
+  master_product_id: string | null;
 }
 
 interface Props {

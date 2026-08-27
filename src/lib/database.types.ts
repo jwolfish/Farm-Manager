@@ -9,6 +9,9 @@ export type Json =
 export type CropType = 'corn' | 'soybeans' | 'wheat';
 export type UserRole = 'admin' | 'editor' | 'viewer';
 export type InvitationStatus = 'pending' | 'accepted' | 'declined';
+export type ProductCategory = 'chemical' | 'fertilizer' | 'seed';
+export type LedgerEntryType = 'purchase' | 'consumption' | 'manual_adjustment' | 'reversal';
+export type LedgerSourceType = 'shopping_list_line' | 'work_order' | 'manual';
 
 export interface Database {
   public: {
@@ -175,6 +178,7 @@ export interface Database {
           unit_type: string;
           standard_seeding_rate: number | null;
           units_per_bag: number | null;
+          master_product_id: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -188,6 +192,7 @@ export interface Database {
           unit_type: string;
           standard_seeding_rate?: number | null;
           units_per_bag?: number | null;
+          master_product_id?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -201,6 +206,7 @@ export interface Database {
           unit_type?: string;
           standard_seeding_rate?: number | null;
           units_per_bag?: number | null;
+          master_product_id?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -210,6 +216,13 @@ export interface Database {
             columns: ["season_id"];
             isOneToOne: false;
             referencedRelation: "seasons";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "seed_varieties_master_product_id_fkey";
+            columns: ["master_product_id"];
+            isOneToOne: false;
+            referencedRelation: "master_products";
             referencedColumns: ["id"];
           },
         ];
@@ -225,6 +238,7 @@ export interface Database {
           application_rate: number | null;
           application_rate_unit: string | null;
           notes: string | null;
+          master_product_id: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -238,6 +252,7 @@ export interface Database {
           application_rate?: number | null;
           application_rate_unit?: string | null;
           notes?: string | null;
+          master_product_id?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -251,6 +266,7 @@ export interface Database {
           application_rate?: number | null;
           application_rate_unit?: string | null;
           notes?: string | null;
+          master_product_id?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -260,6 +276,13 @@ export interface Database {
             columns: ["season_id"];
             isOneToOne: false;
             referencedRelation: "seasons";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "fertilizer_products_master_product_id_fkey";
+            columns: ["master_product_id"];
+            isOneToOne: false;
+            referencedRelation: "master_products";
             referencedColumns: ["id"];
           },
         ];
@@ -275,6 +298,7 @@ export interface Database {
           default_application_rate: number | null;
           default_application_rate_unit: string | null;
           epa_reg_number: string | null;
+          master_product_id: string | null;
           created_at: string;
           updated_at: string;
         };
@@ -288,6 +312,7 @@ export interface Database {
           default_application_rate?: number | null;
           default_application_rate_unit?: string | null;
           epa_reg_number?: string | null;
+          master_product_id?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -301,6 +326,7 @@ export interface Database {
           default_application_rate?: number | null;
           default_application_rate_unit?: string | null;
           epa_reg_number?: string | null;
+          master_product_id?: string | null;
           created_at?: string;
           updated_at?: string;
         };
@@ -310,6 +336,13 @@ export interface Database {
             columns: ["season_id"];
             isOneToOne: false;
             referencedRelation: "seasons";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "individual_chemicals_master_product_id_fkey";
+            columns: ["master_product_id"];
+            isOneToOne: false;
+            referencedRelation: "master_products";
             referencedColumns: ["id"];
           },
         ];
@@ -1258,6 +1291,104 @@ export interface Database {
           created_at?: string;
         };
         Relationships: [];
+      };
+      master_products: {
+        Row: {
+          id: string;
+          farm_id: string;
+          product_category: ProductCategory;
+          canonical_name: string;
+          unit_type: string;
+          on_hand_quantity: number | null;
+          created_at: string | null;
+          updated_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          farm_id: string;
+          product_category: ProductCategory;
+          canonical_name: string;
+          unit_type: string;
+          on_hand_quantity?: number | null;
+          created_at?: string | null;
+          updated_at?: string | null;
+        };
+        Update: {
+          id?: string;
+          farm_id?: string;
+          product_category?: ProductCategory;
+          canonical_name?: string;
+          unit_type?: string;
+          on_hand_quantity?: number | null;
+          created_at?: string | null;
+          updated_at?: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "master_products_farm_id_fkey";
+            columns: ["farm_id"];
+            isOneToOne: false;
+            referencedRelation: "farms";
+            referencedColumns: ["id"];
+          },
+        ];
+      };
+      inventory_ledger_entries: {
+        Row: {
+          id: string;
+          farm_id: string;
+          master_product_id: string;
+          product_category: ProductCategory;
+          entry_type: LedgerEntryType;
+          quantity_delta: number;
+          source_type: LedgerSourceType | null;
+          source_id: string | null;
+          note: string | null;
+          created_by: string | null;
+          created_at: string | null;
+        };
+        Insert: {
+          id?: string;
+          farm_id: string;
+          master_product_id: string;
+          product_category: ProductCategory;
+          entry_type: LedgerEntryType;
+          quantity_delta: number;
+          source_type?: LedgerSourceType | null;
+          source_id?: string | null;
+          note?: string | null;
+          created_by?: string | null;
+          created_at?: string | null;
+        };
+        Update: {
+          id?: string;
+          farm_id?: string;
+          master_product_id?: string;
+          product_category?: ProductCategory;
+          entry_type?: LedgerEntryType;
+          quantity_delta?: number;
+          source_type?: LedgerSourceType | null;
+          source_id?: string | null;
+          note?: string | null;
+          created_by?: string | null;
+          created_at?: string | null;
+        };
+        Relationships: [
+          {
+            foreignKeyName: "inventory_ledger_entries_farm_id_fkey";
+            columns: ["farm_id"];
+            isOneToOne: false;
+            referencedRelation: "farms";
+            referencedColumns: ["id"];
+          },
+          {
+            foreignKeyName: "inventory_ledger_entries_master_product_id_fkey";
+            columns: ["master_product_id"];
+            isOneToOne: false;
+            referencedRelation: "master_products";
+            referencedColumns: ["id"];
+          },
+        ];
       };
     };
     Views: {
