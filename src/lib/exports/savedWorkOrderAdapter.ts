@@ -1,5 +1,5 @@
 import { supabase } from '../supabase';
-import { convertUnits } from '../unitConversions';
+import { toBestPracticalUnit } from '../unitConversions';
 import type { SavedWorkOrder } from '../workOrderCrud';
 import type { SprayWorkOrder } from './sprayPlannerPdfExport';
 
@@ -39,7 +39,7 @@ export async function convertSavedWorkOrdersToSprayFormat(
       .map((line) => {
         const epaReg = line.master_product_id ? epaMap.get(line.master_product_id) ?? null : null;
         const totalRaw = line.total_needed;
-        const { value: convertedVal, unit: convertedUnit } = toBestDisplay(totalRaw, line.rate_unit);
+        const practical = toBestPracticalUnit(totalRaw, line.rate_unit);
 
         return {
           chemicalId: line.master_product_id ?? line.id,
@@ -47,9 +47,9 @@ export async function convertSavedWorkOrdersToSprayFormat(
           epaRegNumber: epaReg,
           ratePerAcre: line.rate_per_acre,
           rateUnit: line.rate_unit,
-          totalDisplay: `${convertedVal.toLocaleString('en-US', { maximumFractionDigits: 2 })} ${convertedUnit}`,
-          totalValue: convertedVal,
-          totalUnit: convertedUnit,
+          totalDisplay: practical.display,
+          totalValue: practical.value,
+          totalUnit: practical.unit,
           totalRaw,
           itemNotes: null,
         };
@@ -65,7 +65,7 @@ export async function convertSavedWorkOrdersToSprayFormat(
         epaRegNumber: ct.epaRegNumber,
         ratePerAcre: ct.ratePerAcre,
         rateUnit: ct.rateUnit,
-        totalDisplay: `${(ct.ratePerAcre * f.acreage).toLocaleString('en-US', { maximumFractionDigits: 2 })} ${ct.rateUnit}`,
+        totalDisplay: toBestPracticalUnit(ct.ratePerAcre * f.acreage, ct.rateUnit).display,
         itemNotes: null,
       })),
     }));
@@ -86,13 +86,3 @@ export async function convertSavedWorkOrdersToSprayFormat(
   });
 }
 
-function toBestDisplay(rawValue: number, unit: string): { value: number; unit: string } {
-  const lowerUnit = unit.toLowerCase();
-  if (lowerUnit === 'oz' && rawValue >= 128) {
-    return { value: rawValue / 128, unit: 'gal' };
-  }
-  if (lowerUnit === 'oz' && rawValue >= 16) {
-    return { value: rawValue / 16, unit: 'pt' };
-  }
-  return { value: rawValue, unit };
-}
