@@ -21,7 +21,7 @@ import { WorkOrderEditModal } from '../components/WorkOrderEditModal';
 import { SavedWorkOrdersList } from '../components/SavedWorkOrdersList';
 import { WorkOrderDetailModal } from '../components/WorkOrderDetailModal';
 import type { SavedWorkOrder } from '../lib/workOrderCrud';
-import { toBestPracticalUnit } from '../lib/unitConversions';
+import { toBestPracticalUnit, convertUnits } from '../lib/unitConversions';
 
 const CROP_LABELS: Record<CropType, string> = {
   corn: 'Corn',
@@ -404,7 +404,9 @@ export function SprayPlanner({ currentSeasonId, effectiveUserId, farmId }: Props
               wo.chemTotals
                 .filter((ct) => {
                   const inv = inventoryMap.get(ct.masterProductId ?? '') ?? inventoryMap.get(ct.chemicalName);
-                  return inv && inv.onHand < ct.totalRaw;
+                  if (!inv) return false;
+                  const neededInInvUnit = convertUnits(ct.rateUnit, inv.unitType, ct.totalRaw);
+                  return neededInInvUnit > inv.onHand;
                 })
                 .map((ct) => ct.chemicalName)
             );
@@ -555,7 +557,7 @@ export function SprayPlanner({ currentSeasonId, effectiveUserId, farmId }: Props
                       {wo.chemTotals.map((ct, i) => {
                         const inv = inventoryMap.get(ct.masterProductId ?? '') ?? inventoryMap.get(ct.chemicalName);
                         const onHand = inv?.onHand ?? null;
-                        const isLow = onHand !== null && onHand < ct.totalRaw;
+                        const isLow = onHand !== null && convertUnits(ct.rateUnit, inv!.unitType, ct.totalRaw) > onHand;
                         const onHandDisplay = onHand !== null
                           ? toBestPracticalUnit(onHand, inv!.unitType).display
                           : '\u2014';

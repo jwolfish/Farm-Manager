@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { X, CheckCircle2, RotateCcw, AlertTriangle, Package } from 'lucide-react';
 import type { SavedWorkOrder } from '../lib/workOrderCrud';
 import { toBestPracticalUnit } from '../lib/unitConversions';
+import { convertUnits } from '../lib/unitConversions';
 import { supabase } from '../lib/supabase';
 
 const STATUS_STYLES: Record<string, { bg: string; text: string; label: string }> = {
@@ -66,7 +67,9 @@ export function WorkOrderDetailModal({ workOrder: wo, onApply, onUnapply, onClos
   const lowStockCount = wo.lines.filter((l) => {
     if (!l.master_product_id) return false;
     const inv = invMap.get(l.master_product_id);
-    return inv && inv.onHand < l.total_needed;
+    if (!inv) return false;
+    const neededInInvUnit = convertUnits(l.rate_unit, inv.unitType, l.total_needed);
+    return neededInInvUnit > inv.onHand;
   }).length;
 
   return (
