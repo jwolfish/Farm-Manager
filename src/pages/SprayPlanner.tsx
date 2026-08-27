@@ -666,7 +666,6 @@ export function SprayPlanner({ currentSeasonId, effectiveUserId, farmId }: Props
       {viewingSavedWo && (
         <WorkOrderDetailModal
           workOrder={viewingSavedWo}
-          inventoryMap={inventoryMap}
           onApply={(wo) => { handleApplyWorkOrder(wo); setViewingSavedWo(null); }}
           onUnapply={(wo) => { handleUnapplyWorkOrder(wo); setViewingSavedWo(null); }}
           onClose={() => setViewingSavedWo(null)}

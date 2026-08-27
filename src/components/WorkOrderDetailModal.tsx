@@ -1,6 +1,8 @@
+import { useEffect, useState } from 'react';
 import { X, CheckCircle2, RotateCcw, AlertTriangle, Package } from 'lucide-react';
 import type { SavedWorkOrder } from '../lib/workOrderCrud';
 import { toBestPracticalUnit } from '../lib/unitConversions';
+import { supabase } from '../lib/supabase';
 
 const STATUS_STYLES: Record<string, { bg: string; text: string; label: string }> = {
   draft: { bg: 'bg-gray-100', text: 'text-gray-700', label: 'Draft' },
@@ -15,14 +17,13 @@ const CROP_LABELS: Record<string, string> = {
 };
 
 interface InventoryInfo {
-  masterProductId: string;
   onHand: number;
   unitType: string;
 }
 
 interface Props {
   workOrder: SavedWorkOrder;
-  inventoryMap: Map<string, InventoryInfo>;
+  inventoryMap?: Map<string, InventoryInfo>;
   onApply: (wo: SavedWorkOrder) => void;
   onUnapply: (wo: SavedWorkOrder) => void;
   onClose: () => void;
@@ -37,12 +38,34 @@ function fmtDate(dateStr: string | null) {
   return new Date(dateStr).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' });
 }
 
-export function WorkOrderDetailModal({ workOrder: wo, inventoryMap, onApply, onUnapply, onClose }: Props) {
+export function WorkOrderDetailModal({ workOrder: wo, onApply, onUnapply, onClose }: Props) {
+  const [invMap, setInvMap] = useState<Map<string, InventoryInfo>>(new Map());
+
+  useEffect(() => {
+    const productIds = wo.lines
+      .map((l) => l.master_product_id)
+      .filter((id): id is string => id != null);
+    if (productIds.length === 0) return;
+
+    supabase
+      .from('master_products')
+      .select('id, on_hand_quantity, unit_type')
+      .in('id', productIds)
+      .then(({ data }) => {
+        if (!data) return;
+        const map = new Map<string, InventoryInfo>();
+        for (const row of data) {
+          map.set(row.id, { onHand: Number(row.on_hand_quantity ?? 0), unitType: row.unit_type });
+        }
+        setInvMap(map);
+      });
+  }, [wo.lines]);
+
   const statusStyle = STATUS_STYLES[wo.status] ?? STATUS_STYLES.draft;
   const hasUnlinked = wo.lines.some((l) => !l.master_product_id);
   const lowStockCount = wo.lines.filter((l) => {
     if (!l.master_product_id) return false;
-    const inv = inventoryMap.get(l.chemical_name);
+    const inv = invMap.get(l.master_product_id);
     return inv && inv.onHand < l.total_needed;
   }).length;
 
@@ -119,7 +142,7 @@ export function WorkOrderDetailModal({ workOrder: wo, inventoryMap, onApply, onU
                 </thead>
                 <tbody>
                   {wo.lines.map((line, i) => {
-                    const inv = inventoryMap.get(line.chemical_name);
+                    const inv = line.master_product_id ? invMap.get(line.master_product_id) : undefined;
                     const onHand = inv?.onHand ?? null;
                     const isLow = onHand !== null && onHand < line.total_needed;
                     const totalDisplay = toBestPracticalUnit(line.total_needed, line.rate_unit).display;
