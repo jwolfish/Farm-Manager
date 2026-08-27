@@ -369,22 +369,22 @@ async function createSeasonChemical(
 
 export async function fetchInventoryForChemicals(
   farmId: string,
-  chemicalNames: string[]
+  productIds: string[]
 ): Promise<Map<string, { masterProductId: string; onHand: number; unitType: string }>> {
-  if (chemicalNames.length === 0) return new Map();
+  if (productIds.length === 0) return new Map();
 
   const { data, error } = await supabase
     .from('master_products')
     .select('id, canonical_name, on_hand_quantity, unit_type')
     .eq('farm_id', farmId)
     .eq('product_category', 'chemical')
-    .in('canonical_name', chemicalNames);
+    .in('id', productIds);
 
   if (error || !data) return new Map();
 
   const map = new Map<string, { masterProductId: string; onHand: number; unitType: string }>();
   for (const row of data) {
-    map.set(row.canonical_name, {
+    map.set(row.id, {
       masterProductId: row.id,
       onHand: Number(row.on_hand_quantity ?? 0),
       unitType: row.unit_type,
