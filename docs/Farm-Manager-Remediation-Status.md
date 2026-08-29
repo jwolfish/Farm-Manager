@@ -79,6 +79,39 @@ succeed; PUBLIC can no longer execute `update_master_product_on_hand`.
 
 Also fixed: double-encoded `&amp;` in two report headings.
 
+### Two missing migration files — reconstructed 29 Aug 2026
+
+Comparing `supabase/migrations/` against the database's own migration history found two
+versions applied with no `.sql` file in the repo. Both have been reconstructed from the
+live schema and committed. **They must not be re-applied** — the database already records
+them as applied; the files exist so the directory can rebuild the schema.
+
+| Version | Name | What it does |
+|---|---|---|
+| `20260206023520` | `remove_crop_type_from_individual_chemicals` | `ALTER TABLE individual_chemicals DROP COLUMN IF EXISTS crop_type` |
+| `20260218020323` | `add_team_sharing_and_notifications` | Creates `app_notifications` + RLS + two indexes |
+
+**A correction to an earlier note in this document.** The first pass at this claimed a
+rebuild would produce a database with no `team_members` table. That was wrong:
+`team_members` and the `user_role` / `invitation_status` enums are created by
+`20260205170031`, the initial schema migration. The check that produced that claim looked
+for a table called `notifications`; the table is actually named `app_notifications`.
+
+The real breakage was narrower but still fatal to a rebuild: **`app_notifications` was
+created by no local migration, and `20260305192457` runs
+`CREATE INDEX ... ON public.app_notifications`.** `CREATE INDEX IF NOT EXISTS` still errors
+when the *table* does not exist, so a from-scratch rebuild died there. Two later migrations
+(`20260305192931`, `20260305193055`) also reference it.
+
+Reconstruction fidelity was checked rather than assumed: the DDL was executed into a
+scratch schema inside a rolled-back transaction and compared against the live table —
+7 columns with zero differences in either direction, no missing constraints, 3 policies,
+RLS enabled. The scratch schema and the live table were both confirmed untouched
+afterwards. The policies are written in the pre-optimisation `auth.uid() = ...` form on
+purpose, because `20260305192931` is the migration that rewrites them into
+`(SELECT auth.uid()) = ...`, and it would be misleading for this file to arrive already
+fixed.
+
 ### Round 3 — commits `3e408fd`, `f0077d5` (merged to `main` via PR #1)
 
 Written by Claude directly rather than by Bolt. WI-11 changes the return type of
@@ -251,24 +284,6 @@ Nothing persisted: leftover fixtures, work-order ledger rows and on-hand were al
 re-checked at zero afterwards.
 
 ## Open items
-
-**Two applied migrations have no file in the repo (found 29 Aug 2026).** Comparing
-`supabase/migrations/` against the database's own migration history turned up two versions
-that were applied but whose `.sql` files are missing:
-
-| Version | Name | Confirmed applied |
-|---|---|---|
-| `20260206023520` | `remove_crop_type_from_individual_chemicals` | yes — the column is gone |
-| `20260218020323` | `add_team_sharing_and_notifications` | yes — `team_members` exists |
-
-**A from-scratch rebuild from this repo would therefore produce a database with no
-`team_members` table** — the entire collaboration feature, and precisely what SEC-5 / WI-5
-is about to rewrite policies against. Every other version matches one-for-one. Worth
-reconstructing both files from the live schema before Round 5, or at minimum before anyone
-relies on the migrations directory to recreate the database.
-
-Note `notifications` does *not* exist despite the migration name, so whatever that
-migration created, the notifications half was either dropped later or never included.
 
 **Migration filenames must match the recorded version.** Applying through the Supabase MCP
 stamps its own timestamp, which will not be the one in the filename you wrote. Round 4's
