@@ -4,7 +4,10 @@ export function exportTableToCSV(
   rows: (string | number)[][]
 ) {
   const escape = (val: string | number) => {
-    const s = String(val);
+    let s = String(val);
+    if (s.length > 0 && '=+-@\t\r'.includes(s[0])) {
+      s = "'" + s;
+    }
     if (s.includes(',') || s.includes('"') || s.includes('\n')) {
       return `"${s.replace(/"/g, '""')}"`;
     }
@@ -16,7 +19,7 @@ export function exportTableToCSV(
     ...rows.map((row) => row.map(escape).join(',')),
   ];
 
-  const blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
+  const blob = new Blob([lines.join('\r\n')], { type: 'text/csv;charset=utf-8;' });
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
   link.href = url;

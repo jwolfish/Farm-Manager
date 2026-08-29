@@ -273,7 +273,7 @@ export function exportFieldROIPDF(
 </head>
 <body>
 <div class="page">
-  ${pdfHeader('Field ROI &amp; Net Profit', farmName, season?.seasonName ?? '', now)}
+  ${pdfHeader('Field ROI & Net Profit', farmName, season?.seasonName ?? '', now)}
 
   <div class="stat-grid">
     <div class="stat-card">

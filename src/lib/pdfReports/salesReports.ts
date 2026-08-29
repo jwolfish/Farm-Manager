@@ -298,7 +298,7 @@ export function exportBuyerBreakdownPDF(
 </head>
 <body>
 <div class="page">
-  ${pdfHeader('Buyer &amp; Destination Breakdown', farmName, `${buyers.length} buyer${buyers.length !== 1 ? 's' : ''}`, now)}
+  ${pdfHeader('Buyer & Destination Breakdown', farmName, `${buyers.length} buyer${buyers.length !== 1 ? 's' : ''}`, now)}
 
   <div class="stat-grid">
     <div class="stat-card">
