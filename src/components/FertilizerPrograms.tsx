@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import { Package, Plus, X, CreditCard as Edit2, Trash2 } from 'lucide-react';
-import { calculateCostWithConversion } from '../lib/unitConversions';
+import { calculateCostWithConversion, describeConversionFailure } from '../lib/unitConversions';
 import { queueCascadeTask } from '../lib/backgroundTasks';
 
 interface FertilizerProduct {
@@ -309,7 +309,10 @@ export function FertilizerPrograms({ seasonId }: FertilizerProgramsProps) {
         product.price_per_unit,
         product.unit_type
       );
-      return sum + cost;
+      // An item whose units cannot meet contributes nothing; the per-item row
+      // below says so rather than folding a wrong number into the total.
+      if (!cost.ok) return sum;
+      return sum + cost.value;
     }, 0);
   };
 
@@ -535,14 +538,21 @@ export function FertilizerPrograms({ seasonId }: FertilizerProgramsProps) {
                           item.application_rate_unit,
                           product.price_per_unit,
                           product.unit_type
-                        ) : 0;
+                        ) : null;
+                        let costLabel = '';
+                        if (cost !== null && cost.ok) {
+                          costLabel = ` = $${cost.value.toFixed(2)}/acre`;
+                        } else if (cost !== null) {
+                          costLabel = ` — not costed: ${describeConversionFailure(cost)}`;
+                        }
                         return (
                           <div key={item.id} className="flex items-center justify-between text-sm bg-white p-3 rounded border border-gray-200">
                             <span className="font-medium text-gray-900">
                               {product?.product_name || 'Unknown Product'}
                             </span>
-                            <span className="text-gray-600">
-                              {item.application_rate} {item.application_rate_unit}/acre @ ${product?.price_per_unit}/{product?.unit_type} = ${cost.toFixed(2)}/acre
+                            <span className={cost !== null && !cost.ok ? 'text-red-600' : 'text-gray-600'}>
+                              {item.application_rate} {item.application_rate_unit}/acre @ ${product?.price_per_unit}/{product?.unit_type}
+                              {costLabel}
                             </span>
                           </div>
                         );

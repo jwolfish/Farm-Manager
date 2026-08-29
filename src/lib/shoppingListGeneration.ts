@@ -1,5 +1,5 @@
 import { supabase } from './supabase';
-import { convertUnits } from './unitConversions';
+import { accumulateNeed, neededAfterOnHand, NeedContribution } from './shoppingListMath';
 
 export interface ShoppingLineInput {
   masterProductId: string | null;
@@ -8,6 +8,12 @@ export interface ShoppingLineInput {
   neededQuantity: number;
   onHandAtGeneration: number;
   unitType: string;
+  /**
+   * Non-empty when some contribution to this line could not be converted into
+   * the line's unit (WI-12). The quantity is then an undercount and must be
+   * shown to the user as unreliable rather than treated as a purchase figure.
+   */
+  issues: string[];
 }
 
 interface ProgramRef {
@@ -90,11 +96,15 @@ export async function generateChemicalLines(
   const programMap = new Map<string, any>();
   for (const p of programs ?? []) programMap.set(p.id, p);
 
-  // Accumulate total needed per chemical (keyed by individual_chemical.id)
-  const chemAccum = new Map<
+  // Collect every contribution per chemical first (WI-12). The canonical unit
+  // is not known until the linked master product has been read, so nothing is
+  // summed here — each contribution keeps its own rate unit and is converted
+  // on the way into the total below.
+  const chemMeta = new Map<
     string,
-    { chemId: string; name: string; masterProductId: string | null; totalRaw: number; rateUnit: string }
+    { chemId: string; name: string; masterProductId: string | null }
   >();
+  const chemContributions = new Map<string, NeedContribution[]>();
 
   for (const f of fields as any[]) {
     const fc = Array.isArray(f.field_costs) ? f.field_costs[0] : f.field_costs;
@@ -113,29 +123,26 @@ export async function generateChemicalLines(
         if (!chem) continue;
         const rate = Number(item.application_rate);
         const rateUnit: string = item.application_rate_unit ?? chem.unit_type ?? '';
-        const total = rate * acreage;
-        const existing = chemAccum.get(chem.id);
-        if (existing) {
-          existing.totalRaw += total;
-        } else {
-          chemAccum.set(chem.id, {
+
+        if (!chemMeta.has(chem.id)) {
+          chemMeta.set(chem.id, {
             chemId: chem.id,
             name: chem.chemical_name,
             masterProductId: chem.master_product_id ?? null,
-            totalRaw: total,
-            rateUnit,
           });
+          chemContributions.set(chem.id, []);
         }
+        chemContributions.get(chem.id)!.push({ rate, rateUnit, acreage });
       }
     }
   }
 
   // Fetch on-hand quantities for linked master products
-  const masterIds = [...chemAccum.values()]
+  const masterIds = [...chemMeta.values()]
     .map((c) => c.masterProductId)
     .filter(Boolean) as string[];
 
-  let onHandMap = new Map<string, { quantity: number; unitType: string }>();
+  const onHandMap = new Map<string, { quantity: number; unitType: string }>();
   if (masterIds.length > 0) {
     const { data: masters } = await supabase
       .from('master_products')
@@ -147,27 +154,27 @@ export async function generateChemicalLines(
   }
 
   const lines: ShoppingLineInput[] = [];
-  for (const acc of chemAccum.values()) {
+  for (const meta of chemMeta.values()) {
     let onHand = 0;
-    let lineUnit = acc.rateUnit;
-    if (acc.masterProductId) {
-      const master = onHandMap.get(acc.masterProductId);
+    let canonicalUnit: string | null = null;
+    if (meta.masterProductId) {
+      const master = onHandMap.get(meta.masterProductId);
       if (master) {
         onHand = master.quantity;
-        lineUnit = master.unitType;
+        canonicalUnit = master.unitType;
       }
     }
-    // Convert totalRaw to lineUnit if different
-    const totalInLineUnit = convertUnits(acc.rateUnit, lineUnit, acc.totalRaw);
-    const needed = Math.max(0, totalInLineUnit - onHand);
+
+    const accumulated = accumulateNeed(chemContributions.get(meta.chemId) ?? [], canonicalUnit);
 
     lines.push({
-      masterProductId: acc.masterProductId,
-      productName: acc.name,
+      masterProductId: meta.masterProductId,
+      productName: meta.name,
       productCategory: 'chemical',
-      neededQuantity: needed,
+      neededQuantity: neededAfterOnHand(accumulated.total, onHand),
       onHandAtGeneration: onHand,
-      unitType: lineUnit,
+      unitType: accumulated.unit,
+      issues: accumulated.issues,
     });
   }
 
@@ -249,11 +256,10 @@ export async function generateFertilizerLines(
   const programMap = new Map<string, any>();
   for (const p of programs ?? []) programMap.set(p.id, p);
 
-  // Accumulate total needed per fertilizer product
-  const fertAccum = new Map<
-    string,
-    { prodId: string; name: string; totalRaw: number; rateUnit: string; priceUnit: string }
-  >();
+  // Collect contributions per fertilizer product, converting on the way in to
+  // the product's own unit rather than summing mixed rate units (WI-12).
+  const fertMeta = new Map<string, { prodId: string; name: string; priceUnit: string }>();
+  const fertContributions = new Map<string, NeedContribution[]>();
 
   for (const f of fields as any[]) {
     const fc = Array.isArray(f.field_costs) ? f.field_costs[0] : f.field_costs;
@@ -272,35 +278,32 @@ export async function generateFertilizerLines(
         if (!prod) continue;
         const rate = Number(item.application_rate);
         const rateUnit: string = item.application_rate_unit ?? prod.unit_type ?? '';
-        const priceUnit: string = prod.unit_type ?? rateUnit;
-        const total = rate * acreage;
-        const existing = fertAccum.get(prod.id);
-        if (existing) {
-          existing.totalRaw += total;
-        } else {
-          fertAccum.set(prod.id, {
+
+        if (!fertMeta.has(prod.id)) {
+          fertMeta.set(prod.id, {
             prodId: prod.id,
             name: prod.product_name,
-            totalRaw: total,
-            rateUnit,
-            priceUnit,
+            priceUnit: prod.unit_type ?? rateUnit,
           });
+          fertContributions.set(prod.id, []);
         }
+        fertContributions.get(prod.id)!.push({ rate, rateUnit, acreage });
       }
     }
   }
 
   // Fertilizer has no on-hand tracking in this release
   const lines: ShoppingLineInput[] = [];
-  for (const acc of fertAccum.values()) {
-    const neededInPriceUnit = convertUnits(acc.rateUnit, acc.priceUnit, acc.totalRaw);
+  for (const meta of fertMeta.values()) {
+    const accumulated = accumulateNeed(fertContributions.get(meta.prodId) ?? [], meta.priceUnit);
     lines.push({
       masterProductId: null,
-      productName: acc.name,
+      productName: meta.name,
       productCategory: 'fertilizer',
-      neededQuantity: neededInPriceUnit,
+      neededQuantity: accumulated.total,
       onHandAtGeneration: 0,
-      unitType: acc.priceUnit,
+      unitType: accumulated.unit,
+      issues: accumulated.issues,
     });
   }
 
@@ -372,7 +375,7 @@ export async function generateSeedLines(
     .map((s) => s.masterProductId)
     .filter(Boolean) as string[];
 
-  let onHandMap = new Map<string, number>();
+  const onHandMap = new Map<string, number>();
   if (masterIds.length > 0) {
     const { data: masters } = await supabase
       .from('master_products')
@@ -386,18 +389,35 @@ export async function generateSeedLines(
   const lines: ShoppingLineInput[] = [];
   for (const acc of seedAccum.values()) {
     const onHand = acc.masterProductId ? (onHandMap.get(acc.masterProductId) ?? 0) : 0;
-    const needed = Math.max(0, acc.totalBags - onHand);
+    // Seed is counted in whole bags throughout, so there is no unit to convert.
     lines.push({
       masterProductId: acc.masterProductId,
       productName: acc.name,
       productCategory: 'seed',
-      neededQuantity: needed,
+      neededQuantity: neededAfterOnHand(acc.totalBags, onHand),
       onHandAtGeneration: onHand,
       unitType: acc.unitType,
+      issues: [],
     });
   }
 
   return lines;
+}
+
+export interface FlaggedShoppingLine {
+  productName: string;
+  issues: string[];
+}
+
+export interface ShoppingListCreated {
+  listId: string;
+  lineCount: number;
+  /**
+   * Lines whose quantity is an undercount because at least one contributing
+   * program used a unit that could not be converted into the line's unit.
+   * The caller must show these to the user (WI-12).
+   */
+  flaggedLines: FlaggedShoppingLine[];
 }
 
 export async function createShoppingList(
@@ -405,7 +425,7 @@ export async function createShoppingList(
   seasonId: string,
   category: 'chemical' | 'fertilizer' | 'seed',
   effectiveUserId: string
-): Promise<{ listId: string; lineCount: number } | { error: string }> {
+): Promise<ShoppingListCreated | { error: string }> {
   // Generate lines based on category
   let lines: ShoppingLineInput[];
   if (category === 'chemical') {
@@ -452,5 +472,9 @@ export async function createShoppingList(
     return { error: 'Failed to save shopping list lines.' };
   }
 
-  return { listId: list.id, lineCount: lines.length };
+  const flaggedLines: FlaggedShoppingLine[] = lines
+    .filter((l) => l.issues.length > 0)
+    .map((l) => ({ productName: l.productName, issues: l.issues }));
+
+  return { listId: list.id, lineCount: lines.length, flaggedLines };
 }

@@ -204,12 +204,14 @@ export function useTemplateForm(
   const calculateFertilizerProgramCost = (program: FertilizerProgram): number => {
     if (!program.items || program.items.length === 0) return program.application_cost || 0;
     const productCosts = program.items.reduce((sum, item) => {
-      return sum + calculateCostWithConversion(
+      const cost = calculateCostWithConversion(
         item.application_rate,
         item.application_rate_unit,
         item.fertilizer_products.price_per_unit,
         item.fertilizer_products.unit_type,
       );
+      // Unconvertible units contribute nothing rather than a wrong number.
+      return cost.ok ? sum + cost.value : sum;
     }, 0);
     return productCosts + (program.application_cost || 0);
   };
@@ -218,12 +220,14 @@ export function useTemplateForm(
     if (!program.items || program.items.length === 0) return program.application_cost || 0;
     const productCosts = program.items.reduce((sum, item) => {
       const applicationUnit = item.application_rate_unit || item.individual_chemicals.unit_type;
-      return sum + calculateCostWithConversion(
+      const cost = calculateCostWithConversion(
         item.application_rate,
         applicationUnit,
         item.individual_chemicals.price_per_unit,
         item.individual_chemicals.unit_type,
       );
+      // Unconvertible units contribute nothing rather than a wrong number.
+      return cost.ok ? sum + cost.value : sum;
     }, 0);
     return productCosts + (program.application_cost || 0);
   };

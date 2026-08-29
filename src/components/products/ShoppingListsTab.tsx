@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { ShoppingCart, RefreshCw, Check, CreditCard as Edit2, DollarSign, Package, AlertTriangle, FileDown } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
-import { createShoppingList } from '../../lib/shoppingListGeneration';
+import { createShoppingList, FlaggedShoppingLine } from '../../lib/shoppingListGeneration';
 import { queueCascadeTask } from '../../lib/backgroundTasks';
 import { useAuth } from '../../contexts/AuthContext';
 import { useFarm } from '../../contexts/FarmContext';
@@ -71,6 +71,7 @@ export function ShoppingListsTab({ seasonId, readOnly = false }: Props) {
   const [loading, setLoading] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [flaggedLines, setFlaggedLines] = useState<FlaggedShoppingLine[]>([]);
   const [editingLineId, setEditingLineId] = useState<string | null>(null);
   const [editValues, setEditValues] = useState<{ adjusted_quantity: string; supplier: string; quoted_price_per_unit: string }>({ adjusted_quantity: '', supplier: '', quoted_price_per_unit: '' });
   const [purchaseTarget, setPurchaseTarget] = useState<ShoppingLine | null>(null);
@@ -128,11 +129,13 @@ export function ShoppingListsTab({ seasonId, readOnly = false }: Props) {
     if (!farmId || !userId) return;
     setGenerating(true);
     setError(null);
+    setFlaggedLines([]);
     const result = await createShoppingList(farmId, seasonId, category, userId);
     if ('error' in result) {
       setError(result.error);
     } else {
       setSelectedListId(result.listId);
+      setFlaggedLines(result.flaggedLines);
       await loadLists();
     }
     setGenerating(false);
@@ -244,6 +247,27 @@ export function ShoppingListsTab({ seasonId, readOnly = false }: Props) {
         <div className="flex items-start gap-3 bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 mb-5 text-sm text-amber-800">
           <AlertTriangle className="w-4 h-4 mt-0.5 flex-shrink-0 text-amber-500" />
           <span>{error}</span>
+        </div>
+      )}
+
+      {flaggedLines.length > 0 && (
+        <div className="flex items-start gap-3 bg-red-50 border border-red-200 rounded-lg px-4 py-3 mb-5 text-sm text-red-800">
+          <AlertTriangle className="w-4 h-4 mt-0.5 flex-shrink-0 text-red-500" />
+          <div>
+            <p className="font-semibold mb-1">
+              Some quantities are incomplete — check these before ordering.
+            </p>
+            <ul className="space-y-0.5">
+              {flaggedLines.map((line) => (
+                <li key={line.productName}>
+                  <span className="font-medium">{line.productName}</span>: {line.issues.join('; ')}
+                </li>
+              ))}
+            </ul>
+            <p className="mt-1.5">
+              The quantity shown for these products leaves out the programs listed above.
+            </p>
+          </div>
         </div>
       )}
 
