@@ -185,33 +185,42 @@ if (RISKY.test(s) && !/^-?\d+(\.\d+)?$/.test(s)) s = "'" + s;
 arguments; the database function takes one. Evidence that the hand-maintained types have
 drifted (WI-30).
 
-**Round 3 is unverified against the toolchain.** The machine Claude ran on has no Node
-installed, so `npm test`, `tsc`, `eslint` and `vite build` were never executed against
-this branch. What *was* verified is below. Run the four commands before merging.
+## Round 3 verification — actually run
 
-## Verifying Round 3 before merge
+Node.js 24.19.0 LTS was installed on the owner's machine (winget, `OpenJS.NodeJS.LTS`),
+so the full floor was executed against this branch rather than predicted.
 
-```
-npm install          # brings in vitest + @vitest/coverage-v8
-npm test             # expect 4 files, ~180 cases, all passing
-npm run typecheck    # must be 103 or fewer
-npm run lint         # must be 136 or fewer (expect 134: two prefer-const fixed)
-npx vite build       # must succeed
-```
+| Check | Result |
+|---|---|
+| `npm test` | **178 tests in 4 files, all passing**, 3.96 s |
+| `npm run typecheck` | **103 errors** — identical to `main` |
+| `npm run lint` | **134 errors, 28 warnings** (was 136/28) |
+| `npx vite build` | **succeeds**, 7.95 s |
 
-What has already been verified, and how:
+The typecheck result was compared against `main` file-by-file with line positions
+stripped, not just by count: **the same 103 errors, in the same files, with the same
+codes.** Only line numbers shifted, because Round 3 adds lines. No pre-existing error
+was silently fixed and no new one introduced.
 
-- **The conversion arithmetic**, by executing the module's logic in a real JavaScript
-  engine: 355 assertions, 0 failures. All 102 pairs from the old lookup table reproduce
-  at *exact* float equality (`Object.is`, not `toBeCloseTo`); worst round-trip error
-  across every within-class pair was 8.9e-16 against a 1e-9 requirement; the WI-12
-  worked example (2 qt/ac × 100 ac + 16 fl oz/ac × 50 ac, held in gallons) came out at
-  exactly 56.25 gal.
+The two-error lint drop is the two `prefer-const` fixes in `shoppingListGeneration.ts`,
+made in passing while rewriting the accumulators.
+
+Also verified independently:
+
+- **The conversion arithmetic**, by executing the module's logic in a JavaScript engine
+  before Node was available: 355 assertions, 0 failures. All 102 pairs from the old
+  lookup table reproduce at *exact* float equality (`Object.is`, not `toBeCloseTo`);
+  worst round-trip error across every within-class pair was 8.9e-16 against a 1e-9
+  requirement; the WI-12 worked example (2 qt/ac × 100 ac + 16 fl oz/ac × 50 ac, held in
+  gallons) came out at exactly 56.25 gal. The Vitest suite then reproduced all of this.
 - **The live-data audit** described in the Round 3 section, run against the production
   database as read-only queries.
 
-Not verified: TypeScript compilation, ESLint, the production build, that Vitest itself
-runs green, and any browser behaviour of the changed React components.
+Still not verified: browser behaviour of the changed React components. The new error
+banners in `SprayPlanner` and `ShoppingListsTab`, and the "not costed" item rows in the
+programs pages, have never been rendered — they are only reachable with data that does
+not currently exist in the database (no unconvertible unit pair is present). Worth a
+manual look if a product is ever given a unit outside its class.
 
 ## Next up — Round 4
 
@@ -228,13 +237,26 @@ the deployed copy does not. Round 6 — PERF-1 through PERF-5 and remaining debt
 
 ## Baseline metrics
 
-| Metric | Review baseline | After Round 3 |
-|---|---|---|
-| TypeScript errors | 103 | expected 103 (tests excluded from `tsconfig.app.json`) |
-| ESLint | 136 errors, 28 warnings | expected 134 errors — two `prefer-const` in `shoppingListGeneration.ts` fixed in passing |
-| Tests | 0 | 4 files (`unitConversions`, `shoppingListMath`, `inventoryMath`, `templateCalculations`) |
-| CI | none | none — still WI-21 |
-| Main JS chunk | 1,747 kB (465 kB gzipped) | expected unchanged |
+All figures below are measured, not estimated.
 
-Every "expected" figure above is a prediction, not a measurement. If a number differs,
-believe the tool and not this table.
+| Metric | Review baseline | `main` today | After Round 3 |
+|---|---|---|---|
+| TypeScript errors | 103 | 103 | **103** (identical error set) |
+| ESLint | 136 errors, 28 warnings | 136 / 28 | **134 errors, 28 warnings** |
+| Tests | 0 | 0 | **178 passing, 4 files** |
+| CI | none | none | none — still WI-21 |
+| Main JS chunk | 1,747 kB (465 kB gz) | 1,748.98 kB (465.70 kB gz) | **1,754.43 kB (467.56 kB gz)** |
+
+**The bundle grew by 5.45 kB raw / 1.86 kB gzipped**, measured against `main` built on the
+same machine with the same dependency tree. That is the new code: the unit registry and
+alias table, `describeConversionFailure`, `shoppingListMath`, `inventoryMath`, and the two
+new warning banners. It is a real regression against PERF-1 and it is accepted — WI-22
+targets ≤ 300 kB gzipped and will restructure this chunk entirely.
+
+Note the review's recorded 1,747 kB / 465 kB was slightly optimistic: `main` measures
+1,748.98 kB / 465.70 kB today. Use the middle column as the reference point from here on.
+
+Toolchain used for these measurements: Node 24.19.0, npm 11.17.0, Vitest 2.1.9, Vite 5.4.8.
+Note that npm 11 blocks package install scripts by default (`core-js` and `esbuild`
+postinstalls were skipped); nothing in this project needed them, and both test and build
+succeed regardless.
