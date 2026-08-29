@@ -1568,6 +1568,41 @@ export interface Database {
         };
         Returns: Database['public']['Tables']['team_members']['Row'];
       };
+      can_edit_farm: {
+        Args: {
+          p_farm_id: string;
+        };
+        Returns: boolean;
+      };
+      apply_work_order: {
+        Args: {
+          p_work_order_id: string;
+          p_quantities: Json;
+        };
+        Returns: Database['public']['Tables']['work_orders']['Row'];
+      };
+      unapply_work_order: {
+        Args: {
+          p_work_order_id: string;
+          p_quantities: Json;
+        };
+        Returns: Database['public']['Tables']['work_orders']['Row'];
+      };
+      record_purchase: {
+        Args: {
+          p_line_id: string;
+          p_quantity: number;
+          p_price_per_unit: number;
+          p_quantity_stock_units?: number;
+        };
+        Returns: Json;
+      };
+      save_work_order: {
+        Args: {
+          p_payload: Json;
+        };
+        Returns: string;
+      };
     };
     Enums: {
       [_ in never]: never;

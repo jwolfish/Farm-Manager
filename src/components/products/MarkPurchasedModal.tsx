@@ -1,21 +1,32 @@
 import { useState } from 'react';
 import { X, Check } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
-import { queueCascadeTask } from '../../lib/backgroundTasks';
+import { queueCascadeTask, type TaskType, type CascadeTaskData } from '../../lib/backgroundTasks';
+import { convertUnits, describeConversionFailure } from '../../lib/unitConversions';
 import { useAuth } from '../../contexts/AuthContext';
-import { useFarm } from '../../contexts/FarmContext';
 import type { ShoppingLine } from './ShoppingListsTab';
+
+/** What `record_purchase` hands back so the client can queue the cascade. */
+interface CascadeTarget {
+  task_type: TaskType;
+  entity_id: string;
+  entity_type: CascadeTaskData['entityType'];
+  season_id: string;
+}
 
 interface Props {
   line: ShoppingLine;
+  /**
+   * Retained for the caller's convenience. `record_purchase` resolves the
+   * season from the line's own shopping list, so it is no longer passed in.
+   */
   seasonId: string;
   onClose: () => void;
   onComplete: () => void;
 }
 
-export function MarkPurchasedModal({ line, seasonId, onClose, onComplete }: Props) {
+export function MarkPurchasedModal({ line, onClose, onComplete }: Props) {
   const { user } = useAuth();
-  const { activeFarmId, effectiveUserId } = useFarm();
   const [quantity, setQuantity] = useState(
     String(line.purchased_quantity ?? line.adjusted_quantity ?? line.needed_quantity)
   );
@@ -29,7 +40,7 @@ export function MarkPurchasedModal({ line, seasonId, onClose, onComplete }: Prop
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!user || !activeFarmId) return;
+    if (!user) return;
 
     const qty = parseFloat(quantity);
     const ppu = parseFloat(price);
@@ -46,110 +57,68 @@ export function MarkPurchasedModal({ line, seasonId, onClose, onComplete }: Prop
     setSaving(true);
     setError(null);
 
-    try {
-      // 1. Write inventory ledger entry (chemical and seed only)
-      if (line.product_category !== 'fertilizer' && line.master_product_id) {
-        if (isAlreadyPurchased && line.purchased_quantity != null) {
-          // Reverse previous purchase entry
-          await supabase.from('inventory_ledger_entries').insert({
-            farm_id: activeFarmId,
-            master_product_id: line.master_product_id,
-            product_category: line.product_category,
-            entry_type: 'reversal',
-            quantity_delta: -line.purchased_quantity,
-            source_type: 'shopping_list_line',
-            source_id: line.id,
-            note: 'Purchase edit reversal',
-            created_by: user.id,
-          });
-        }
-        // Write new purchase entry
-        await supabase.from('inventory_ledger_entries').insert({
-          farm_id: activeFarmId,
-          master_product_id: line.master_product_id,
-          product_category: line.product_category,
-          entry_type: 'purchase',
-          quantity_delta: qty,
-          source_type: 'shopping_list_line',
-          source_id: line.id,
-          note: `Purchased from ${line.supplier || 'supplier'}`,
-          created_by: user.id,
-        });
+    // The ledger is kept in the product's own stock unit. Convert here, using
+    // the single client implementation, and refuse rather than post a wrong
+    // quantity (WI-11). Usually a no-op: generation stamps the line with the
+    // master product's unit.
+    let stockQuantity = qty;
+    if (line.master_product_id) {
+      const { data: product, error: productErr } = await supabase
+        .from('master_products')
+        .select('unit_type')
+        .eq('id', line.master_product_id)
+        .maybeSingle();
+
+      if (productErr || !product) {
+        setError('Could not read the inventory product. Nothing was changed.');
+        setSaving(false);
+        return;
       }
 
-      // 2. Update the shopping list line
-      const { error: lineErr } = await supabase
-        .from('shopping_list_lines')
-        .update({
-          purchased_quantity: qty,
-          purchased_price_per_unit: ppu,
-          status: 'purchased',
-          purchased_at: new Date().toISOString(),
-        })
-        .eq('id', line.id);
-
-      if (lineErr) throw lineErr;
-
-      // 3. Update season-scoped product price and trigger cascade
-      const uid = effectiveUserId ?? user.id;
-      if (line.product_category === 'chemical') {
-        // Find the individual_chemicals row linked to this master product
-        const { data: chemRow } = await supabase
-          .from('individual_chemicals')
-          .select('id')
-          .eq('season_id', seasonId)
-          .eq('user_id', uid)
-          .eq('master_product_id', line.master_product_id)
-          .maybeSingle();
-
-        if (chemRow) {
-          await supabase
-            .from('individual_chemicals')
-            .update({ price_per_unit: ppu })
-            .eq('id', chemRow.id);
-          await queueCascadeTask(user.id, seasonId, 'cascade_chemical_update', chemRow.id, 'chemical');
-        }
-      } else if (line.product_category === 'seed') {
-        const { data: seedRow } = await supabase
-          .from('seed_varieties')
-          .select('id')
-          .eq('season_id', seasonId)
-          .eq('user_id', uid)
-          .eq('master_product_id', line.master_product_id)
-          .maybeSingle();
-
-        if (seedRow) {
-          await supabase
-            .from('seed_varieties')
-            .update({ price_per_bag: ppu })
-            .eq('id', seedRow.id);
-          await queueCascadeTask(user.id, seasonId, 'cascade_product_update', seedRow.id, 'product');
-        }
-      } else if (line.product_category === 'fertilizer') {
-        // Fertilizer: find by name in this season since there's no master_product_id
-        const { data: fertRow } = await supabase
-          .from('fertilizer_products')
-          .select('id')
-          .eq('season_id', seasonId)
-          .eq('user_id', uid)
-          .eq('product_name', line.product_name)
-          .maybeSingle();
-
-        if (fertRow) {
-          await supabase
-            .from('fertilizer_products')
-            .update({ price_per_unit: ppu })
-            .eq('id', fertRow.id);
-          await queueCascadeTask(user.id, seasonId, 'cascade_product_update', fertRow.id, 'product');
-        }
+      const converted = convertUnits(line.unit_type, product.unit_type, qty);
+      if (!converted.ok) {
+        setError(`Cannot record this purchase — ${describeConversionFailure(converted)}.`);
+        setSaving(false);
+        return;
       }
-
-      onComplete();
-    } catch (err: any) {
-      setError(err.message || 'Failed to mark as purchased.');
-    } finally {
-      setSaving(false);
+      stockQuantity = converted.value;
     }
+
+    // One RPC, one transaction: reversal of any earlier purchase for this line,
+    // the new purchase, the line update and the season price (WI-10).
+    const { data, error: rpcErr } = await supabase.rpc('record_purchase', {
+      p_line_id: line.id,
+      p_quantity: qty,
+      p_price_per_unit: ppu,
+      p_quantity_stock_units: stockQuantity,
+    });
+
+    if (rpcErr) {
+      // The modal stays open so the entry is not lost.
+      setError(rpcErr.message || 'Failed to mark as purchased. Nothing was changed.');
+      setSaving(false);
+      return;
+    }
+
+    // Only once the write has committed do we queue the recalculation.
+    const cascade = (data as { cascade: CascadeTarget | null } | null)?.cascade ?? null;
+    if (cascade && user) {
+      try {
+        await queueCascadeTask(
+          user.id,
+          cascade.season_id,
+          cascade.task_type,
+          cascade.entity_id,
+          cascade.entity_type
+        );
+      } catch (err) {
+        // The purchase is saved; only the recalculation failed to queue.
+        console.error('Failed to queue cascade after purchase:', err);
+      }
+    }
+
+    setSaving(false);
+    onComplete();
   };
 
   return (

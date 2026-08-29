@@ -5,6 +5,7 @@ import {
   Eye,
   CheckCircle2,
   RotateCcw,
+  Loader2,
   AlertTriangle,
   ChevronDown,
   ChevronRight,
@@ -40,6 +41,8 @@ interface Props {
   onApply: (wo: SavedWorkOrder) => void;
   onUnapply: (wo: SavedWorkOrder) => void;
   onGenerateSprayLogs: (selected: SavedWorkOrder[]) => void;
+  /** Work order whose apply/unapply is in flight, if any (WI-9). */
+  applyingId?: string | null;
 }
 
 function fmtAcres(n: number) {
@@ -51,7 +54,7 @@ function fmtDate(dateStr: string | null) {
   return new Date(dateStr).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
-export function SavedWorkOrdersList({ workOrders, loading, onView, onDelete, onApply, onUnapply, onGenerateSprayLogs }: Props) {
+export function SavedWorkOrdersList({ workOrders, loading, onView, onDelete, onApply, onUnapply, onGenerateSprayLogs, applyingId = null }: Props) {
   const [expanded, setExpanded] = useState(true);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -207,23 +210,34 @@ export function SavedWorkOrdersList({ workOrders, loading, onView, onDelete, onA
                         <Eye className="w-4 h-4" />
                       </button>
 
-                      {wo.status === 'draft' && (
+                      {/* An unapplied order can be applied again (WI-9). */}
+                      {(wo.status === 'draft' || wo.status === 'unapplied') && (
                         <button
                           onClick={() => onApply(wo)}
-                          className="p-1.5 rounded-lg text-gray-400 hover:text-emerald-600 hover:bg-emerald-50 transition-colors"
-                          title="Mark applied (deduct from inventory)"
+                          disabled={applyingId !== null}
+                          className="p-1.5 rounded-lg text-gray-400 hover:text-emerald-600 hover:bg-emerald-50 transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:text-gray-400 disabled:hover:bg-transparent"
+                          title={wo.status === 'unapplied' ? 'Re-apply (deduct from inventory)' : 'Mark applied (deduct from inventory)'}
                         >
-                          <CheckCircle2 className="w-4 h-4" />
+                          {applyingId === wo.id ? (
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                          ) : (
+                            <CheckCircle2 className="w-4 h-4" />
+                          )}
                         </button>
                       )}
 
                       {wo.status === 'applied' && (
                         <button
                           onClick={() => onUnapply(wo)}
-                          className="p-1.5 rounded-lg text-gray-400 hover:text-amber-600 hover:bg-amber-50 transition-colors"
+                          disabled={applyingId !== null}
+                          className="p-1.5 rounded-lg text-gray-400 hover:text-amber-600 hover:bg-amber-50 transition-colors disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:text-gray-400 disabled:hover:bg-transparent"
                           title="Unapply (reverse inventory deduction)"
                         >
-                          <RotateCcw className="w-4 h-4" />
+                          {applyingId === wo.id ? (
+                            <Loader2 className="w-4 h-4 animate-spin" />
+                          ) : (
+                            <RotateCcw className="w-4 h-4" />
+                          )}
                         </button>
                       )}
 

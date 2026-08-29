@@ -123,6 +123,8 @@ export function useSprayPlanner(currentSeasonId: string | null, effectiveUserId:
   const [savedLoading, setSavedLoading] = useState(false);
   const [inventoryMap, setInventoryMap] = useState<Map<string, { masterProductId: string; onHand: number; unitType: string }>>(new Map());
   const [savingProgramId, setSavingProgramId] = useState<string | null>(null);
+  // Work order id whose apply/unapply is currently in flight.
+  const [applyingId, setApplyingId] = useState<string | null>(null);
 
   const resultsRef = useRef<HTMLDivElement>(null);
   const loadedSeasonRef = useRef<string | null>(null);
@@ -538,7 +540,6 @@ export function useSprayPlanner(currentSeasonId: string | null, effectiveUserId:
       cropType: wo.cropType,
       totalAcreage: wo.effectiveAcres,
       sprayVolumeGalPerAcre: wo.sprayVolumeGalPerAcre,
-      createdBy: effectiveUserId,
       fields: wo.fields.map((f) => ({
         fieldId: f.fieldId,
         fieldName: f.fieldName,
@@ -559,7 +560,11 @@ export function useSprayPlanner(currentSeasonId: string | null, effectiveUserId:
       }),
     };
 
-    await saveWorkOrder(payload);
+    const result = await saveWorkOrder(payload);
+    if (!result.ok) {
+      // Previously this failed silently and still looked like a success.
+      setActionError(result.message);
+    }
     await loadSavedWorkOrders();
     setSavingProgramId(null);
   };
@@ -569,27 +574,33 @@ export function useSprayPlanner(currentSeasonId: string | null, effectiveUserId:
     await loadSavedWorkOrders();
   };
 
-  const handleApplyWorkOrder = async (wo: SavedWorkOrder) => {
-    if (!effectiveUserId) return;
+  // One in-flight apply/unapply at a time, per work order. The RPC is the real
+  // guard against double-posting; this stops the second click ever being sent
+  // and gives the user a spinner instead of silence (WI-9).
+  const runInventoryAction = async (
+    wo: SavedWorkOrder,
+    action: (id: string, lines: SavedWorkOrder['lines']) => Promise<{ ok: true } | { ok: false; message: string }>
+  ) => {
+    if (applyingId !== null) return;
     setActionError(null);
-    const result = await applyWorkOrder(wo.id, wo.farm_id, effectiveUserId, wo.lines);
-    if (result.ok) {
-      await loadSavedWorkOrders();
-    } else {
-      setActionError(result.message);
+    setApplyingId(wo.id);
+    try {
+      const result = await action(wo.id, wo.lines);
+      if (result.ok) {
+        await loadSavedWorkOrders();
+      } else {
+        setActionError(result.message);
+        // The status may have moved underneath us; show the truth either way.
+        await loadSavedWorkOrders();
+      }
+    } finally {
+      setApplyingId(null);
     }
   };
 
-  const handleUnapplyWorkOrder = async (wo: SavedWorkOrder) => {
-    if (!effectiveUserId) return;
-    setActionError(null);
-    const result = await unapplyWorkOrder(wo.id, wo.farm_id, effectiveUserId, wo.lines);
-    if (result.ok) {
-      await loadSavedWorkOrders();
-    } else {
-      setActionError(result.message);
-    }
-  };
+  const handleApplyWorkOrder = (wo: SavedWorkOrder) => runInventoryAction(wo, applyWorkOrder);
+
+  const handleUnapplyWorkOrder = (wo: SavedWorkOrder) => runInventoryAction(wo, unapplyWorkOrder);
 
   // --- Inventory fetch ---
 
@@ -663,6 +674,7 @@ export function useSprayPlanner(currentSeasonId: string | null, effectiveUserId:
     handleApplyWorkOrder,
     handleUnapplyWorkOrder,
     savingProgramId,
+    applyingId,
     // Inventory
     inventoryMap,
     refreshInventory,

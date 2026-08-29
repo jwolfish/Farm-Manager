@@ -167,6 +167,79 @@ auto-print. The pages are same-origin blobs, so there is no tabnabbing risk to m
 **Deferred:** edge-function CORS (SEC-8) moved to Round 5, when SEC-3 rewrites and
 redeploys that function anyway.
 
+### Round 4 — branch `round-4-transactional-rpcs` — WI-9, WI-10, WI-13
+
+Three migrations, all applied to the live database and verified there. Every RPC is
+`SECURITY DEFINER` with `search_path = public, pg_catalog`, revoked from PUBLIC and from
+`anon`, granted to `authenticated` only — confirmed via `has_function_privilege`, not by
+reading the grant statements.
+
+**New farm-scoped helper.** `can_edit_farm(uuid)` checks `farms.owner_user_id` or an
+accepted `team_members` row **for that specific farm** with role `editor`/`admin`. This is
+deliberately stricter than the existing `is_editor_of(owner_id)`, which ignores
+`team_members.farm_id` and therefore grants access to every farm an owner has (SEC-5).
+The new RPCs do not inherit that hole; WI-5 brings the rest of the policies up to it.
+
+**WI-9, apply/unapply — CLOSED.** `apply_work_order(uuid, jsonb)` and
+`unapply_work_order(uuid, jsonb)` take a row lock on the work order, assert the expected
+status, write every ledger row and update the status in one transaction. Apply now runs
+from `draft` **or** `unapplied`, and the UI renders the button for both. The button
+disables while a mutation is in flight and shows a spinner.
+
+**Deliberate deviation from the PRD.** The proposed
+`CREATE UNIQUE INDEX work_order_ledger_once ON inventory_ledger_entries (source_id,
+master_product_id, entry_type) WHERE source_type='work_order'` was **not** created,
+because it contradicts WI-9's own acceptance criterion that apply → unapply → apply must
+work: the second apply writes a second `consumption` row for the same pair and the index
+would reject it. Deleting ledger rows on unapply would satisfy the index but destroy the
+audit trail. The real protection is `SELECT ... FOR UPDATE` plus the status assertion in
+one transaction, which was tested directly. A hard backstop closing the direct-INSERT
+path is proposed separately (see Open items).
+
+**WI-10, purchases — CLOSED.** `record_purchase(uuid, numeric, numeric, numeric)` does the
+reversal, the new purchase, the line update and the season price update in one
+transaction, and returns the new on-hand plus the cascade target. The client queues the
+cascade only after the write commits. Rather than reconstructing the previous amount from
+`purchased_quantity`, it sums the ledger rows already attached to the line and reverses
+that exact total, so an edit always nets to the new quantity from any prior state.
+
+**Bug found while writing it.** The modal updated `seed_varieties.price_per_bag`. That
+column does not exist — it is `price_per_unit`. The update failed every time and the error
+was discarded, so **seed purchases have never updated the season price or produced a
+correct cascade**. This was visible in the TypeScript baseline as a TS2353 on
+`MarkPurchasedModal.tsx:124` and had been mis-read as ordinary type drift. Now fixed.
+
+**WI-13, save — CLOSED.** `save_work_order(jsonb)` inserts header, fields and lines in one
+transaction and returns the id. `created_by` is taken from `auth.uid()`, not the payload.
+The season is checked against the farm. The client surfaces failure instead of returning a
+valid-looking id.
+
+**Verified against the live database**, all inside transactions that were rolled back by
+raising at the end:
+
+| Attack / case | Result |
+|---|---|
+| Apply as owner | 1 consumption row, on-hand −5 |
+| Second apply (double-click) | Blocked `55000`, still exactly 1 consumption row |
+| Unapply | Status `unapplied`, on-hand back to 0 |
+| Second unapply | Blocked `55000` |
+| **Apply → unapply → re-apply** | Works; 3 ledger rows, net −5 (the case the PRD index would have broken) |
+| Zero / negative quantity | Rejected `22023` |
+| Stranger applies | Blocked `42501`, status unchanged |
+| Anonymous applies | Blocked `42501` |
+| Purchase 100, then edit to 60 | Net **+60**, never +160 |
+| Edit again to 25 | Net +25 |
+| Purchase of 4 qt against a product held in gal | +1 gal |
+| Stranger / anonymous purchase | Blocked `42501`, on-hand unchanged |
+| Save work order | 2 fields + 1 line, `created_by` = caller |
+| Spoofed `created_by` in payload | Ignored; caller recorded |
+| Save with a malformed line | Failed `22P02`, **0 orphan work orders** |
+| Save with no lines | Rejected `22023` |
+| Stranger / anonymous save | Blocked `42501` |
+
+Nothing persisted: leftover fixtures, work-order ledger rows and on-hand were all
+re-checked at zero afterwards.
+
 ## Open items
 
 **Pre-existing, unrelated:** `database.types.ts` declares `set_active_season` with two
@@ -259,13 +332,22 @@ the deployed copy does not. Round 6 — PERF-1 through PERF-5 and remaining debt
 
 All figures below are measured, not estimated.
 
-| Metric | Review baseline | `main` today | After Round 3 |
+| Metric | Review baseline | After Round 3 | After Round 4 |
 |---|---|---|---|
-| TypeScript errors | 103 | 103 | **103** (identical error set) |
-| ESLint | 136 errors, 28 warnings | 136 / 28 | **134 errors, 28 warnings** |
-| Tests | 0 | 0 | **178 passing, 4 files** |
+| TypeScript errors | 103 | 103 (identical set) | **99** |
+| ESLint | 136 errors, 28 warnings | 134 / 28 | **134 / 28** |
+| Tests | 0 | 178 passing, 4 files | **206 passing, 5 files** |
 | CI | none | none | none — still WI-21 |
-| Main JS chunk | 1,747 kB (465 kB gz) | 1,748.98 kB (465.70 kB gz) | **1,754.43 kB (467.56 kB gz)** |
+| Main JS chunk | 1,747 kB (465 kB gz) | 1,754.43 kB (467.56 kB gz) | **1,751.97 kB (467.39 kB gz)** |
+
+**The TypeScript baseline dropped 103 → 99.** All four were in `MarkPurchasedModal.tsx`
+and all four were eliminated by replacing its hand-rolled write sequence with the
+`record_purchase` RPC: the `price_per_bag` TS2353 described above, an associated TS2769
+overload failure, and two TS2345s where `string | null` was passed where `string` was
+required. No error was suppressed and none was introduced — the remaining 99 are a strict
+subset of the previous 103, compared file-by-file with line positions stripped.
+
+The bundle shrank 2.46 kB because the modal's inline ledger logic moved into the database.
 
 **The bundle grew by 5.45 kB raw / 1.86 kB gzipped**, measured against `main` built on the
 same machine with the same dependency tree. That is the new code: the unit registry and
