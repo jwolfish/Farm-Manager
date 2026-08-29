@@ -1,3 +1,5 @@
+import { esc } from '../htmlEscape';
+
 export function exportElementToPrint(elementId: string, title: string) {
   const el = document.getElementById(elementId);
   if (!el) return;
@@ -17,7 +19,7 @@ export function exportElementToPrint(elementId: string, title: string) {
   const html = `<!DOCTYPE html>
 <html>
 <head>
-  <title>${title}</title>
+  <title>${esc(title)}</title>
   <style>
     ${styles}
     body { padding: 20px; font-family: sans-serif; }

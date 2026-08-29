@@ -1,5 +1,6 @@
 import { SeasonSummary, CostBreakdown } from '../reportTypes';
 import { fmt, fmtAcre, openPDF, COLORS, COST_CATEGORY_LABELS } from './pdfFormatters';
+import { esc } from '../htmlEscape';
 import { getPDFStyles } from './pdfStyles';
 import { buildBarChartSVG, buildPieChartSVG } from './pdfCharts';
 
@@ -107,7 +108,7 @@ export function exportCostBreakdownPDF(
 <html>
 <head>
   <meta charset="utf-8"/>
-  <title>Cost Breakdown Comparison${farmName ? ' — ' + farmName : ''}</title>
+  <title>Cost Breakdown Comparison${farmName ? ' — ' + esc(farmName) : ''}</title>
   <style>${getPDFStyles()}</style>
 </head>
 <body>
@@ -124,22 +125,22 @@ export function exportCostBreakdownPDF(
         </div>
         <span class="app-name">Farm Tracker</span>
       </div>
-      ${farmName ? `<div class="farm-name">${farmName}</div>` : ''}
+      ${farmName ? `<div class="farm-name">${esc(farmName)}</div>` : ''}
       <h1>Cost Breakdown Comparison</h1>
     </div>
     <div class="report-header-right">
       <div class="generated">Generated ${now}</div>
-      <div class="generated">Comparing ${sA.seasonName} vs ${sB.seasonName}</div>
+      <div class="generated">Comparing ${esc(sA.seasonName)} vs ${esc(sB.seasonName)}</div>
     </div>
   </div>
 
   <div class="stat-grid">
     <div class="stat-card">
-      <div class="label">${sA.seasonName} Total Cost/Ac</div>
+      <div class="label">${esc(sA.seasonName)} Total Cost/Ac</div>
       <div class="value red">${fmtAcre(totalA)}</div>
     </div>
     <div class="stat-card">
-      <div class="label">${sB.seasonName} Total Cost/Ac</div>
+      <div class="label">${esc(sB.seasonName)} Total Cost/Ac</div>
       <div class="value red">${fmtAcre(totalB)}</div>
     </div>
     <div class="stat-card">
@@ -151,7 +152,7 @@ export function exportCostBreakdownPDF(
   ${alertSection}
 
   <div class="section">
-    <div class="section-title">Cost Category Comparison — ${sA.seasonName} vs ${sB.seasonName}</div>
+    <div class="section-title">Cost Category Comparison — ${esc(sA.seasonName)} vs ${esc(sB.seasonName)}</div>
     <div class="chart-wrap">${chartSVG}</div>
   </div>
 
@@ -169,8 +170,8 @@ export function exportCostBreakdownPDF(
       <thead>
         <tr>
           <th>Category</th>
-          <th class="num">${sA.seasonName}</th>
-          <th class="num">${sB.seasonName}</th>
+          <th class="num">${esc(sA.seasonName)}</th>
+          <th class="num">${esc(sB.seasonName)}</th>
           <th class="num">Change</th>
           <th class="num">% Change</th>
         </tr>

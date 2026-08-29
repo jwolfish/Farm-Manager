@@ -1,6 +1,7 @@
 import { FieldPerformanceSummary, SeasonSummary } from '../reportTypes';
 import { CropType } from '../database.types';
 import { fmt, fmtAcre, openPDF, pdfHeader, CROP_LABELS_PDF, CROP_COLORS_PDF, COLORS } from './pdfFormatters';
+import { esc } from '../htmlEscape';
 import { getPDFStyles } from './pdfStyles';
 import { buildHorizontalBarSVG } from './pdfCharts';
 
@@ -45,7 +46,7 @@ export function exportFieldYieldRankingPDF(
     return `
       <tr>
         <td class="bold">${i + 1}</td>
-        <td class="bold">${f.fieldName}</td>
+        <td class="bold">${esc(f.fieldName)}</td>
         <td>${CROP_LABELS_PDF[f.cropType]}</td>
         <td class="num">${f.acres.toFixed(1)}</td>
         <td class="num bold">${(f.yieldPerAcre ?? 0).toFixed(1)}</td>
@@ -58,7 +59,7 @@ export function exportFieldYieldRankingPDF(
 <html>
 <head>
   <meta charset="utf-8"/>
-  <title>Field Yield Ranking${farmName ? ' — ' + farmName : ''}</title>
+  <title>Field Yield Ranking${farmName ? ' — ' + esc(farmName) : ''}</title>
   <style>${getPDFStyles()}</style>
 </head>
 <body>
@@ -68,7 +69,7 @@ export function exportFieldYieldRankingPDF(
   <div class="stat-grid">
     <div class="stat-card">
       <div class="label">Top Field</div>
-      <div class="value blue" style="font-size:16px">${topField.fieldName}</div>
+      <div class="value blue" style="font-size:16px">${esc(topField.fieldName)}</div>
       <div style="font-size:12px;color:#374151;margin-top:2px">${(topField.yieldPerAcre ?? 0).toFixed(1)} bu/ac</div>
     </div>
     <div class="stat-card">
@@ -77,7 +78,7 @@ export function exportFieldYieldRankingPDF(
     </div>
     <div class="stat-card">
       <div class="label">Bottom Field</div>
-      <div class="value" style="font-size:16px;color:#d97706">${bottomField.fieldName}</div>
+      <div class="value" style="font-size:16px;color:#d97706">${esc(bottomField.fieldName)}</div>
       <div style="font-size:12px;color:#374151;margin-top:2px">${(bottomField.yieldPerAcre ?? 0).toFixed(1)} bu/ac</div>
     </div>
   </div>
@@ -147,7 +148,7 @@ export function exportFieldCostComparisonPDF(
     const diff = f.costPerAcre - avgCost;
     return `
       <tr>
-        <td class="bold">${f.fieldName}</td>
+        <td class="bold">${esc(f.fieldName)}</td>
         <td>${CROP_LABELS_PDF[f.cropType]}</td>
         <td class="num">${f.acres.toFixed(1)}</td>
         <td class="num">${fmtAcre(f.costBreakdown.seed)}</td>
@@ -163,7 +164,7 @@ export function exportFieldCostComparisonPDF(
 <html>
 <head>
   <meta charset="utf-8"/>
-  <title>Field Cost Comparison${farmName ? ' — ' + farmName : ''}</title>
+  <title>Field Cost Comparison${farmName ? ' — ' + esc(farmName) : ''}</title>
   <style>${getPDFStyles()}</style>
 </head>
 <body>
@@ -173,7 +174,7 @@ export function exportFieldCostComparisonPDF(
   <div class="stat-grid">
     <div class="stat-card">
       <div class="label">Lowest Cost Field</div>
-      <div class="value green" style="font-size:16px">${lowestField.fieldName}</div>
+      <div class="value green" style="font-size:16px">${esc(lowestField.fieldName)}</div>
       <div style="font-size:12px;color:#374151;margin-top:2px">${fmtAcre(lowestField.costPerAcre)}</div>
     </div>
     <div class="stat-card">
@@ -182,7 +183,7 @@ export function exportFieldCostComparisonPDF(
     </div>
     <div class="stat-card">
       <div class="label">Highest Cost Field</div>
-      <div class="value red" style="font-size:16px">${highestField.fieldName}</div>
+      <div class="value red" style="font-size:16px">${esc(highestField.fieldName)}</div>
       <div style="font-size:12px;color:#374151;margin-top:2px">${fmtAcre(highestField.costPerAcre)}</div>
     </div>
   </div>
@@ -253,7 +254,7 @@ export function exportFieldROIPDF(
     const isProfit = (f.netProfitPerAcre ?? 0) >= 0;
     return `
       <tr>
-        <td class="bold">${f.fieldName}</td>
+        <td class="bold">${esc(f.fieldName)}</td>
         <td>${CROP_LABELS_PDF[f.cropType]}</td>
         <td class="num">${f.acres.toFixed(1)}</td>
         <td class="num green">${f.revenuePerAcre !== null ? fmtAcre(f.revenuePerAcre) : '—'}</td>
@@ -267,7 +268,7 @@ export function exportFieldROIPDF(
 <html>
 <head>
   <meta charset="utf-8"/>
-  <title>Field ROI &amp; Net Profit${farmName ? ' — ' + farmName : ''}</title>
+  <title>Field ROI &amp; Net Profit${farmName ? ' — ' + esc(farmName) : ''}</title>
   <style>${getPDFStyles()}</style>
 </head>
 <body>

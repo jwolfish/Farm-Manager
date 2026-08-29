@@ -1,5 +1,6 @@
 import { SeasonSummary } from '../reportTypes';
 import { fmt, fmtAcre, openPDF } from './pdfFormatters';
+import { esc } from '../htmlEscape';
 import { COLORS } from './pdfFormatters';
 import { getPDFStyles } from './pdfStyles';
 import { buildBarChartSVG } from './pdfCharts';
@@ -29,7 +30,7 @@ export function exportYearOverYearPDF(data: SeasonSummary[], farmName?: string |
     const isProfit = s.totalNetProfit >= 0;
     return `
       <tr>
-        <td class="bold">${s.seasonName}</td>
+        <td class="bold">${esc(s.seasonName)}</td>
         <td class="num">${s.totalAcres.toLocaleString()}</td>
         <td class="num green">${fmtAcre(revAcre)}</td>
         <td class="num red">${fmtAcre(costAcre)}</td>
@@ -47,7 +48,7 @@ export function exportYearOverYearPDF(data: SeasonSummary[], farmName?: string |
       const cropLabel = c.cropType.charAt(0).toUpperCase() + c.cropType.slice(1);
       return `
         <tr>
-          <td>${s.seasonName}</td>
+          <td>${esc(s.seasonName)}</td>
           <td class="bold">${cropLabel}</td>
           <td class="num">${c.acres.toLocaleString()}</td>
           <td class="num green">${fmtAcre(c.revenuePerAcre)}</td>
@@ -64,7 +65,7 @@ export function exportYearOverYearPDF(data: SeasonSummary[], farmName?: string |
 <html>
 <head>
   <meta charset="utf-8"/>
-  <title>Year-Over-Year Profit Summary${farmName ? ' — ' + farmName : ''}</title>
+  <title>Year-Over-Year Profit Summary${farmName ? ' — ' + esc(farmName) : ''}</title>
   <style>${getPDFStyles()}</style>
 </head>
 <body>
@@ -81,7 +82,7 @@ export function exportYearOverYearPDF(data: SeasonSummary[], farmName?: string |
         </div>
         <span class="app-name">Farm Tracker</span>
       </div>
-      ${farmName ? `<div class="farm-name">${farmName}</div>` : ''}
+      ${farmName ? `<div class="farm-name">${esc(farmName)}</div>` : ''}
       <h1>Year-Over-Year Profit Summary</h1>
     </div>
     <div class="report-header-right">

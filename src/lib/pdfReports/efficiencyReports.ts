@@ -1,6 +1,7 @@
 import { FieldPerformanceSummary, SeasonSummary } from '../reportTypes';
 import { CropType } from '../database.types';
 import { fmt, fmtAcre, openPDF, pdfHeader, CROP_LABELS_PDF, COLORS } from './pdfFormatters';
+import { esc } from '../htmlEscape';
 import { getPDFStyles } from './pdfStyles';
 import { buildHorizontalBarSVG } from './pdfCharts';
 
@@ -46,14 +47,14 @@ export function exportCostPerBushelPDF(
     const margin = rpb != null ? rpb - cpb : null;
     const isAboveAvg = cpb > avgCpb;
     return `<tr>
-      <td class="bold">${f.fieldName}</td>
+      <td class="bold">${esc(f.fieldName)}</td>
       <td>${CROP_LABELS_PDF[f.cropType]}</td>
       <td class="num">${f.acres.toFixed(1)}</td>
       <td class="num">${f.yieldPerAcre!.toFixed(1)} bu</td>
-      <td class="num">$${f.costPerAcre.toFixed(2)}/ac</td>
-      <td class="num" style="color:${isAboveAvg ? '#dc2626' : '#ea580c'};font-weight:600">$${cpb.toFixed(2)}</td>
-      <td class="num green">${rpb != null ? `$${rpb.toFixed(2)}` : '—'}</td>
-      <td class="num ${margin == null ? '' : margin >= 0 ? 'blue' : 'red'}">${margin != null ? `$${margin >= 0 ? '' : '-'}${Math.abs(margin).toFixed(2)}` : '—'}</td>
+      <td class="num">${f.costPerAcre.toFixed(2)}/ac</td>
+      <td class="num" style="color:${isAboveAvg ? '#dc2626' : '#ea580c'};font-weight:600">${cpb.toFixed(2)}</td>
+      <td class="num green">${rpb != null ? `${rpb.toFixed(2)}` : '—'}</td>
+      <td class="num ${margin == null ? '' : margin >= 0 ? 'blue' : 'red'}">${margin != null ? `${margin >= 0 ? '' : '-'}${Math.abs(margin).toFixed(2)}` : '—'}</td>
     </tr>`;
   }).join('');
 
@@ -67,7 +68,7 @@ export function exportCostPerBushelPDF(
 <html>
 <head>
   <meta charset="utf-8"/>
-  <title>Cost Per Bushel${farmName ? ' — ' + farmName : ''}</title>
+  <title>Cost Per Bushel${farmName ? ' — ' + esc(farmName) : ''}</title>
   <style>${getPDFStyles()}</style>
 </head>
 <body>
@@ -81,7 +82,7 @@ export function exportCostPerBushelPDF(
     </div>
     <div class="stat-card">
       <div class="label">Most Efficient Field</div>
-      <div class="value green" style="font-size:16px">${lowestCpb.fieldName}</div>
+      <div class="value green" style="font-size:16px">${esc(lowestCpb.fieldName)}</div>
     </div>
     <div class="stat-card">
       <div class="label">Profitable Fields</div>
@@ -165,11 +166,11 @@ export function exportInputEfficiencyPDF(
     const ratio = (f.revenuePerAcre ?? 0) / f.costPerAcre;
     const isEfficient = ratio >= 1;
     return `<tr>
-      <td class="bold">${f.fieldName}</td>
+      <td class="bold">${esc(f.fieldName)}</td>
       <td>${CROP_LABELS_PDF[f.cropType]}</td>
       <td class="num">${f.acres.toFixed(1)}</td>
-      <td class="num green">$${f.revenuePerAcre!.toFixed(2)}/ac</td>
-      <td class="num red">$${f.costPerAcre.toFixed(2)}/ac</td>
+      <td class="num green">${f.revenuePerAcre!.toFixed(2)}/ac</td>
+      <td class="num red">${f.costPerAcre.toFixed(2)}/ac</td>
       <td class="num" style="color:${isEfficient ? '#15803d' : '#dc2626'};font-weight:700">${ratio.toFixed(3)}x</td>
       <td class="num ${(f.netProfitPerAcre ?? 0) >= 0 ? 'blue' : 'red-neg'}">${f.netProfitPerAcre != null ? fmtAcre(f.netProfitPerAcre) : '—'}</td>
     </tr>`;
@@ -179,7 +180,7 @@ export function exportInputEfficiencyPDF(
 <html>
 <head>
   <meta charset="utf-8"/>
-  <title>Input Efficiency Ratio${farmName ? ' — ' + farmName : ''}</title>
+  <title>Input Efficiency Ratio${farmName ? ' — ' + esc(farmName) : ''}</title>
   <style>${getPDFStyles()}</style>
 </head>
 <body>
@@ -289,9 +290,9 @@ export function exportBreakEvenPDF(
       : 'Below B/E';
     const statusClass = status === 'Profitable' ? 'blue' : status === 'Marginal' ? '' : 'red';
     return `<tr>
-      <td class="bold">${f.fieldName}</td>
+      <td class="bold">${esc(f.fieldName)}</td>
       <td>${CROP_LABELS_PDF[f.cropType]}</td>
-      <td class="num">$${f.costPerAcre.toFixed(2)}/ac</td>
+      <td class="num">${f.costPerAcre.toFixed(2)}/ac</td>
       <td class="num">${f.yieldPerAcre!.toFixed(1)} bu/ac</td>
       <td class="num" style="color:#ea580c;font-weight:600">${f.bePrice != null ? `$${f.bePrice.toFixed(2)}/bu` : '—'}</td>
       <td class="num ${priceOk === true ? 'green' : priceOk === false ? 'red' : ''}">${f.actualPrice != null ? `$${f.actualPrice.toFixed(2)}/bu` : '—'}</td>
@@ -304,7 +305,7 @@ export function exportBreakEvenPDF(
 <html>
 <head>
   <meta charset="utf-8"/>
-  <title>Break-Even Analysis${farmName ? ' — ' + farmName : ''}</title>
+  <title>Break-Even Analysis${farmName ? ' — ' + esc(farmName) : ''}</title>
   <style>${getPDFStyles()}</style>
 </head>
 <body>

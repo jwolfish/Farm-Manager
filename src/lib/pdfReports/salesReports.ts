@@ -1,6 +1,7 @@
 import { SaleRecord, SeasonSummary } from '../reportTypes';
 import { CropType } from '../database.types';
 import { fmt, fmtBu, openPDF, pdfHeader, CROP_LABELS_PDF } from './pdfFormatters';
+import { esc } from '../htmlEscape';
 import { getPDFStyles } from './pdfStyles';
 import { buildBarChartSVG, buildPieChartSVG, buildHorizontalBarSVG } from './pdfCharts';
 
@@ -53,9 +54,9 @@ export function exportSalesByMonthPDF(
         <td>${dateLabel}</td>
         <td>${monthLabel}</td>
         <td>${CROP_LABELS_PDF[s.cropType]}</td>
-        <td>${s.destination || '—'}</td>
+        <td>${esc(s.destination || '—')}</td>
         <td class="num">${fmtBu(s.bushelsSold)}</td>
-        <td class="num">$${s.pricePerBushel.toFixed(3)}</td>
+        <td class="num">${s.pricePerBushel.toFixed(3)}</td>
         <td class="num green bold">${fmt(s.totalRevenue)}</td>
       </tr>`;
   }).join('');
@@ -64,7 +65,7 @@ export function exportSalesByMonthPDF(
 <html>
 <head>
   <meta charset="utf-8"/>
-  <title>Sales by Delivery Month${farmName ? ' — ' + farmName : ''}</title>
+  <title>Sales by Delivery Month${farmName ? ' — ' + esc(farmName) : ''}</title>
   <style>${getPDFStyles()}</style>
 </head>
 <body>
@@ -171,10 +172,10 @@ export function exportPricingPerformancePDF(
     const dateLabel = new Date(s.saleDate + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
     return `
       <tr>
-        <td>${s.seasonName}</td>
+        <td>${esc(s.seasonName)}</td>
         <td>${CROP_LABELS_PDF[s.cropType]}</td>
         <td>${dateLabel}</td>
-        <td>${s.destination || '—'}</td>
+        <td>${esc(s.destination || '—')}</td>
         <td class="num">${fmtBu(s.bushelsSold)}</td>
         <td class="num bold">$${s.pricePerBushel.toFixed(3)}</td>
         <td class="num ${diff >= 0 ? 'green' : 'red'}">${diff >= 0 ? '+' : ''}${diff.toFixed(3)}</td>
@@ -185,7 +186,7 @@ export function exportPricingPerformancePDF(
 <html>
 <head>
   <meta charset="utf-8"/>
-  <title>Pricing Performance${farmName ? ' — ' + farmName : ''}</title>
+  <title>Pricing Performance${farmName ? ' — ' + esc(farmName) : ''}</title>
   <style>${getPDFStyles()}</style>
 </head>
 <body>
@@ -278,7 +279,7 @@ export function exportBuyerBreakdownPDF(
     const avgPrice = b.totalBushels > 0 ? b.totalRevenue / b.totalBushels : 0;
     return `
       <tr>
-        <td class="bold">${b.destination}</td>
+        <td class="bold">${esc(b.destination)}</td>
         <td style="font-size:10px">${[...b.crops].map((c) => CROP_LABELS_PDF[c]).join(', ')}</td>
         <td class="num">${b.salesCount}</td>
         <td class="num">${fmtBu(b.totalBushels)}</td>
@@ -292,7 +293,7 @@ export function exportBuyerBreakdownPDF(
 <html>
 <head>
   <meta charset="utf-8"/>
-  <title>Buyer &amp; Destination Breakdown${farmName ? ' — ' + farmName : ''}</title>
+  <title>Buyer &amp; Destination Breakdown${farmName ? ' — ' + esc(farmName) : ''}</title>
   <style>${getPDFStyles()}</style>
 </head>
 <body>

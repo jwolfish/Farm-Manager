@@ -1,4 +1,5 @@
 import { CropType } from '../database.types';
+import { esc } from '../htmlEscape';
 import { CostBreakdown } from '../reportTypes';
 
 export const COST_CATEGORY_LABELS: Record<keyof CostBreakdown, string> = {
@@ -82,12 +83,12 @@ export function pdfHeader(title: string, farmName: string | null | undefined, su
         </div>
         <span class="app-name">Farm Tracker</span>
       </div>
-      ${farmName ? `<div class="farm-name">${farmName}</div>` : ''}
-      <h1>${title}</h1>
+      ${farmName ? `<div class="farm-name">${esc(farmName)}</div>` : ''}
+      <h1>${esc(title)}</h1>
     </div>
     <div class="report-header-right">
       <div class="generated">Generated ${now}</div>
-      <div class="generated">${subtitle}</div>
+      <div class="generated">${esc(subtitle)}</div>
     </div>
   </div>`;
 }

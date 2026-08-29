@@ -1,4 +1,5 @@
 import { COLORS, PIE_COLORS } from './pdfFormatters';
+import { esc } from '../htmlEscape';
 
 export function buildBarChartSVG(
   data: { label: string; values: { value: number; color: string; name: string }[] }[],
@@ -60,10 +61,10 @@ export function buildBarChartSVG(
     const labelY = paddingTop + chartH + 16;
     const words = group.label.split(' ');
     if (words.length > 1 && group.label.length > 10) {
-      svg += `<text x="${labelX}" y="${labelY}" text-anchor="middle" font-size="10" fill="${COLORS.textMuted}">${words[0]}</text>`;
-      svg += `<text x="${labelX}" y="${labelY + 12}" text-anchor="middle" font-size="10" fill="${COLORS.textMuted}">${words.slice(1).join(' ')}</text>`;
+      svg += `<text x="${labelX}" y="${labelY}" text-anchor="middle" font-size="10" fill="${COLORS.textMuted}">${esc(words[0])}</text>`;
+      svg += `<text x="${labelX}" y="${labelY + 12}" text-anchor="middle" font-size="10" fill="${COLORS.textMuted}">${esc(words.slice(1).join(' '))}</text>`;
     } else {
-      svg += `<text x="${labelX}" y="${labelY}" text-anchor="middle" font-size="10" fill="${COLORS.textMuted}">${group.label}</text>`;
+      svg += `<text x="${labelX}" y="${labelY}" text-anchor="middle" font-size="10" fill="${COLORS.textMuted}">${esc(group.label)}</text>`;
     }
   });
 
@@ -77,7 +78,7 @@ export function buildBarChartSVG(
     legendItems.forEach((item, i) => {
       const lx = legendStartX + i * 90;
       svg += `<rect x="${lx}" y="${legendY - 8}" width="10" height="10" fill="${item.color}" rx="2"/>`;
-      svg += `<text x="${lx + 14}" y="${legendY}" font-size="10" fill="${COLORS.textMuted}">${item.name}</text>`;
+      svg += `<text x="${lx + 14}" y="${legendY}" font-size="10" fill="${COLORS.textMuted}">${esc(item.name)}</text>`;
     });
   }
 
@@ -97,7 +98,7 @@ export function buildPieChartSVG(
 
   let svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${size}" height="${size + 40}" style="font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;">`;
   svg += `<rect width="${size}" height="${size + 40}" fill="white"/>`;
-  svg += `<text x="${cx}" y="18" text-anchor="middle" font-size="12" font-weight="600" fill="${COLORS.text}">${title}</text>`;
+  svg += `<text x="${cx}" y="18" text-anchor="middle" font-size="12" font-weight="600" fill="${COLORS.text}">${esc(title)}</text>`;
 
   if (total === 0) {
     svg += `<text x="${cx}" y="${cy}" text-anchor="middle" font-size="11" fill="${COLORS.textMuted}">No data</text>`;
@@ -139,7 +140,7 @@ export function buildPieChartSVG(
     const color = PIE_COLORS[i % PIE_COLORS.length];
     svg += `<rect x="${lx}" y="${ly - 8}" width="8" height="8" fill="${color}" rx="1"/>`;
     const label = item.name.length > 12 ? item.name.slice(0, 11) + '…' : item.name;
-    svg += `<text x="${lx + 11}" y="${ly}" font-size="9" fill="${COLORS.textMuted}">${label}</text>`;
+    svg += `<text x="${lx + 11}" y="${ly}" font-size="9" fill="${COLORS.textMuted}">${esc(label)}</text>`;
   });
 
   svg += `</svg>`;
@@ -170,7 +171,7 @@ export function buildHorizontalBarSVG(
     const barW = Math.max(2, (Math.abs(d.value) / maxVal) * chartW);
     svg += `<rect x="${paddingLeft}" y="${y}" width="${barW}" height="${barHeight}" fill="${d.color}" rx="2"/>`;
     const label = d.label.length > 16 ? d.label.slice(0, 15) + '…' : d.label;
-    svg += `<text x="${paddingLeft - 6}" y="${y + barHeight / 2 + 4}" text-anchor="end" font-size="10" fill="#6b7280">${label}</text>`;
+    svg += `<text x="${paddingLeft - 6}" y="${y + barHeight / 2 + 4}" text-anchor="end" font-size="10" fill="#6b7280">${esc(label)}</text>`;
     const valLabel = unit === '$' ? fmt(d.value) : `${d.value.toFixed(1)} ${unit}`;
     svg += `<text x="${paddingLeft + barW + 5}" y="${y + barHeight / 2 + 4}" font-size="10" fill="#374151">${valLabel}</text>`;
   });
