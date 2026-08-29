@@ -1,0 +1,106 @@
+# Farm Manager — working notes for Claude
+
+Farm management app for a row-crop operation: fields, seasons, cost templates, chemical
+and fertilizer programs, spray planning, inventory, sales and hedging, plus a PDF/CSV
+reporting suite. Built in Bolt; the owner is not a developer, so prefer small reviewable
+changes and explain trade-offs in plain language.
+
+## Stack
+
+- React 18 + TypeScript + Vite, Tailwind, lucide-react, recharts
+- Supabase: Postgres + RLS + Auth + Realtime, one Deno edge function
+  (`supabase/functions/process-cascade-task`)
+- jsPDF for some exports; other reports build HTML strings and open them as blob URLs
+- Supabase project ref: `wvccxjakqwqfmyewclue`
+
+## Current remediation work
+
+A full code review is in progress, executed one work item at a time. Read these before
+making changes — they explain what is broken, what has already been fixed, and why.
+
+@docs/Farm-Manager-Remediation-Status.md
+@docs/Farm-Manager-Remediation-PRD.md
+@docs/Farm-Manager-Code-Review-Summary.md
+
+The status doc is the source of truth for what is done. Update it when a round lands.
+
+## Known baseline — do not treat these as regressions you caused
+
+- `npx tsc --noEmit -p tsconfig.app.json` reports **103 errors**. Pre-existing.
+- `npx eslint .` reports **136 errors, 28 warnings**. Pre-existing.
+- `npx vite build` succeeds and emits a **1,747 kB** main chunk. Pre-existing.
+- There are **no tests** and **no CI**. Adding them is WI-19/WI-20/WI-21 in the PRD.
+
+If any of these numbers move, say so explicitly and account for the difference.
+
+## Guardrails learned the hard way
+
+These are real mistakes made during this work, not hypotheticals.
+
+1. **`$${` is correct.** In a template literal, `$${value}` renders a literal dollar sign
+   before an interpolation. It has been mistaken for a typo and stripped twice, silently
+   removing the currency symbol from every cost figure in the PDF reports. Never delete
+   the leading `$`.
+
+2. **Escape user data going into HTML, but not values that are already entities.**
+   Report HTML is opened as a same-origin blob URL, so unescaped names are an XSS vector.
+   `src/lib/htmlEscape.ts` exports `esc()`; every dynamic interpolation in
+   `src/lib/pdfReports/**` and `src/lib/exports/printExporter.ts` must go through it.
+   Do NOT wrap hardcoded literals that already contain `&amp;`, and do NOT escape
+   `${styles}` or `${el.outerHTML}` in `printExporter.ts` — that breaks printing.
+
+3. **`REVOKE ... FROM PUBLIC` is not enough on Supabase.** Supabase grants EXECUTE to
+   `anon` and `authenticated` via default privileges, so a new function stays callable
+   after revoking from PUBLIC. Revoke from the named roles explicitly, then verify with
+   `pg_proc.proacl` or `has_function_privilege`.
+
+4. **Every `SECURITY DEFINER` function needs `SET search_path = public, pg_catalog`** and
+   an explicit revoke. Check with the Supabase security advisor after any DDL.
+
+5. **One migration file per change.** A duplicated migration was written twice with two
+   timestamps; only one applied, and a from-scratch rebuild would fail because
+   `CREATE POLICY` has no `IF NOT EXISTS`. Check the migrations directory for a
+   near-identical file before adding one.
+
+6. **`src/lib/database.types.ts` is maintained by hand and has drifted** —
+   `set_active_season` is declared with two arguments but the function takes one. After
+   any migration, update it, and prefer regenerating over hand-editing.
+
+7. **Cost math exists twice.** `convertUnits`, `calculateCostWithConversion`,
+   `calculateFieldTotalCost` and both `recalculate*ProgramCost` functions are implemented
+   in `src/lib/` AND again in the edge function, which cannot import from `src/`. A fix
+   to one must be applied to the other until WI-27 consolidates them.
+
+8. **`convertUnits()` returns the input unconverted when it cannot find a factor.** Until
+   WI-11 lands, assume any cost or quantity crossing a unit boundary may be silently
+   wrong. Do not build new features on top of it.
+
+## Verifying your own work
+
+Bolt and Claude both fail the same way here: confident, plausible, incomplete. Prefer
+checks that can return "no" over judgement:
+
+```
+npx tsc --noEmit -p tsconfig.app.json   # must stay at 103 or drop
+npx eslint .                            # must stay at 136 or drop
+npx vite build                          # must succeed
+```
+
+For anything touching RLS, policies, or `SECURITY DEFINER` functions, a change is not
+verified until the attack it prevents has actually been attempted against the database
+and returned zero rows. Reading the policy and concluding it looks correct is not
+verification — an open policy and a closed one behave identically until attacked.
+
+When testing against real data, wrap setup and attack in `BEGIN; ... ROLLBACK;` so
+nothing persists. Watch for false negatives from empty tables: an `INSERT ... SELECT`
+with no source rows inserts nothing and fires no trigger, which reads as "allowed".
+
+## Conventions
+
+- Farm-scoped data hangs off `farms` → `seasons` → `fields`. `master_products` are
+  farm-scoped and persist across seasons; season-scoped product rows link to them via
+  `master_product_id`. That link must never cross a farm boundary — triggers enforce it.
+- `effectiveUserId` from `FarmContext` is the *owner's* id on a shared farm, not the
+  viewer's. Queries filtering on the viewer's `user_id` break collaboration.
+- Errors are frequently swallowed with `console.error` and no user-visible result. When
+  touching a write path, surface failures to the user.
