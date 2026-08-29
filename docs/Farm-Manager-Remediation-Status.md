@@ -169,21 +169,43 @@ redeploys that function anyway.
 
 ## Open items
 
-**CSV guard is too broad (regression from Round 2).** In `csvExporter.ts`, the check
-`'=+-@\t\r'.includes(s[0])` prefixes any value starting with `-`, including legitimate
-negative numbers. `FieldROI`, `YearOverYearProfit`, `CostBreakdownComparison` and
-`PricingPerformance` all export negative currency via `.toFixed(2)`, so negative net
-profit now exports as text and will not sort or sum in Excel. Fix: only prefix when the
-value is not a well-formed number:
-
-```js
-const RISKY = /^[=+\-@\t\r]/;
-if (RISKY.test(s) && !/^-?\d+(\.\d+)?$/.test(s)) s = "'" + s;
-```
-
 **Pre-existing, unrelated:** `database.types.ts` declares `set_active_season` with two
 arguments; the database function takes one. Evidence that the hand-maintained types have
 drifted (WI-30).
+
+### CSV negative-number regression — branch `fix-csv-negative-numbers` — CLOSED
+
+The Round 2 guard `'=+-@\t\r'.includes(s[0])` prefixed any value starting with `-`,
+including legitimate negative numbers, so negative net profit exported as text that Excel
+would not sort or sum.
+
+**The fix originally sketched in this document was itself incomplete.** It proposed
+`!/^-?\d+(\.\d+)?$/.test(s)` as the "is a number" test, which does not match
+`CostBreakdownComparison`'s `Change %` column — that exports `r.pct.toFixed(1) + '%'`,
+i.e. values like `-12.3%`. Those would have stayed broken. The shipped test is:
+
+```js
+const FORMULA_LEAD  = /^[=+\-@\t\r]/;
+const PLAIN_NUMBER  = /^[+-]?(\d{1,3}(,\d{3})*|\d+)(\.\d+)?%?$/;
+```
+
+so signs, thousands separators, decimals and a trailing percent are all recognised as
+numbers, while anything containing an operator (`-1+1`, `-2*3`, `=SUM(A1)`) or a cell
+reference (`-$A$1`) is still prefixed. A value passed as a JavaScript `number` skips the
+guard entirely, since a number cannot be a formula.
+
+Two small changes came with it: `\r` was added to the quoting condition (it was only
+checking `\n`), and the pure parts were split out as `escapeCsvValue` and
+`buildCsvContent` so they could be tested without a DOM.
+
+Verified: 28 new tests covering the exact output shapes of all four affected reports, the
+WI-7 injection payload, operator-bearing lookalikes such as `-1234.56+SUM(A1)`, header
+escaping, and CRLF endings. Full suite 206 passing; typecheck 103; lint 134/28; build
+succeeds at 1,754.57 kB (467.64 kB gz), 0.14 kB above Round 3.
+
+This closes the last open item from WI-7. **Branched from `round-3-unit-conversion`**
+rather than `main`, to avoid a merge conflict in this document; merge Round 3 first, or
+ask for it to be rebased onto `main` if it needs to ship separately.
 
 ## Round 3 verification — actually run
 
