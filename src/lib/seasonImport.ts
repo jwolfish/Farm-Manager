@@ -172,6 +172,58 @@ export async function importSeasonData(
   const productIdMap: Record<string, string> = {};
   const skippedItems: string[] = [];
 
+  const { data: destSeason } = await supabase
+    .from('seasons').select('farm_id').eq('id', newSeasonId).maybeSingle();
+  const destFarmId = destSeason?.farm_id ?? null;
+
+  const masterProductRemap = new Map<string, string>();
+  const allMasterIds = new Set<string>();
+  for (const seed of sourceData.seeds) {
+    if (selectedItems.seeds.includes(seed.id) && seed.master_product_id) allMasterIds.add(seed.master_product_id);
+  }
+  for (const fert of sourceData.fertilizers) {
+    if (selectedItems.fertilizers.includes(fert.id) && fert.master_product_id) allMasterIds.add(fert.master_product_id);
+  }
+  for (const chem of sourceData.chemicals) {
+    if (selectedItems.chemicals.includes(chem.id) && chem.master_product_id) allMasterIds.add(chem.master_product_id);
+  }
+
+  if (allMasterIds.size > 0 && destFarmId) {
+    const { data: masterRows, error: masterErr } = await supabase
+      .from('master_products')
+      .select('id, farm_id, product_category, canonical_name, unit_type')
+      .in('id', [...allMasterIds]);
+
+    if (masterErr) {
+      console.error('Failed to fetch master_products for remapping:', masterErr);
+    } else if (masterRows) {
+      for (const row of masterRows) {
+        if (row.farm_id === destFarmId) continue;
+        const { data: upserted, error: upsertErr } = await supabase
+          .from('master_products')
+          .upsert(
+            {
+              farm_id: destFarmId,
+              product_category: row.product_category,
+              canonical_name: row.canonical_name,
+              unit_type: row.unit_type,
+              on_hand_quantity: 0,
+            },
+            { onConflict: 'farm_id,product_category,canonical_name' }
+          )
+          .select('id')
+          .single();
+        if (upsertErr) {
+          console.error(`Failed to upsert master_product for ${row.canonical_name}:`, upsertErr);
+        } else if (upserted) {
+          masterProductRemap.set(row.id, upserted.id);
+        }
+      }
+    }
+  } else if (allMasterIds.size > 0 && !destFarmId) {
+    console.error('Could not resolve destination farm_id; master_product_id values will not be remapped');
+  }
+
   if (selectedItems.fields.length > 0) {
     const fieldsToImport = sourceData.fields
       .filter((f) => selectedItems.fields.includes(f.id))
@@ -208,7 +260,7 @@ export async function importSeasonData(
         unit_type: seed.unit_type,
         standard_seeding_rate: seed.standard_seeding_rate,
         units_per_bag: seed.units_per_bag,
-        master_product_id: seed.master_product_id,
+        master_product_id: masterProductRemap.get(seed.master_product_id ?? '') ?? seed.master_product_id,
       }));
 
     const { error } = await supabase.from('seed_varieties').insert(seedsToImport);
@@ -227,7 +279,7 @@ export async function importSeasonData(
         application_rate: fert.application_rate,
         application_rate_unit: fert.application_rate_unit,
         notes: fert.notes,
-        master_product_id: fert.master_product_id,
+        master_product_id: masterProductRemap.get(fert.master_product_id ?? '') ?? fert.master_product_id,
       }));
 
     const { data: insertedFertilizers, error } = await supabase
@@ -259,7 +311,7 @@ export async function importSeasonData(
         unit_type: chem.unit_type,
         default_application_rate: chem.default_application_rate,
         default_application_rate_unit: chem.default_application_rate_unit,
-        master_product_id: chem.master_product_id,
+        master_product_id: masterProductRemap.get(chem.master_product_id ?? '') ?? chem.master_product_id,
       }));
 
     const { data: insertedChemicals, error } = await supabase
