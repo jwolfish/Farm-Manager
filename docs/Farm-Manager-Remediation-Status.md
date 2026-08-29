@@ -1,6 +1,6 @@
 # Farm Manager Remediation — Status
 
-**Last updated:** 29 Aug 2026 (Round 3 landed on branch `round-3-unit-conversion`)
+**Last updated:** 29 Aug 2026 — Round 3 and the CSV fix are **merged to `main`** (PR #1, `b1e3233`)
 **Repo:** `jwolfish/Farm-Manager` @ `main`
 **Supabase project:** `wvccxjakqwqfmyewclue` (bolt-native-database-63401892)
 **Companion docs:** `Farm-Manager-Code-Review-Summary.md`, `Farm-Manager-Remediation-PRD.md`
@@ -79,7 +79,7 @@ succeed; PUBLIC can no longer execute `update_master_product_on_hand`.
 
 Also fixed: double-encoded `&amp;` in two report headings.
 
-### Round 3 — branch `round-3-unit-conversion` (not yet merged)
+### Round 3 — commits `3e408fd`, `f0077d5` (merged to `main` via PR #1)
 
 Written by Claude directly rather than by Bolt. WI-11 changes the return type of
 `convertUnits` and has to be threaded through every call site; a partially-threaded
@@ -173,7 +173,7 @@ redeploys that function anyway.
 arguments; the database function takes one. Evidence that the hand-maintained types have
 drifted (WI-30).
 
-### CSV negative-number regression — branch `fix-csv-negative-numbers` — CLOSED
+### CSV negative-number regression — commit `7c87e07` (merged to `main` via PR #1) — CLOSED
 
 The Round 2 guard `'=+-@\t\r'.includes(s[0])` prefixed any value starting with `-`,
 including legitimate negative numbers, so negative net profit exported as text that Excel
@@ -203,9 +203,7 @@ WI-7 injection payload, operator-bearing lookalikes such as `-1234.56+SUM(A1)`, 
 escaping, and CRLF endings. Full suite 206 passing; typecheck 103; lint 134/28; build
 succeeds at 1,754.57 kB (467.64 kB gz), 0.14 kB above Round 3.
 
-This closes the last open item from WI-7. **Branched from `round-3-unit-conversion`**
-rather than `main`, to avoid a merge conflict in this document; merge Round 3 first, or
-ask for it to be rebased onto `main` if it needs to ship separately.
+This closes the last open item from WI-7.
 
 ## Round 3 verification — actually run
 

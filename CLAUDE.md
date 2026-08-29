@@ -74,7 +74,7 @@ These are real mistakes made during this work, not hypotheticals.
    to one must be applied to the other until WI-27 consolidates them.
 
 8. **`convertUnits()` returns a `ConversionResult`, not a number** (WI-11, landed on
-   `round-3-unit-conversion`). Every caller must handle `ok: false` — never fall back to
+   `main`). Every caller must handle `ok: false` — never fall back to
    the unconverted amount, which is what the old version did silently. Do not "simplify"
    it back to returning a number. Two things that look like bugs and are not: identity
    succeeds even for unrecognised units (`'jug'`→`'jug'` needs no conversion), and
