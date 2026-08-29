@@ -252,6 +252,30 @@ re-checked at zero afterwards.
 
 ## Open items
 
+**Two applied migrations have no file in the repo (found 29 Aug 2026).** Comparing
+`supabase/migrations/` against the database's own migration history turned up two versions
+that were applied but whose `.sql` files are missing:
+
+| Version | Name | Confirmed applied |
+|---|---|---|
+| `20260206023520` | `remove_crop_type_from_individual_chemicals` | yes — the column is gone |
+| `20260218020323` | `add_team_sharing_and_notifications` | yes — `team_members` exists |
+
+**A from-scratch rebuild from this repo would therefore produce a database with no
+`team_members` table** — the entire collaboration feature, and precisely what SEC-5 / WI-5
+is about to rewrite policies against. Every other version matches one-for-one. Worth
+reconstructing both files from the live schema before Round 5, or at minimum before anyone
+relies on the migrations directory to recreate the database.
+
+Note `notifications` does *not* exist despite the migration name, so whatever that
+migration created, the notifications half was either dropped later or never included.
+
+**Migration filenames must match the recorded version.** Applying through the Supabase MCP
+stamps its own timestamp, which will not be the one in the filename you wrote. Round 4's
+three files were renamed after the fact to match (`203718`, `204336`, `204458`). Check
+`list_migrations` against the directory after applying, or a `db push` will try to replay
+work that is already in the database.
+
 **Pre-existing, unrelated:** `database.types.ts` declares `set_active_season` with two
 arguments; the database function takes one. Evidence that the hand-maintained types have
 drifted (WI-30).
