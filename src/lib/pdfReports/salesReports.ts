@@ -56,7 +56,7 @@ export function exportSalesByMonthPDF(
         <td>${CROP_LABELS_PDF[s.cropType]}</td>
         <td>${esc(s.destination || '—')}</td>
         <td class="num">${fmtBu(s.bushelsSold)}</td>
-        <td class="num">${s.pricePerBushel.toFixed(3)}</td>
+        <td class="num">$${s.pricePerBushel.toFixed(3)}</td>
         <td class="num green bold">${fmt(s.totalRevenue)}</td>
       </tr>`;
   }).join('');

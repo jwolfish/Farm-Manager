@@ -51,10 +51,10 @@ export function exportCostPerBushelPDF(
       <td>${CROP_LABELS_PDF[f.cropType]}</td>
       <td class="num">${f.acres.toFixed(1)}</td>
       <td class="num">${f.yieldPerAcre!.toFixed(1)} bu</td>
-      <td class="num">${f.costPerAcre.toFixed(2)}/ac</td>
-      <td class="num" style="color:${isAboveAvg ? '#dc2626' : '#ea580c'};font-weight:600">${cpb.toFixed(2)}</td>
-      <td class="num green">${rpb != null ? `${rpb.toFixed(2)}` : '—'}</td>
-      <td class="num ${margin == null ? '' : margin >= 0 ? 'blue' : 'red'}">${margin != null ? `${margin >= 0 ? '' : '-'}${Math.abs(margin).toFixed(2)}` : '—'}</td>
+      <td class="num">$${f.costPerAcre.toFixed(2)}/ac</td>
+      <td class="num" style="color:${isAboveAvg ? '#dc2626' : '#ea580c'};font-weight:600">$${cpb.toFixed(2)}</td>
+      <td class="num green">${rpb != null ? `$${rpb.toFixed(2)}` : '—'}</td>
+      <td class="num ${margin == null ? '' : margin >= 0 ? 'blue' : 'red'}">${margin != null ? `$${margin >= 0 ? '' : '-'}${Math.abs(margin).toFixed(2)}` : '—'}</td>
     </tr>`;
   }).join('');
 
@@ -169,8 +169,8 @@ export function exportInputEfficiencyPDF(
       <td class="bold">${esc(f.fieldName)}</td>
       <td>${CROP_LABELS_PDF[f.cropType]}</td>
       <td class="num">${f.acres.toFixed(1)}</td>
-      <td class="num green">${f.revenuePerAcre!.toFixed(2)}/ac</td>
-      <td class="num red">${f.costPerAcre.toFixed(2)}/ac</td>
+      <td class="num green">$${f.revenuePerAcre!.toFixed(2)}/ac</td>
+      <td class="num red">$${f.costPerAcre.toFixed(2)}/ac</td>
       <td class="num" style="color:${isEfficient ? '#15803d' : '#dc2626'};font-weight:700">${ratio.toFixed(3)}x</td>
       <td class="num ${(f.netProfitPerAcre ?? 0) >= 0 ? 'blue' : 'red-neg'}">${f.netProfitPerAcre != null ? fmtAcre(f.netProfitPerAcre) : '—'}</td>
     </tr>`;
@@ -292,7 +292,7 @@ export function exportBreakEvenPDF(
     return `<tr>
       <td class="bold">${esc(f.fieldName)}</td>
       <td>${CROP_LABELS_PDF[f.cropType]}</td>
-      <td class="num">${f.costPerAcre.toFixed(2)}/ac</td>
+      <td class="num">$${f.costPerAcre.toFixed(2)}/ac</td>
       <td class="num">${f.yieldPerAcre!.toFixed(1)} bu/ac</td>
       <td class="num" style="color:#ea580c;font-weight:600">${f.bePrice != null ? `$${f.bePrice.toFixed(2)}/bu` : '—'}</td>
       <td class="num ${priceOk === true ? 'green' : priceOk === false ? 'red' : ''}">${f.actualPrice != null ? `$${f.actualPrice.toFixed(2)}/bu` : '—'}</td>
