@@ -105,6 +105,9 @@ export function useSprayPlanner(currentSeasonId: string | null, effectiveUserId:
   const [seasonName, setSeasonName] = useState('');
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  // Failures from apply/unapply. Kept separate from `error`, which gates the
+  // whole page render — an action failure must not blank the planner.
+  const [actionError, setActionError] = useState<string | null>(null);
 
   const [selectedFields, setSelectedFields] = useState<Set<string>>(new Set());
   const [selectedPrograms, setSelectedPrograms] = useState<Set<string>>(new Set());
@@ -248,7 +251,10 @@ export function useSprayPlanner(currentSeasonId: string | null, effectiveUserId:
           };
         });
         const chemicalCostPerAcre = chemicals.reduce((sum, ch) => {
-          return sum + calculateCostWithConversion(ch.ratePerAcre, ch.rateUnit, ch.pricePerUnit, ch.priceUnit);
+          const cost = calculateCostWithConversion(ch.ratePerAcre, ch.rateUnit, ch.pricePerUnit, ch.priceUnit);
+          // Unconvertible units contribute nothing rather than a wrong number.
+          // The per-item reason is shown on the Chemical Programs page.
+          return cost.ok ? sum + cost.value : sum;
         }, 0);
         return {
           id: p.id,
@@ -565,14 +571,24 @@ export function useSprayPlanner(currentSeasonId: string | null, effectiveUserId:
 
   const handleApplyWorkOrder = async (wo: SavedWorkOrder) => {
     if (!effectiveUserId) return;
-    const success = await applyWorkOrder(wo.id, wo.farm_id, effectiveUserId, wo.lines);
-    if (success) await loadSavedWorkOrders();
+    setActionError(null);
+    const result = await applyWorkOrder(wo.id, wo.farm_id, effectiveUserId, wo.lines);
+    if (result.ok) {
+      await loadSavedWorkOrders();
+    } else {
+      setActionError(result.message);
+    }
   };
 
   const handleUnapplyWorkOrder = async (wo: SavedWorkOrder) => {
     if (!effectiveUserId) return;
-    const success = await unapplyWorkOrder(wo.id, wo.farm_id, effectiveUserId, wo.lines);
-    if (success) await loadSavedWorkOrders();
+    setActionError(null);
+    const result = await unapplyWorkOrder(wo.id, wo.farm_id, effectiveUserId, wo.lines);
+    if (result.ok) {
+      await loadSavedWorkOrders();
+    } else {
+      setActionError(result.message);
+    }
   };
 
   // --- Inventory fetch ---
@@ -610,6 +626,8 @@ export function useSprayPlanner(currentSeasonId: string | null, effectiveUserId:
     programs,
     loading,
     error,
+    actionError,
+    dismissActionError: () => setActionError(null),
     selectedFields,
     selectedPrograms,
     workOrders,

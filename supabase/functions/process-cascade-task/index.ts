@@ -9,36 +9,138 @@ const corsHeaders = {
 
 const MAX_WARNINGS = 100;
 
-function convertUnits(fromUnit: string, toUnit: string, amount: number): number {
-  const from = fromUnit.toLowerCase().trim();
-  const to = toUnit.toLowerCase().trim();
+// ---------------------------------------------------------------------------
+// Unit conversion — WI-11.
+//
+// DUPLICATE. Deno cannot import from src/, so this must stay in step with
+// src/lib/unitConversions.ts by hand until WI-27 consolidates the two into a
+// shared module. Any change here must be made there too, and vice versa.
+// The semantics, unit registry and base factors below are identical.
+// ---------------------------------------------------------------------------
 
-  if (from === to) return amount;
+type ConversionFailureReason = "unknown-unit" | "incompatible-class" | "invalid-amount";
 
-  const factors: Record<string, Record<string, number>> = {
-    ton: { pound: 2000, lb: 2000, lbs: 2000, oz: 32000, ounce: 32000 },
-    pound: { ton: 1/2000, lb: 1, lbs: 1, oz: 16, ounce: 16 },
-    lb: { ton: 1/2000, pound: 1, lbs: 1, oz: 16, ounce: 16 },
-    lbs: { ton: 1/2000, pound: 1, lb: 1, oz: 16, ounce: 16 },
-    oz: { ton: 1/32000, pound: 1/16, lb: 1/16, lbs: 1/16, ounce: 1 },
-    ounce: { ton: 1/32000, pound: 1/16, lb: 1/16, lbs: 1/16, oz: 1 },
-    gallon: { gal: 1, pint: 8, pt: 8, quart: 4, qt: 4, "fl oz": 128, "fluid ounce": 128, "liquid ounce": 128 },
-    gal: { gallon: 1, pint: 8, pt: 8, quart: 4, qt: 4, "fl oz": 128, "fluid ounce": 128, "liquid ounce": 128 },
-    quart: { gallon: 1/4, gal: 1/4, qt: 1, pint: 2, pt: 2, "fl oz": 32, "fluid ounce": 32, "liquid ounce": 32 },
-    qt: { gallon: 1/4, gal: 1/4, quart: 1, pint: 2, pt: 2, "fl oz": 32, "fluid ounce": 32, "liquid ounce": 32 },
-    pint: { gallon: 1/8, gal: 1/8, quart: 1/2, qt: 1/2, pt: 1, "fl oz": 16, "fluid ounce": 16, "liquid ounce": 16 },
-    pt: { gallon: 1/8, gal: 1/8, quart: 1/2, qt: 1/2, pint: 1, "fl oz": 16, "fluid ounce": 16, "liquid ounce": 16 },
-    "fl oz": { gallon: 1/128, gal: 1/128, quart: 1/32, qt: 1/32, pint: 1/16, pt: 1/16, "fluid ounce": 1, "liquid ounce": 1 },
-    "fluid ounce": { gallon: 1/128, gal: 1/128, quart: 1/32, qt: 1/32, pint: 1/16, pt: 1/16, "fl oz": 1, "liquid ounce": 1 },
-    "liquid ounce": { gallon: 1/128, gal: 1/128, quart: 1/32, qt: 1/32, pint: 1/16, pt: 1/16, "fl oz": 1, "fluid ounce": 1 },
-  };
+type ConversionResult =
+  | { ok: true; value: number }
+  | { ok: false; reason: ConversionFailureReason; from: string; to: string };
 
-  if (factors[from]?.[to]) return amount * factors[from][to];
-  return amount;
+type UnitClass = "mass" | "volume" | "bag" | "seed" | "each";
+
+/** 1 avoirdupois ounce in nanograms. Exact: 1 lb = 453.59237 g by definition. */
+const OZ_IN_NG = 28349523125;
+/** 1 US fluid ounce in femtolitres. Exact: 1 US gal = 3.785411784 L by definition. */
+const FL_OZ_IN_FL = 29573529562500;
+/** 1 acre-inch = 43560/12 cubic feet = 6272640/231 US gallons. */
+const AC_IN_IN_FL = FL_OZ_IN_FL * 128 * (6272640 / 231);
+
+const UNITS: Record<string, { unitClass: UnitClass; factor: number }> = {
+  oz: { unitClass: "mass", factor: OZ_IN_NG },
+  lb: { unitClass: "mass", factor: OZ_IN_NG * 16 },
+  ton: { unitClass: "mass", factor: OZ_IN_NG * 32000 },
+  mg: { unitClass: "mass", factor: 1e6 },
+  g: { unitClass: "mass", factor: 1e9 },
+  kg: { unitClass: "mass", factor: 1e12 },
+  "fl oz": { unitClass: "volume", factor: FL_OZ_IN_FL },
+  pt: { unitClass: "volume", factor: FL_OZ_IN_FL * 16 },
+  qt: { unitClass: "volume", factor: FL_OZ_IN_FL * 32 },
+  gal: { unitClass: "volume", factor: FL_OZ_IN_FL * 128 },
+  ml: { unitClass: "volume", factor: 1e12 },
+  l: { unitClass: "volume", factor: 1e15 },
+  "ac-in": { unitClass: "volume", factor: AC_IN_IN_FL },
+  bag: { unitClass: "bag", factor: 1 },
+  seed: { unitClass: "seed", factor: 1 },
+  each: { unitClass: "each", factor: 1 },
+};
+
+const ALIASES: Record<string, string> = {
+  oz: "oz", ozs: "oz", ounce: "oz", ounces: "oz",
+  "dry ounce": "oz", "dry ounces": "oz",
+  lb: "lb", lbs: "lb", pound: "lb", pounds: "lb",
+  ton: "ton", tons: "ton", "short ton": "ton", "short tons": "ton",
+  mg: "mg", milligram: "mg", milligrams: "mg",
+  g: "g", gram: "g", grams: "g",
+  kg: "kg", kgs: "kg", kilo: "kg", kilos: "kg", kilogram: "kg", kilograms: "kg",
+  "fl oz": "fl oz", floz: "fl oz", "fl. oz.": "fl oz", "fl. oz": "fl oz", "fl oz.": "fl oz",
+  "fluid ounce": "fl oz", "fluid ounces": "fl oz",
+  "liquid ounce": "fl oz", "liquid ounces": "fl oz",
+  pt: "pt", pts: "pt", pint: "pt", pints: "pt",
+  qt: "qt", qts: "qt", quart: "qt", quarts: "qt",
+  gal: "gal", gals: "gal", gallon: "gal", gallons: "gal",
+  ml: "ml", milliliter: "ml", millilitre: "ml", milliliters: "ml", millilitres: "ml",
+  l: "l", liter: "l", litre: "l", liters: "l", litres: "l",
+  "ac-in": "ac-in", "ac in": "ac-in", acin: "ac-in",
+  "acre-inch": "ac-in", "acre inch": "ac-in", "acre-inches": "ac-in", "acre inches": "ac-in",
+  bag: "bag", bags: "bag",
+  seed: "seed", seeds: "seed",
+  unit: "each", units: "each", each: "each", ea: "each", count: "each",
+};
+
+function normalizeUnit(unit: string): string {
+  return String(unit ?? "").toLowerCase().trim().replace(/\s+/g, " ");
 }
 
-function calculateCostWithConversion(rate: number, rateUnit: string, price: number, priceUnit: string): number {
-  return convertUnits(rateUnit, priceUnit, rate) * price;
+function lookupUnit(normalized: string): { unitClass: UnitClass; factor: number } | null {
+  const canonical = ALIASES[normalized];
+  if (canonical === undefined) return null;
+  return UNITS[canonical] ?? null;
+}
+
+function convertUnits(fromUnit: string, toUnit: string, amount: number): ConversionResult {
+  const from = normalizeUnit(fromUnit);
+  const to = normalizeUnit(toUnit);
+
+  if (typeof amount !== "number" || !Number.isFinite(amount)) {
+    return { ok: false, reason: "invalid-amount", from, to };
+  }
+
+  // Identity needs no conversion, so it succeeds even for unrecognised units.
+  if (from === to) return { ok: true, value: amount };
+
+  const fromDef = lookupUnit(from);
+  const toDef = lookupUnit(to);
+
+  if (fromDef === null || toDef === null) {
+    return { ok: false, reason: "unknown-unit", from, to };
+  }
+  if (fromDef.unitClass !== toDef.unitClass) {
+    return { ok: false, reason: "incompatible-class", from, to };
+  }
+
+  return { ok: true, value: amount * (fromDef.factor / toDef.factor) };
+}
+
+function describeConversionFailure(
+  failure: Extract<ConversionResult, { ok: false }>
+): string {
+  const from = failure.from || "(blank)";
+  const to = failure.to || "(blank)";
+  switch (failure.reason) {
+    case "incompatible-class":
+      return `cannot convert ${from} to ${to} — those measure different things`;
+    case "unknown-unit":
+      return `cannot convert ${from} to ${to} — unrecognised unit`;
+    case "invalid-amount":
+      return `cannot convert ${from} to ${to} — the amount is not a number`;
+  }
+}
+
+function calculateCostWithConversion(
+  rate: number,
+  rateUnit: string,
+  price: number,
+  priceUnit: string
+): ConversionResult {
+  if (typeof price !== "number" || !Number.isFinite(price)) {
+    return {
+      ok: false,
+      reason: "invalid-amount",
+      from: normalizeUnit(rateUnit),
+      to: normalizeUnit(priceUnit),
+    };
+  }
+  const converted = convertUnits(rateUnit, priceUnit, rate);
+  if (!converted.ok) return converted;
+  return { ok: true, value: converted.value * price };
 }
 
 function calculateFieldTotalCost(fc: Record<string, unknown>): number {
@@ -99,8 +201,9 @@ class WarningBuffer {
 
 async function recalculateFertilizerProgramCost(
   supabase: ReturnType<typeof createClient>,
-  programId: string
-): Promise<{ programId: string; newCost: number } | null> {
+  programId: string,
+  warnings?: WarningBuffer
+): Promise<{ programId: string; newCost: number; unpricedItems: string[] } | null> {
   const { data: program } = await supabase
     .from("fertilizer_programs")
     .select("id, application_cost")
@@ -115,25 +218,35 @@ async function recalculateFertilizerProgramCost(
     .eq("program_id", programId);
 
   let totalCostPerAcre = 0;
+  const unpricedItems: string[] = [];
   for (const item of items || []) {
     const product = (item as Record<string, unknown>).fertilizer_products as Record<string, unknown> | null;
     if (!product) continue;
-    totalCostPerAcre += calculateCostWithConversion(
+    const cost = calculateCostWithConversion(
       Number(item.application_rate),
       String(item.application_rate_unit),
       Number(product.price_per_unit),
       String(product.unit_type)
     );
+    if (!cost.ok) {
+      // Contributes nothing rather than a wrong number (WI-11).
+      const detail = `Product ${product.id} in program ${programId}: ${describeConversionFailure(cost)}`;
+      unpricedItems.push(detail);
+      warnings?.add(detail);
+      continue;
+    }
+    totalCostPerAcre += cost.value;
   }
 
   const newCost = totalCostPerAcre + Number(program.application_cost || 0);
-  return { programId, newCost };
+  return { programId, newCost, unpricedItems };
 }
 
 async function recalculateChemicalProgramCost(
   supabase: ReturnType<typeof createClient>,
-  programId: string
-): Promise<{ programId: string; newCost: number } | null> {
+  programId: string,
+  warnings?: WarningBuffer
+): Promise<{ programId: string; newCost: number; unpricedItems: string[] } | null> {
   const { data: program } = await supabase
     .from("chemical_programs")
     .select("id, application_cost")
@@ -148,19 +261,28 @@ async function recalculateChemicalProgramCost(
     .eq("program_id", programId);
 
   let totalCostPerAcre = 0;
+  const unpricedItems: string[] = [];
   for (const item of items || []) {
     const chemical = (item as Record<string, unknown>).individual_chemicals as Record<string, unknown> | null;
     if (!chemical) continue;
-    totalCostPerAcre += calculateCostWithConversion(
+    const cost = calculateCostWithConversion(
       Number(item.application_rate),
       String(item.application_rate_unit),
       Number(chemical.price_per_unit),
       String(chemical.unit_type)
     );
+    if (!cost.ok) {
+      // Contributes nothing rather than a wrong number (WI-11).
+      const detail = `Chemical ${chemical.id} in program ${programId}: ${describeConversionFailure(cost)}`;
+      unpricedItems.push(detail);
+      warnings?.add(detail);
+      continue;
+    }
+    totalCostPerAcre += cost.value;
   }
 
   const newCost = totalCostPerAcre + Number(program.application_cost || 0);
-  return { programId, newCost };
+  return { programId, newCost, unpricedItems };
 }
 
 async function cascadeTemplateUpdateInSeason(
@@ -274,8 +396,8 @@ async function cascadeProgramUpdateInSeason(
   if (!templates) return { templatesUpdated: 0, fieldsUpdated: 0 };
 
   const recalcResult = programType === "fertilizer"
-    ? await recalculateFertilizerProgramCost(supabase, programId)
-    : await recalculateChemicalProgramCost(supabase, programId);
+    ? await recalculateFertilizerProgramCost(supabase, programId, warnings)
+    : await recalculateChemicalProgramCost(supabase, programId, warnings);
 
   if (!recalcResult) return { templatesUpdated: 0, fieldsUpdated: 0 };
 
@@ -322,7 +444,7 @@ async function runCascadeProductUpdate(
   const failedFieldIds: string[] = [];
 
   for (const program of programs || []) {
-    await withRetry(() => recalculateFertilizerProgramCost(supabase, program.id as string));
+    await withRetry(() => recalculateFertilizerProgramCost(supabase, program.id as string, warnings));
     programsUpdated++;
     const r = await withRetry(() => cascadeProgramUpdateInSeason(supabase, program.id as string, "fertilizer", seasonId, warnings));
     templatesUpdated += r.templatesUpdated;
@@ -350,7 +472,7 @@ async function runCascadeChemicalUpdate(
   const failedFieldIds: string[] = [];
 
   for (const program of programs || []) {
-    await withRetry(() => recalculateChemicalProgramCost(supabase, program.id as string));
+    await withRetry(() => recalculateChemicalProgramCost(supabase, program.id as string, warnings));
     programsUpdated++;
     const r = await withRetry(() => cascadeProgramUpdateInSeason(supabase, program.id as string, "chemical", seasonId, warnings));
     templatesUpdated += r.templatesUpdated;

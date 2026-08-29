@@ -1,6 +1,6 @@
 # Farm Manager Remediation — Status
 
-**Last updated:** 29 Aug 2026
+**Last updated:** 29 Aug 2026 (Round 3 landed on branch `round-3-unit-conversion`)
 **Repo:** `jwolfish/Farm-Manager` @ `main`
 **Supabase project:** `wvccxjakqwqfmyewclue` (bolt-native-database-63401892)
 **Companion docs:** `Farm-Manager-Code-Review-Summary.md`, `Farm-Manager-Remediation-PRD.md`
@@ -79,6 +79,86 @@ succeed; PUBLIC can no longer execute `update_master_product_on_hand`.
 
 Also fixed: double-encoded `&amp;` in two report headings.
 
+### Round 3 — branch `round-3-unit-conversion` (not yet merged)
+
+Written by Claude directly rather than by Bolt. WI-11 changes the return type of
+`convertUnits` and has to be threaded through every call site; a partially-threaded
+signature change is exactly Bolt's failure mode, and this round has no database or
+deployment step to make Bolt's environment necessary.
+
+**WI-11, unit conversion is now total — CLOSED.**
+`convertUnits` returns a discriminated `ConversionResult` and has no path that returns
+an unconverted amount. Rewritten around a base unit per class rather than an N×N factor
+matrix, with an alias table for spelling. Added the units the PRD listed as missing:
+`L`, `mL`, `kg`, `g`, `mg`, `bag`, `seed`, `unit`, `ac-in`.
+
+Two design decisions worth recording:
+
+- **Base units are chosen so every US customary factor is an exact integer below 2^53** —
+  mass in nanograms (1 oz = 28,349,523,125 ng), volume in femtolitres
+  (1 fl oz = 29,573,529,562,500 fL). IEEE-754 division is correctly rounded, so
+  lb→oz is *exactly* 16 and gal→fl oz is *exactly* 128. This is what makes the
+  rewrite byte-identical to the old table rather than merely close to it.
+- **Counting units do not interconvert.** `bag`, `seed` and `unit` each get their own
+  class, because bag↔seed needs a per-product `units_per_bag` this module does not have.
+  `bag`→`seed` now fails loudly instead of quietly returning 1:1.
+- **Identity always succeeds, even for unrecognised units.** `convertUnits('jug','jug',4)`
+  returns 4. No conversion is being performed, so there is nothing to get wrong, and
+  making it fail would break products priced in their own free-text unit.
+
+`calculateCostWithConversion` returns the same result type. All 13 call sites handle
+failure: cost calculators skip the item and mark it unpriced (`RecalculateProgramResult.
+unpricedItems`, plus a cascade warning), the Chemical and Fertilizer Programs pages show
+"not costed: cannot convert *x* to *y*" in red on the item row, low-stock comparisons
+decline to claim a stock level they cannot compute, and **`applyWorkOrder` /
+`unapplyWorkOrder` now refuse the whole operation** and return a message naming the line
+and both units. Apply is all-or-nothing by design: posting some lines and skipping others
+would leave a plausible, wrong on-hand figure.
+
+`applyWorkOrder`/`unapplyWorkOrder` changed from `Promise<boolean>` to a typed
+`WorkOrderApplyResult`; `useSprayPlanner` now surfaces the message in a dismissible
+banner via a new `actionError` (kept separate from `error`, which gates the whole page).
+That closes part of WI-30's "every failed write gets a user-visible outcome" for this
+path, though the in-flight button disable is still WI-9.
+
+**WI-12, canonical accumulation — CLOSED.**
+`generateChemicalLines` and `generateFertilizerLines` no longer sum raw quantities and
+convert once at the end using the first-seen unit. Contributions are collected per
+product, the canonical unit is resolved up front (linked `master_products.unit_type`,
+else the first non-blank rate unit), and each contribution is converted on the way in.
+Pure logic extracted to `src/lib/shoppingListMath.ts` so it is directly testable.
+Unconvertible contributions are excluded and recorded in `issues`; `createShoppingList`
+returns `flaggedLines` and `ShoppingListsTab` renders a red banner naming each product
+and reason. **The flag is not persisted** — `shopping_list_lines` has no notes column and
+Round 3 takes no migrations, so the warning lives only in the generation response.
+
+**WI-20, test suite — PARTIAL (3.5 of 6 planned areas).**
+Added Vitest (`npm test`), `vitest.config.ts`, and 4 test files. Tests are excluded from
+`tsconfig.app.json` so the 103-error baseline stays comparable.
+
+| PRD area | State |
+|---|---|
+| 1. `unitConversions` | Done — golden table of all 102 legacy pairs at exact float equality, aliases, unknown units, cross-class, round-trips, invalid amounts |
+| 2. `templateCalculations` | Done — zero, null, missing, string-numeric, non-array program columns |
+| 3. `shoppingListGeneration` | Done for the accumulation math via `shoppingListMath` |
+| 4. Ledger arithmetic | Partial — `inventoryMath` conversion and refusal covered; apply/unapply/re-apply sequencing needs WI-9's RPC |
+| 5. `useReportData` aggregation | Not started |
+| 6. Report HTML escaping snapshots | Not started |
+
+The ≥80 % coverage target on `src/lib/**` is **not** met and should not be claimed.
+
+**Live-data audit — the risk in PRD §7 is retired for this round.** Every from→to pair
+present in the production database was enumerated before the hard failure was switched
+on: chemical and inventory paths use `fl oz→gal`, `pt→gal`, `pt→gallon`, `qt→gal`,
+`gal→gal`, `lbs→lbs`; fertilizer uses `pound→ton`, `quart→gallon`, `gallon→gallon`.
+All are within-class and were already supported. **Zero rows are currently silently
+wrong and zero rows would newly fail**, so WI-11 needs no data remediation.
+
+**Edge function updated but NOT deployed.** `process-cascade-task/index.ts` carries the
+mirrored conversion module per guardrail 7. Round 3 deploys nothing, so the *deployed*
+function still has the old silent-fallback behaviour. Deploy it with Round 5, which
+rewrites that function for SEC-3 anyway. Until then the two differ — this is deliberate.
+
 **Dropped deliberately:** the `noopener` recommendation from SEC-8. All three
 `window.open` call sites do `if (newWin) newWin.addEventListener('load', () =>
 newWin.print())`; `noopener` makes `window.open` return null and would silently break
@@ -105,19 +185,56 @@ if (RISKY.test(s) && !/^-?\d+(\.\d+)?$/.test(s)) s = "'" + s;
 arguments; the database function takes one. Evidence that the hand-maintained types have
 drifted (WI-30).
 
-## Next up — Round 3
+**Round 3 is unverified against the toolchain.** The machine Claude ran on has no Node
+installed, so `npm test`, `tsc`, `eslint` and `vite build` were never executed against
+this branch. What *was* verified is below. Run the four commands before merging.
 
-Unit conversion rewrite (WI-11) plus the first real test suite (WI-20), then canonical
-accumulation in shopping lists (WI-12). This is the one round that self-verifies: the
-tests are the oracle, no database changes, no deployment. It must land before Round 4,
-because the three inventory RPCs depend on conversion being trustworthy.
+## Verifying Round 3 before merge
 
-Remaining after that: Round 4 — WI-9, WI-10, WI-13 (apply/unapply, record_purchase,
-save_work_order as transactional RPCs). Round 5 — SEC-5 (farm-scoped membership; large
-blast radius, best written by hand rather than generated) and SEC-3 (edge function
-authorization). Round 6 — PERF-1 through PERF-5 and remaining debt.
+```
+npm install          # brings in vitest + @vitest/coverage-v8
+npm test             # expect 4 files, ~180 cases, all passing
+npm run typecheck    # must be 103 or fewer
+npm run lint         # must be 136 or fewer (expect 134: two prefer-const fixed)
+npx vite build       # must succeed
+```
 
-## Baseline metrics (unchanged since review)
+What has already been verified, and how:
 
-103 TypeScript errors · 136 ESLint errors, 28 warnings · 0 tests · no CI ·
-1,747 kB main JS chunk (465 kB gzipped).
+- **The conversion arithmetic**, by executing the module's logic in a real JavaScript
+  engine: 355 assertions, 0 failures. All 102 pairs from the old lookup table reproduce
+  at *exact* float equality (`Object.is`, not `toBeCloseTo`); worst round-trip error
+  across every within-class pair was 8.9e-16 against a 1e-9 requirement; the WI-12
+  worked example (2 qt/ac × 100 ac + 16 fl oz/ac × 50 ac, held in gallons) came out at
+  exactly 56.25 gal.
+- **The live-data audit** described in the Round 3 section, run against the production
+  database as read-only queries.
+
+Not verified: TypeScript compilation, ESLint, the production build, that Vitest itself
+runs green, and any browser behaviour of the changed React components.
+
+## Next up — Round 4
+
+Round 4 — WI-9, WI-10, WI-13 (apply/unapply, record_purchase, save_work_order as
+transactional RPCs). These depend on WI-11, which is why it went first. Note that WI-9
+now inherits a typed `WorkOrderApplyResult` and a working error banner, so its remaining
+work is the transaction, the status guard, the unique index and the in-flight button
+disable.
+
+Round 5 — SEC-5 (farm-scoped membership; large blast radius, best written by hand rather
+than generated) and SEC-3 (edge function authorization). **Redeploy
+`process-cascade-task` in this round** — its source has Round 3's conversion change but
+the deployed copy does not. Round 6 — PERF-1 through PERF-5 and remaining debt.
+
+## Baseline metrics
+
+| Metric | Review baseline | After Round 3 |
+|---|---|---|
+| TypeScript errors | 103 | expected 103 (tests excluded from `tsconfig.app.json`) |
+| ESLint | 136 errors, 28 warnings | expected 134 errors — two `prefer-const` in `shoppingListGeneration.ts` fixed in passing |
+| Tests | 0 | 4 files (`unitConversions`, `shoppingListMath`, `inventoryMath`, `templateCalculations`) |
+| CI | none | none — still WI-21 |
+| Main JS chunk | 1,747 kB (465 kB gzipped) | expected unchanged |
+
+Every "expected" figure above is a prediction, not a measurement. If a number differs,
+believe the tool and not this table.

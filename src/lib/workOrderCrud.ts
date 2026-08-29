@@ -1,6 +1,13 @@
 import { supabase } from './supabase';
-import { convertUnits } from './unitConversions';
+import { buildInventoryQuantities } from './inventoryMath';
 import type { WorkOrderStatus } from './database.types';
+
+/**
+ * Outcome of applying or unapplying a work order. `message` is written for the
+ * user, not the log — it names the offending line and both units when a
+ * conversion is what blocked the operation (WI-11).
+ */
+export type WorkOrderApplyResult = { ok: true } | { ok: false; message: string };
 
 export interface SavedWorkOrder {
   id: string;
@@ -202,36 +209,57 @@ export async function applyWorkOrder(
   farmId: string,
   userId: string,
   lines: SavedWorkOrderLine[]
-): Promise<boolean> {
+): Promise<WorkOrderApplyResult> {
   const linesToApply = lines.filter((l) => l.master_product_id != null);
-  if (linesToApply.length === 0) return false;
+  if (linesToApply.length === 0) {
+    return {
+      ok: false,
+      message: 'None of the chemicals on this work order are linked to inventory, so there is nothing to deduct.',
+    };
+  }
 
   const productIds = linesToApply.map((l) => l.master_product_id!);
-  const { data: products } = await supabase
+  const { data: products, error: productsErr } = await supabase
     .from('master_products')
     .select('id, unit_type')
     .in('id', productIds);
 
-  const unitMap = new Map<string, string>();
-  if (products) {
-    for (const p of products) unitMap.set(p.id, p.unit_type);
+  if (productsErr) {
+    console.error('Failed to read inventory products:', productsErr);
+    return { ok: false, message: 'Could not read the inventory products. Nothing was changed.' };
   }
 
-  const ledgerEntries = linesToApply.map((l) => {
-    const invUnit = unitMap.get(l.master_product_id!) ?? l.rate_unit;
-    const converted = convertUnits(l.rate_unit, invUnit, l.total_needed);
+  const unitMap = new Map<string, string>();
+  for (const p of products ?? []) unitMap.set(p.id, p.unit_type);
+
+  const built = buildInventoryQuantities(
+    linesToApply.map((l) => ({
+      chemicalName: l.chemical_name,
+      masterProductId: l.master_product_id!,
+      rateUnit: l.rate_unit,
+      totalNeeded: l.total_needed,
+    })),
+    unitMap
+  );
+
+  if (!built.ok) {
     return {
-      farm_id: farmId,
-      master_product_id: l.master_product_id!,
-      product_category: 'chemical' as const,
-      entry_type: 'consumption' as const,
-      quantity_delta: -Math.abs(converted),
-      source_type: 'work_order' as const,
-      source_id: workOrderId,
-      note: `Applied from work order: ${l.chemical_name}`,
-      created_by: userId,
+      ok: false,
+      message: `Cannot apply this work order — ${built.problems.join('; ')}. Nothing was changed.`,
     };
-  });
+  }
+
+  const ledgerEntries = built.quantities.map((q) => ({
+    farm_id: farmId,
+    master_product_id: q.masterProductId,
+    product_category: 'chemical' as const,
+    entry_type: 'consumption' as const,
+    quantity_delta: -q.quantity,
+    source_type: 'work_order' as const,
+    source_id: workOrderId,
+    note: `Applied from work order: ${q.chemicalName}`,
+    created_by: userId,
+  }));
 
   const { error: ledgerErr } = await supabase
     .from('inventory_ledger_entries')
@@ -239,7 +267,7 @@ export async function applyWorkOrder(
 
   if (ledgerErr) {
     console.error('Failed to write consumption ledger entries:', ledgerErr);
-    return false;
+    return { ok: false, message: 'Could not write the inventory entries. Nothing was changed.' };
   }
 
   const { error: statusErr } = await supabase
@@ -249,10 +277,13 @@ export async function applyWorkOrder(
 
   if (statusErr) {
     console.error('Failed to update work order status:', statusErr);
-    return false;
+    return {
+      ok: false,
+      message: 'Inventory was deducted but the work order status could not be updated. Reload before applying it again.',
+    };
   }
 
-  return true;
+  return { ok: true };
 }
 
 export async function unapplyWorkOrder(
@@ -260,36 +291,57 @@ export async function unapplyWorkOrder(
   farmId: string,
   userId: string,
   lines: SavedWorkOrderLine[]
-): Promise<boolean> {
+): Promise<WorkOrderApplyResult> {
   const linesToReverse = lines.filter((l) => l.master_product_id != null);
-  if (linesToReverse.length === 0) return false;
+  if (linesToReverse.length === 0) {
+    return {
+      ok: false,
+      message: 'None of the chemicals on this work order are linked to inventory, so there is nothing to reverse.',
+    };
+  }
 
   const productIds = linesToReverse.map((l) => l.master_product_id!);
-  const { data: products } = await supabase
+  const { data: products, error: productsErr } = await supabase
     .from('master_products')
     .select('id, unit_type')
     .in('id', productIds);
 
-  const unitMap = new Map<string, string>();
-  if (products) {
-    for (const p of products) unitMap.set(p.id, p.unit_type);
+  if (productsErr) {
+    console.error('Failed to read inventory products:', productsErr);
+    return { ok: false, message: 'Could not read the inventory products. Nothing was changed.' };
   }
 
-  const reversalEntries = linesToReverse.map((l) => {
-    const invUnit = unitMap.get(l.master_product_id!) ?? l.rate_unit;
-    const converted = convertUnits(l.rate_unit, invUnit, l.total_needed);
+  const unitMap = new Map<string, string>();
+  for (const p of products ?? []) unitMap.set(p.id, p.unit_type);
+
+  const built = buildInventoryQuantities(
+    linesToReverse.map((l) => ({
+      chemicalName: l.chemical_name,
+      masterProductId: l.master_product_id!,
+      rateUnit: l.rate_unit,
+      totalNeeded: l.total_needed,
+    })),
+    unitMap
+  );
+
+  if (!built.ok) {
     return {
-      farm_id: farmId,
-      master_product_id: l.master_product_id!,
-      product_category: 'chemical' as const,
-      entry_type: 'reversal' as const,
-      quantity_delta: Math.abs(converted),
-      source_type: 'work_order' as const,
-      source_id: workOrderId,
-      note: `Reversed from work order: ${l.chemical_name}`,
-      created_by: userId,
+      ok: false,
+      message: `Cannot unapply this work order — ${built.problems.join('; ')}. Nothing was changed.`,
     };
-  });
+  }
+
+  const reversalEntries = built.quantities.map((q) => ({
+    farm_id: farmId,
+    master_product_id: q.masterProductId,
+    product_category: 'chemical' as const,
+    entry_type: 'reversal' as const,
+    quantity_delta: q.quantity,
+    source_type: 'work_order' as const,
+    source_id: workOrderId,
+    note: `Reversed from work order: ${q.chemicalName}`,
+    created_by: userId,
+  }));
 
   const { error: ledgerErr } = await supabase
     .from('inventory_ledger_entries')
@@ -297,7 +349,7 @@ export async function unapplyWorkOrder(
 
   if (ledgerErr) {
     console.error('Failed to write reversal ledger entries:', ledgerErr);
-    return false;
+    return { ok: false, message: 'Could not write the reversal entries. Nothing was changed.' };
   }
 
   const { error: statusErr } = await supabase
@@ -307,10 +359,13 @@ export async function unapplyWorkOrder(
 
   if (statusErr) {
     console.error('Failed to update work order status:', statusErr);
-    return false;
+    return {
+      ok: false,
+      message: 'Inventory was restored but the work order status could not be updated. Reload before unapplying it again.',
+    };
   }
 
-  return true;
+  return { ok: true };
 }
 
 export async function graduateAdHocChemical(

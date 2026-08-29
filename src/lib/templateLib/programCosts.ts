@@ -1,5 +1,5 @@
 import { supabase } from '../supabase';
-import { calculateCostWithConversion } from '../unitConversions';
+import { calculateCostWithConversion, describeConversionFailure } from '../unitConversions';
 import { logCascadeWarning } from '../transactionUtils';
 
 export interface RecalculateProgramResult {
@@ -7,6 +7,12 @@ export interface RecalculateProgramResult {
   oldCost: number;
   newCost: number;
   changed: boolean;
+  /**
+   * Items whose rate unit could not be converted into the unit the product is
+   * priced in (WI-11). They contribute nothing to `newCost`, so a non-empty
+   * list means the program cost is an undercount rather than a total.
+   */
+  unpricedItems: string[];
 }
 
 export async function recalculateFertilizerProgramCost(
@@ -55,6 +61,7 @@ export async function recalculateFertilizerProgramCost(
     }
 
     let totalCostPerAcre = 0;
+    const unpricedItems: string[] = [];
 
     for (const item of items || []) {
       const product = (item as any).fertilizer_products;
@@ -64,19 +71,28 @@ export async function recalculateFertilizerProgramCost(
         await logCascadeWarning(taskId, `Product ${product.id} in program ${programId} is from different season`);
       }
 
-      totalCostPerAcre += calculateCostWithConversion(
+      const cost = calculateCostWithConversion(
         item.application_rate,
         item.application_rate_unit,
         product.price_per_unit,
         product.unit_type
       );
+
+      if (!cost.ok) {
+        const detail = `Product ${product.id} in program ${programId}: ${describeConversionFailure(cost)}`;
+        unpricedItems.push(detail);
+        if (taskId) await logCascadeWarning(taskId, detail);
+        continue;
+      }
+
+      totalCostPerAcre += cost.value;
     }
 
     const totalWithApplication = totalCostPerAcre + (program.application_cost || 0);
     const storedCost = previousCost ?? totalWithApplication;
     const changed = Math.abs(totalWithApplication - storedCost) > 0.01;
 
-    return { programId, oldCost: storedCost, newCost: totalWithApplication, changed };
+    return { programId, oldCost: storedCost, newCost: totalWithApplication, changed, unpricedItems };
   } catch (err) {
     console.error('Error recalculating fertilizer program cost:', err);
     return null;
@@ -129,6 +145,7 @@ export async function recalculateChemicalProgramCost(
     }
 
     let totalCostPerAcre = 0;
+    const unpricedItems: string[] = [];
 
     for (const item of items || []) {
       const chemical = (item as any).individual_chemicals;
@@ -138,19 +155,28 @@ export async function recalculateChemicalProgramCost(
         await logCascadeWarning(taskId, `Chemical ${chemical.id} in program ${programId} is from different season`);
       }
 
-      totalCostPerAcre += calculateCostWithConversion(
+      const cost = calculateCostWithConversion(
         item.application_rate,
         item.application_rate_unit,
         chemical.price_per_unit,
         chemical.unit_type
       );
+
+      if (!cost.ok) {
+        const detail = `Chemical ${chemical.id} in program ${programId}: ${describeConversionFailure(cost)}`;
+        unpricedItems.push(detail);
+        if (taskId) await logCascadeWarning(taskId, detail);
+        continue;
+      }
+
+      totalCostPerAcre += cost.value;
     }
 
     const totalWithApplication = totalCostPerAcre + (program.application_cost || 0);
     const storedCost = previousCost ?? totalWithApplication;
     const changed = Math.abs(totalWithApplication - storedCost) > 0.01;
 
-    return { programId, oldCost: storedCost, newCost: totalWithApplication, changed };
+    return { programId, oldCost: storedCost, newCost: totalWithApplication, changed, unpricedItems };
   } catch (err) {
     console.error('Error recalculating chemical program cost:', err);
     return null;

@@ -29,7 +29,9 @@ The status doc is the source of truth for what is done. Update it when a round l
 - `npx tsc --noEmit -p tsconfig.app.json` reports **103 errors**. Pre-existing.
 - `npx eslint .` reports **136 errors, 28 warnings**. Pre-existing.
 - `npx vite build` succeeds and emits a **1,747 kB** main chunk. Pre-existing.
-- There are **no tests** and **no CI**. Adding them is WI-19/WI-20/WI-21 in the PRD.
+- There is **no CI**. Adding it is WI-21 in the PRD.
+- Tests arrived with Round 3: `npm test` (Vitest). Test files are excluded from
+  `tsconfig.app.json` so they do not move the 103-error baseline.
 
 If any of these numbers move, say so explicitly and account for the difference.
 
@@ -71,9 +73,19 @@ These are real mistakes made during this work, not hypotheticals.
    in `src/lib/` AND again in the edge function, which cannot import from `src/`. A fix
    to one must be applied to the other until WI-27 consolidates them.
 
-8. **`convertUnits()` returns the input unconverted when it cannot find a factor.** Until
-   WI-11 lands, assume any cost or quantity crossing a unit boundary may be silently
-   wrong. Do not build new features on top of it.
+8. **`convertUnits()` returns a `ConversionResult`, not a number** (WI-11, landed on
+   `round-3-unit-conversion`). Every caller must handle `ok: false` — never fall back to
+   the unconverted amount, which is what the old version did silently. Do not "simplify"
+   it back to returning a number. Two things that look like bugs and are not: identity
+   succeeds even for unrecognised units (`'jug'`→`'jug'` needs no conversion), and
+   `bag`, `seed` and `unit` are separate classes on purpose, because bag↔seed needs a
+   per-product `units_per_bag` the module does not have.
+
+9. **The conversion factors are exact integers on purpose.** Mass is based on nanograms
+   and volume on femtolitres so that every US customary factor is an exactly
+   representable integer below 2^53, which makes lb→oz exactly 16 rather than
+   16.000000000000004. Do not "tidy" `OZ_IN_NG` or `FL_OZ_IN_FL` into rounder decimal
+   constants — that silently reintroduces float drift into every cost figure.
 
 ## Verifying your own work
 
@@ -84,6 +96,7 @@ checks that can return "no" over judgement:
 npx tsc --noEmit -p tsconfig.app.json   # must stay at 103 or drop
 npx eslint .                            # must stay at 136 or drop
 npx vite build                          # must succeed
+npm test                                # must stay green
 ```
 
 For anything touching RLS, policies, or `SECURITY DEFINER` functions, a change is not

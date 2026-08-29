@@ -50,6 +50,7 @@ function fmtAcres(n: number) {
 export function SprayPlanner({ currentSeasonId, effectiveUserId, farmId }: Props) {
   const {
     fields, programs, loading, error,
+    actionError, dismissActionError,
     selectedFields, selectedPrograms,
     workOrders, crossTotals, expandedCards, resultsRef,
     cropGroups, selectedAcres, canGenerate,
@@ -141,6 +142,21 @@ export function SprayPlanner({ currentSeasonId, effectiveUserId, farmId }: Props
 
   return (
     <div className="p-6 max-w-5xl mx-auto space-y-6">
+      {/* Apply/unapply failures — inventory was not changed */}
+      {actionError && (
+        <div className="flex items-start gap-3 bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-sm text-red-800">
+          <AlertTriangle className="w-4 h-4 mt-0.5 flex-shrink-0 text-red-500" />
+          <span className="flex-1">{actionError}</span>
+          <button
+            onClick={dismissActionError}
+            className="text-red-400 hover:text-red-700 flex-shrink-0"
+            title="Dismiss"
+          >
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+      )}
+
       {/* Page header */}
       <div>
         <div className="flex items-center gap-3 mb-1">
@@ -420,8 +436,11 @@ export function SprayPlanner({ currentSeasonId, effectiveUserId, farmId }: Props
                 .filter((ct) => {
                   const inv = inventoryMap.get(ct.masterProductId ?? '') ?? inventoryMap.get(ct.chemicalName);
                   if (!inv) return false;
-                  const neededInInvUnit = convertUnits(ct.rateUnit, inv.unitType, ct.totalRaw);
-                  return neededInInvUnit > inv.onHand;
+                  const needed = convertUnits(ct.rateUnit, inv.unitType, ct.totalRaw);
+                  // Cannot compare across units that will not convert, so this
+                  // is not claimed as low stock. Apply blocks on it separately.
+                  if (!needed.ok) return false;
+                  return needed.value > inv.onHand;
                 })
                 .map((ct) => ct.chemicalName)
             );
@@ -572,7 +591,9 @@ export function SprayPlanner({ currentSeasonId, effectiveUserId, farmId }: Props
                       {wo.chemTotals.map((ct, i) => {
                         const inv = inventoryMap.get(ct.masterProductId ?? '') ?? inventoryMap.get(ct.chemicalName);
                         const onHand = inv?.onHand ?? null;
-                        const isLow = onHand !== null && convertUnits(ct.rateUnit, inv!.unitType, ct.totalRaw) > onHand;
+                        const neededInInvUnit = inv ? convertUnits(ct.rateUnit, inv.unitType, ct.totalRaw) : null;
+                        const isLow =
+                          onHand !== null && neededInInvUnit !== null && neededInInvUnit.ok && neededInInvUnit.value > onHand;
                         const onHandDisplay = onHand !== null
                           ? `${onHand.toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 2 })} ${inv!.unitType}`
                           : '\u2014';

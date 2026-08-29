@@ -68,8 +68,11 @@ export function WorkOrderDetailModal({ workOrder: wo, onApply, onUnapply, onClos
     if (!l.master_product_id) return false;
     const inv = invMap.get(l.master_product_id);
     if (!inv) return false;
-    const neededInInvUnit = convertUnits(l.rate_unit, inv.unitType, l.total_needed);
-    return neededInInvUnit > inv.onHand;
+    const needed = convertUnits(l.rate_unit, inv.unitType, l.total_needed);
+    // Cannot compare across units that will not convert, so this is not
+    // claimed as low stock. Apply blocks on it separately.
+    if (!needed.ok) return false;
+    return needed.value > inv.onHand;
   }).length;
 
   return (
@@ -147,8 +150,9 @@ export function WorkOrderDetailModal({ workOrder: wo, onApply, onUnapply, onClos
                   {wo.lines.map((line, i) => {
                     const inv = line.master_product_id ? invMap.get(line.master_product_id) : undefined;
                     const onHand = inv?.onHand ?? null;
-                    const neededInInvUnit = inv ? convertUnits(line.rate_unit, inv.unitType, line.total_needed) : line.total_needed;
-                    const isLow = onHand !== null && neededInInvUnit > onHand;
+                    const neededInInvUnit = inv ? convertUnits(line.rate_unit, inv.unitType, line.total_needed) : null;
+                    const isLow =
+                      onHand !== null && neededInInvUnit !== null && neededInInvUnit.ok && neededInInvUnit.value > onHand;
                     const totalDisplay = toBestPracticalUnit(line.total_needed, line.rate_unit).display;
                     const onHandDisplay = onHand !== null
                       ? `${onHand.toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 2 })} ${inv!.unitType}`

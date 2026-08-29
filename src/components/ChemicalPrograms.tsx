@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import { FlaskConical, Plus, X, CreditCard as Edit2, Trash2 } from 'lucide-react';
-import { calculateCostWithConversion } from '../lib/unitConversions';
+import { calculateCostWithConversion, describeConversionFailure } from '../lib/unitConversions';
 import type { CropType } from '../lib/database.types';
 import { queueCascadeTask } from '../lib/backgroundTasks';
 
@@ -357,7 +357,10 @@ export function ChemicalPrograms({ seasonId }: ChemicalProgramsProps) {
         chemical.price_per_unit,
         chemical.unit_type
       );
-      return sum + cost;
+      // An item whose units cannot meet contributes nothing; the per-item row
+      // below says so rather than folding a wrong number into the total.
+      if (!cost.ok) return sum;
+      return sum + cost.value;
     }, 0);
   };
 
@@ -617,15 +620,22 @@ export function ChemicalPrograms({ seasonId }: ChemicalProgramsProps) {
                           applicationUnit,
                           chemical.price_per_unit,
                           chemical.unit_type
-                        ) : 0;
+                        ) : null;
+                        let costLabel = '';
+                        if (cost !== null && cost.ok) {
+                          costLabel = ` = $${cost.value.toFixed(2)}/acre`;
+                        } else if (cost !== null) {
+                          costLabel = ` — not costed: ${describeConversionFailure(cost)}`;
+                        }
                         return (
                           <div key={item.id} className="text-sm bg-white p-3 rounded border border-gray-200">
                             <div className="flex items-center justify-between">
                               <span className="font-medium text-gray-900">
                                 {chemical?.chemical_name || 'Unknown Chemical'}
                               </span>
-                              <span className="text-gray-600">
-                                {item.application_rate} {applicationUnit}/acre @ ${chemical?.price_per_unit}/{chemical?.unit_type} = ${cost.toFixed(2)}/acre
+                              <span className={cost !== null && !cost.ok ? 'text-red-600' : 'text-gray-600'}>
+                                {item.application_rate} {applicationUnit}/acre @ ${chemical?.price_per_unit}/{chemical?.unit_type}
+                                {costLabel}
                               </span>
                             </div>
                             {item.notes && (
