@@ -167,6 +167,89 @@ auto-print. The pages are same-origin blobs, so there is no tabnabbing risk to m
 **Deferred:** edge-function CORS (SEC-8) moved to Round 5, when SEC-3 rewrites and
 redeploys that function anyway.
 
+### Round 4 — branch `round-4-transactional-rpcs` — WI-9, WI-10, WI-13
+
+Three migrations, all applied to the live database and verified there. Every RPC is
+`SECURITY DEFINER` with `search_path = public, pg_catalog`, revoked from PUBLIC and from
+`anon`, granted to `authenticated` only — confirmed via `has_function_privilege`, not by
+reading the grant statements.
+
+**New farm-scoped helper.** `can_edit_farm(uuid)` checks `farms.owner_user_id` or an
+accepted `team_members` row **for that specific farm** with role `editor`/`admin`. This is
+deliberately stricter than the existing `is_editor_of(owner_id)`, which ignores
+`team_members.farm_id` and therefore grants access to every farm an owner has (SEC-5).
+The new RPCs do not inherit that hole; WI-5 brings the rest of the policies up to it.
+
+**WI-9, apply/unapply — CLOSED.** `apply_work_order(uuid, jsonb)` and
+`unapply_work_order(uuid, jsonb)` take a row lock on the work order, assert the expected
+status, write every ledger row and update the status in one transaction. Apply now runs
+from `draft` **or** `unapplied`, and the UI renders the button for both. The button
+disables while a mutation is in flight and shows a spinner.
+
+**Deliberate deviation from the PRD.** The proposed
+`CREATE UNIQUE INDEX work_order_ledger_once ON inventory_ledger_entries (source_id,
+master_product_id, entry_type) WHERE source_type='work_order'` was **not** created,
+because it contradicts WI-9's own acceptance criterion that apply → unapply → apply must
+work: the second apply writes a second `consumption` row for the same pair and the index
+would reject it. Deleting ledger rows on unapply would satisfy the index but destroy the
+audit trail. The real protection is `SELECT ... FOR UPDATE` plus the status assertion in
+one transaction, which was tested directly.
+
+That leaves the PRD's *database-level* backstop formally unmet: double-posting is
+impossible through the RPCs, but an editor hand-crafting REST calls could still insert
+ledger rows directly. **Deferred to Round 5 by decision on 29 Aug 2026**, so that all RLS
+policy changes land together — see Next up for the plan.
+
+**Security advisor after these migrations:** seven WARNs, six of them
+`authenticated_security_definer_function_executable`. That lint fires on every RPC by
+definition, including `respond_to_invitation` from Round 1 and the pre-existing
+`set_active_season`; being callable by signed-in users is the point. No new class of
+finding. The one genuine item is `auth_leaked_password_protection`, which is WI-6.
+
+**WI-10, purchases — CLOSED.** `record_purchase(uuid, numeric, numeric, numeric)` does the
+reversal, the new purchase, the line update and the season price update in one
+transaction, and returns the new on-hand plus the cascade target. The client queues the
+cascade only after the write commits. Rather than reconstructing the previous amount from
+`purchased_quantity`, it sums the ledger rows already attached to the line and reverses
+that exact total, so an edit always nets to the new quantity from any prior state.
+
+**Bug found while writing it.** The modal updated `seed_varieties.price_per_bag`. That
+column does not exist — it is `price_per_unit`. The update failed every time and the error
+was discarded, so **seed purchases have never updated the season price or produced a
+correct cascade**. This was visible in the TypeScript baseline as a TS2353 on
+`MarkPurchasedModal.tsx:124` and had been mis-read as ordinary type drift. Now fixed.
+
+**WI-13, save — CLOSED.** `save_work_order(jsonb)` inserts header, fields and lines in one
+transaction and returns the id. `created_by` is taken from `auth.uid()`, not the payload.
+The season is checked against the farm. The client surfaces failure instead of returning a
+valid-looking id.
+
+**Verified against the live database**, all inside transactions that were rolled back by
+raising at the end:
+
+| Attack / case | Result |
+|---|---|
+| Apply as owner | 1 consumption row, on-hand −5 |
+| Second apply (double-click) | Blocked `55000`, still exactly 1 consumption row |
+| Unapply | Status `unapplied`, on-hand back to 0 |
+| Second unapply | Blocked `55000` |
+| **Apply → unapply → re-apply** | Works; 3 ledger rows, net −5 (the case the PRD index would have broken) |
+| Zero / negative quantity | Rejected `22023` |
+| Stranger applies | Blocked `42501`, status unchanged |
+| Anonymous applies | Blocked `42501` |
+| Purchase 100, then edit to 60 | Net **+60**, never +160 |
+| Edit again to 25 | Net +25 |
+| Purchase of 4 qt against a product held in gal | +1 gal |
+| Stranger / anonymous purchase | Blocked `42501`, on-hand unchanged |
+| Save work order | 2 fields + 1 line, `created_by` = caller |
+| Spoofed `created_by` in payload | Ignored; caller recorded |
+| Save with a malformed line | Failed `22P02`, **0 orphan work orders** |
+| Save with no lines | Rejected `22023` |
+| Stranger / anonymous save | Blocked `42501` |
+
+Nothing persisted: leftover fixtures, work-order ledger rows and on-hand were all
+re-checked at zero afterwards.
+
 ## Open items
 
 **Pre-existing, unrelated:** `database.types.ts` declares `set_active_season` with two
@@ -242,30 +325,52 @@ programs pages, have never been rendered — they are only reachable with data t
 not currently exist in the database (no unconvertible unit pair is present). Worth a
 manual look if a product is ever given a unit outside its class.
 
-## Next up — Round 4
+## Next up — Round 5
 
-Round 4 — WI-9, WI-10, WI-13 (apply/unapply, record_purchase, save_work_order as
-transactional RPCs). These depend on WI-11, which is why it went first. Note that WI-9
-now inherits a typed `WorkOrderApplyResult` and a working error banner, so its remaining
-work is the transaction, the status guard, the unique index and the in-flight button
-disable.
+Round 5 is the authorization round, and it now has three things to do rather than two.
+They all touch RLS, so doing them together means one coordinated set of policy changes and
+one verification pass instead of touching policies twice.
 
-Round 5 — SEC-5 (farm-scoped membership; large blast radius, best written by hand rather
-than generated) and SEC-3 (edge function authorization). **Redeploy
-`process-cascade-task` in this round** — its source has Round 3's conversion change but
-the deployed copy does not. Round 6 — PERF-1 through PERF-5 and remaining debt.
+1. **SEC-5 / WI-5 — farm-scoped membership.** Large blast radius; best written by hand
+   rather than generated. `can_edit_farm(uuid)` from Round 4 is the shape the rest of the
+   policies should converge on — it already does the right thing, so WI-5 is largely a
+   matter of threading `farm_id` through every policy that currently calls
+   `is_editor_of(owner_id)` / `is_team_member_of(owner_id)` and then retiring those two.
+2. **SEC-3 — edge function authorization.** **Redeploy `process-cascade-task` in this
+   round**: its source carries Round 3's conversion rewrite but the deployed copy still has
+   the old silent-fallback behaviour.
+3. **The WI-9 ledger backstop, deferred here by decision on 29 Aug 2026.** Round 4 closed
+   the double-posting hole inside the RPCs (row lock + status assertion, tested), but the
+   PRD also wanted a database-level guarantee that holds outside them. The plan: tighten
+   the INSERT policy on `inventory_ledger_entries` so a client can write only
+   `source_type = 'manual'` directly, forcing work-order and shopping-list entries through
+   `apply_work_order` / `unapply_work_order` / `record_purchase`, which bypass RLS as
+   SECURITY DEFINER. Every write path was already surveyed: `InventoryAdjustModal` is the
+   only remaining direct writer and it writes `'manual'`. Verify that manual adjustments
+   still succeed and that a direct work-order insert is refused.
+
+Round 6 — PERF-1 through PERF-5 and remaining debt.
 
 ## Baseline metrics
 
 All figures below are measured, not estimated.
 
-| Metric | Review baseline | `main` today | After Round 3 |
+| Metric | Review baseline | After Round 3 | After Round 4 |
 |---|---|---|---|
-| TypeScript errors | 103 | 103 | **103** (identical error set) |
-| ESLint | 136 errors, 28 warnings | 136 / 28 | **134 errors, 28 warnings** |
-| Tests | 0 | 0 | **178 passing, 4 files** |
+| TypeScript errors | 103 | 103 (identical set) | **99** |
+| ESLint | 136 errors, 28 warnings | 134 / 28 | **134 / 28** |
+| Tests | 0 | 178 passing, 4 files | **206 passing, 5 files** |
 | CI | none | none | none — still WI-21 |
-| Main JS chunk | 1,747 kB (465 kB gz) | 1,748.98 kB (465.70 kB gz) | **1,754.43 kB (467.56 kB gz)** |
+| Main JS chunk | 1,747 kB (465 kB gz) | 1,754.43 kB (467.56 kB gz) | **1,751.97 kB (467.39 kB gz)** |
+
+**The TypeScript baseline dropped 103 → 99.** All four were in `MarkPurchasedModal.tsx`
+and all four were eliminated by replacing its hand-rolled write sequence with the
+`record_purchase` RPC: the `price_per_bag` TS2353 described above, an associated TS2769
+overload failure, and two TS2345s where `string | null` was passed where `string` was
+required. No error was suppressed and none was introduced — the remaining 99 are a strict
+subset of the previous 103, compared file-by-file with line positions stripped.
+
+The bundle shrank 2.46 kB because the modal's inline ledger logic moved into the database.
 
 **The bundle grew by 5.45 kB raw / 1.86 kB gzipped**, measured against `main` built on the
 same machine with the same dependency tree. That is the new code: the unit registry and

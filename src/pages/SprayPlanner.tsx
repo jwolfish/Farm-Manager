@@ -63,6 +63,7 @@ export function SprayPlanner({ currentSeasonId, effectiveUserId, farmId }: Props
     handleSaveWorkOrder, handleDeleteSavedWorkOrder,
     handleApplyWorkOrder, handleUnapplyWorkOrder,
     savingProgramId,
+    applyingId,
     inventoryMap,
     seasonName,
   } = useSprayPlanner(currentSeasonId, effectiveUserId, farmId);
@@ -685,6 +686,7 @@ export function SprayPlanner({ currentSeasonId, effectiveUserId, farmId }: Props
         onApply={handleApplyWorkOrder}
         onUnapply={handleUnapplyWorkOrder}
         onGenerateSprayLogs={handleGenerateSprayLogs}
+        applyingId={applyingId}
       />
 
       {/* Master edit modal */}

@@ -57,7 +57,6 @@ export interface WorkOrderSavePayload {
   cropType: string;
   totalAcreage: number;
   sprayVolumeGalPerAcre: number | null;
-  createdBy: string;
   fields: Array<{
     fieldId: string;
     fieldName: string;
@@ -75,64 +74,52 @@ export interface WorkOrderSavePayload {
   }>;
 }
 
-export async function saveWorkOrder(payload: WorkOrderSavePayload): Promise<string | null> {
-  const { data: wo, error: woErr } = await supabase
-    .from('work_orders')
-    .insert({
+export type WorkOrderSaveResult =
+  | { ok: true; workOrderId: string }
+  | { ok: false; message: string };
+
+/**
+ * Save a work order. Header, fields and lines land in one transaction (WI-13),
+ * so a failure part-way can no longer leave an order with no chemicals while
+ * the UI reports success. `created_by` is set from the authenticated caller
+ * inside the database, not from the payload.
+ */
+export async function saveWorkOrder(payload: WorkOrderSavePayload): Promise<WorkOrderSaveResult> {
+  const { data, error } = await supabase.rpc('save_work_order', {
+    p_payload: {
       farm_id: payload.farmId,
       season_id: payload.seasonId,
       program_id: payload.programId,
       program_name: payload.programName,
       crop_type: payload.cropType,
-      status: 'draft' as WorkOrderStatus,
       total_acreage: payload.totalAcreage,
       spray_volume_gal_per_acre: payload.sprayVolumeGalPerAcre,
-      created_by: payload.createdBy,
-    })
-    .select('id')
-    .single();
+      fields: payload.fields.map((f) => ({
+        field_id: f.fieldId,
+        field_name: f.fieldName,
+        acreage: f.acreage,
+      })),
+      lines: payload.lines.map((l) => ({
+        master_product_id: l.masterProductId,
+        chemical_name: l.chemicalName,
+        rate_per_acre: l.ratePerAcre,
+        rate_unit: l.rateUnit,
+        total_needed: l.totalNeeded,
+        price_per_unit: l.pricePerUnit,
+        price_unit: l.priceUnit,
+        sort_order: l.sortOrder,
+      })),
+    },
+  });
 
-  if (woErr || !wo) {
-    console.error('Failed to save work order:', woErr);
-    return null;
+  if (error || !data) {
+    return {
+      ok: false,
+      message: describeRpcFailure(error, 'Could not save this work order. Nothing was saved.'),
+    };
   }
 
-  const workOrderId = wo.id;
-
-  if (payload.fields.length > 0) {
-    const { error: fieldsErr } = await supabase
-      .from('work_order_fields')
-      .insert(
-        payload.fields.map((f) => ({
-          work_order_id: workOrderId,
-          field_id: f.fieldId,
-          field_name: f.fieldName,
-          acreage: f.acreage,
-        }))
-      );
-    if (fieldsErr) console.error('Failed to save work order fields:', fieldsErr);
-  }
-
-  if (payload.lines.length > 0) {
-    const { error: linesErr } = await supabase
-      .from('work_order_lines')
-      .insert(
-        payload.lines.map((l) => ({
-          work_order_id: workOrderId,
-          master_product_id: l.masterProductId,
-          chemical_name: l.chemicalName,
-          rate_per_acre: l.ratePerAcre,
-          rate_unit: l.rateUnit,
-          total_needed: l.totalNeeded,
-          price_per_unit: l.pricePerUnit,
-          price_unit: l.priceUnit,
-          sort_order: l.sortOrder,
-        }))
-      );
-    if (linesErr) console.error('Failed to save work order lines:', linesErr);
-  }
-
-  return workOrderId;
+  return { ok: true, workOrderId: data as unknown as string };
 }
 
 export async function loadWorkOrders(farmId: string, seasonId: string): Promise<SavedWorkOrder[]> {
@@ -204,25 +191,29 @@ export async function deleteWorkOrder(workOrderId: string): Promise<boolean> {
   return true;
 }
 
-export async function applyWorkOrder(
-  workOrderId: string,
-  farmId: string,
-  userId: string,
+/**
+ * Turn the work order's lines into the quantities the RPC expects, expressed
+ * in each product's own stock unit. Refuses the whole operation if any line
+ * cannot be converted (WI-11).
+ */
+async function quantitiesForLines(
   lines: SavedWorkOrderLine[]
-): Promise<WorkOrderApplyResult> {
-  const linesToApply = lines.filter((l) => l.master_product_id != null);
-  if (linesToApply.length === 0) {
+): Promise<
+  | { ok: true; payload: Array<{ master_product_id: string; quantity: number; chemical_name: string }> }
+  | { ok: false; message: string }
+> {
+  const linked = lines.filter((l) => l.master_product_id != null);
+  if (linked.length === 0) {
     return {
       ok: false,
-      message: 'None of the chemicals on this work order are linked to inventory, so there is nothing to deduct.',
+      message: 'None of the chemicals on this work order are linked to inventory, so there is nothing to record.',
     };
   }
 
-  const productIds = linesToApply.map((l) => l.master_product_id!);
   const { data: products, error: productsErr } = await supabase
     .from('master_products')
     .select('id, unit_type')
-    .in('id', productIds);
+    .in('id', linked.map((l) => l.master_product_id!));
 
   if (productsErr) {
     console.error('Failed to read inventory products:', productsErr);
@@ -233,7 +224,7 @@ export async function applyWorkOrder(
   for (const p of products ?? []) unitMap.set(p.id, p.unit_type);
 
   const built = buildInventoryQuantities(
-    linesToApply.map((l) => ({
+    linked.map((l) => ({
       chemicalName: l.chemical_name,
       masterProductId: l.master_product_id!,
       rateUnit: l.rate_unit,
@@ -243,125 +234,87 @@ export async function applyWorkOrder(
   );
 
   if (!built.ok) {
-    return {
-      ok: false,
-      message: `Cannot apply this work order — ${built.problems.join('; ')}. Nothing was changed.`,
-    };
+    return { ok: false, message: built.problems.join('; ') };
   }
 
-  const ledgerEntries = built.quantities.map((q) => ({
-    farm_id: farmId,
-    master_product_id: q.masterProductId,
-    product_category: 'chemical' as const,
-    entry_type: 'consumption' as const,
-    quantity_delta: -q.quantity,
-    source_type: 'work_order' as const,
-    source_id: workOrderId,
-    note: `Applied from work order: ${q.chemicalName}`,
-    created_by: userId,
-  }));
+  return {
+    ok: true,
+    payload: built.quantities.map((q) => ({
+      master_product_id: q.masterProductId,
+      quantity: q.quantity,
+      chemical_name: q.chemicalName,
+    })),
+  };
+}
 
-  const { error: ledgerErr } = await supabase
-    .from('inventory_ledger_entries')
-    .insert(ledgerEntries);
+/** Turn a Postgres error from the apply/unapply RPCs into something readable. */
+function describeRpcFailure(
+  error: { code?: string; message?: string } | null,
+  fallback: string
+): string {
+  if (!error) return fallback;
+  switch (error.code) {
+    // object_not_in_prerequisite_state — wrong current status.
+    case '55000':
+    // insufficient_privilege, invalid_parameter_value, no_data_found.
+    case '42501':
+    case '22023':
+    case 'P0002':
+      return error.message ?? fallback;
+    default:
+      console.error('Work order RPC failed:', error);
+      return fallback;
+  }
+}
 
-  if (ledgerErr) {
-    console.error('Failed to write consumption ledger entries:', ledgerErr);
-    return { ok: false, message: 'Could not write the inventory entries. Nothing was changed.' };
+/**
+ * Apply a work order. The database does the status guard, the ledger writes and
+ * the status update in one transaction (WI-9), so a double-click, a lost
+ * response or two collaborators acting at once cannot double-deduct inventory.
+ */
+export async function applyWorkOrder(
+  workOrderId: string,
+  lines: SavedWorkOrderLine[]
+): Promise<WorkOrderApplyResult> {
+  const quantities = await quantitiesForLines(lines);
+  if (!quantities.ok) {
+    return { ok: false, message: `Cannot apply this work order — ${quantities.message}. Nothing was changed.` };
   }
 
-  const { error: statusErr } = await supabase
-    .from('work_orders')
-    .update({ status: 'applied' as WorkOrderStatus, applied_at: new Date().toISOString(), updated_at: new Date().toISOString() })
-    .eq('id', workOrderId);
+  const { error } = await supabase.rpc('apply_work_order', {
+    p_work_order_id: workOrderId,
+    p_quantities: quantities.payload,
+  });
 
-  if (statusErr) {
-    console.error('Failed to update work order status:', statusErr);
+  if (error) {
     return {
       ok: false,
-      message: 'Inventory was deducted but the work order status could not be updated. Reload before applying it again.',
+      message: describeRpcFailure(error, 'Could not apply this work order. Nothing was changed.'),
     };
   }
 
   return { ok: true };
 }
 
+/** Mirror of {@link applyWorkOrder}; writes reversing entries and restores stock. */
 export async function unapplyWorkOrder(
   workOrderId: string,
-  farmId: string,
-  userId: string,
   lines: SavedWorkOrderLine[]
 ): Promise<WorkOrderApplyResult> {
-  const linesToReverse = lines.filter((l) => l.master_product_id != null);
-  if (linesToReverse.length === 0) {
+  const quantities = await quantitiesForLines(lines);
+  if (!quantities.ok) {
+    return { ok: false, message: `Cannot unapply this work order — ${quantities.message}. Nothing was changed.` };
+  }
+
+  const { error } = await supabase.rpc('unapply_work_order', {
+    p_work_order_id: workOrderId,
+    p_quantities: quantities.payload,
+  });
+
+  if (error) {
     return {
       ok: false,
-      message: 'None of the chemicals on this work order are linked to inventory, so there is nothing to reverse.',
-    };
-  }
-
-  const productIds = linesToReverse.map((l) => l.master_product_id!);
-  const { data: products, error: productsErr } = await supabase
-    .from('master_products')
-    .select('id, unit_type')
-    .in('id', productIds);
-
-  if (productsErr) {
-    console.error('Failed to read inventory products:', productsErr);
-    return { ok: false, message: 'Could not read the inventory products. Nothing was changed.' };
-  }
-
-  const unitMap = new Map<string, string>();
-  for (const p of products ?? []) unitMap.set(p.id, p.unit_type);
-
-  const built = buildInventoryQuantities(
-    linesToReverse.map((l) => ({
-      chemicalName: l.chemical_name,
-      masterProductId: l.master_product_id!,
-      rateUnit: l.rate_unit,
-      totalNeeded: l.total_needed,
-    })),
-    unitMap
-  );
-
-  if (!built.ok) {
-    return {
-      ok: false,
-      message: `Cannot unapply this work order — ${built.problems.join('; ')}. Nothing was changed.`,
-    };
-  }
-
-  const reversalEntries = built.quantities.map((q) => ({
-    farm_id: farmId,
-    master_product_id: q.masterProductId,
-    product_category: 'chemical' as const,
-    entry_type: 'reversal' as const,
-    quantity_delta: q.quantity,
-    source_type: 'work_order' as const,
-    source_id: workOrderId,
-    note: `Reversed from work order: ${q.chemicalName}`,
-    created_by: userId,
-  }));
-
-  const { error: ledgerErr } = await supabase
-    .from('inventory_ledger_entries')
-    .insert(reversalEntries);
-
-  if (ledgerErr) {
-    console.error('Failed to write reversal ledger entries:', ledgerErr);
-    return { ok: false, message: 'Could not write the reversal entries. Nothing was changed.' };
-  }
-
-  const { error: statusErr } = await supabase
-    .from('work_orders')
-    .update({ status: 'unapplied' as WorkOrderStatus, unapplied_at: new Date().toISOString(), updated_at: new Date().toISOString() })
-    .eq('id', workOrderId);
-
-  if (statusErr) {
-    console.error('Failed to update work order status:', statusErr);
-    return {
-      ok: false,
-      message: 'Inventory was restored but the work order status could not be updated. Reload before unapplying it again.',
+      message: describeRpcFailure(error, 'Could not unapply this work order. Nothing was changed.'),
     };
   }
 
