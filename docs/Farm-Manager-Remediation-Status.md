@@ -283,6 +283,40 @@ raising at the end:
 Nothing persisted: leftover fixtures, work-order ledger rows and on-hand were all
 re-checked at zero afterwards.
 
+### Round 5 — IN PROGRESS
+
+**Step 1 done: the policy matrix exists and is RED.** The PRD asks for the pgTAP matrix to
+be written *before* WI-5 touches anything, so that the fix can be proved rather than
+asserted. `supabase/tests/sec5_farm_scoping_matrix.sql` builds its own fixtures — four auth
+users, two farms under the same owner, seasons, fields and inventory — runs
+{owner, editor, viewer, stranger} × {own farm, other farm} × {select, insert, update}, then
+raises so the whole transaction rolls back. pgTAP is not installed on this project, so the
+harness is plain PL/pgSQL; it needs no extension and can be pasted into the SQL editor.
+
+**Baseline before WI-5: 20 passed, 8 FAILED.** Every failure is a real hole, confirmed
+against the live schema:
+
+| Actor (invited to Farm One only) | Hole |
+|---|---|
+| editor | reads Farm Two's fields, products and season |
+| editor | **inserts a field into Farm Two** |
+| editor | **updates Farm Two's inventory** |
+| viewer | reads Farm Two's fields, products and season |
+
+What already passes and must keep passing: a viewer cannot write anywhere, and a stranger
+sees nothing at all. So the `role` check works; it is only the *farm* dimension that is
+missing, exactly as SEC-5 describes.
+
+An early version of the harness reported 10 failures. Two were artifacts of the harness
+itself — each actor's successful probe INSERT inflated the next actor's row count. Reads
+now exclude probe rows. The 8 above are real.
+
+**Scope of the rewrite: 28 tables, ~80 policies** all calling `is_team_member_of(owner)` or
+`is_editor_of(owner)`. Round 4's `can_edit_farm(farm_id)` is already the correct shape and
+needs only a `can_view_farm(farm_id)` sibling; the work is threading the resolved farm
+through every policy — direct for farm-scoped tables, via `seasons.farm_id` for
+season-scoped ones, via `fields → seasons.farm_id` for field-scoped ones.
+
 ## Open items
 
 **Migration filenames must match the recorded version.** Applying through the Supabase MCP
