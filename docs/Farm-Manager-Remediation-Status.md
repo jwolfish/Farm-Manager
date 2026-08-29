@@ -193,8 +193,18 @@ because it contradicts WI-9's own acceptance criterion that apply → unapply �
 work: the second apply writes a second `consumption` row for the same pair and the index
 would reject it. Deleting ledger rows on unapply would satisfy the index but destroy the
 audit trail. The real protection is `SELECT ... FOR UPDATE` plus the status assertion in
-one transaction, which was tested directly. A hard backstop closing the direct-INSERT
-path is proposed separately (see Open items).
+one transaction, which was tested directly.
+
+That leaves the PRD's *database-level* backstop formally unmet: double-posting is
+impossible through the RPCs, but an editor hand-crafting REST calls could still insert
+ledger rows directly. **Deferred to Round 5 by decision on 29 Aug 2026**, so that all RLS
+policy changes land together — see Next up for the plan.
+
+**Security advisor after these migrations:** seven WARNs, six of them
+`authenticated_security_definer_function_executable`. That lint fires on every RPC by
+definition, including `respond_to_invitation` from Round 1 and the pre-existing
+`set_active_season`; being callable by signed-in users is the point. No new class of
+finding. The one genuine item is `auth_leaked_password_protection`, which is WI-6.
 
 **WI-10, purchases — CLOSED.** `record_purchase(uuid, numeric, numeric, numeric)` does the
 reversal, the new purchase, the line update and the season price update in one
@@ -315,18 +325,31 @@ programs pages, have never been rendered — they are only reachable with data t
 not currently exist in the database (no unconvertible unit pair is present). Worth a
 manual look if a product is ever given a unit outside its class.
 
-## Next up — Round 4
+## Next up — Round 5
 
-Round 4 — WI-9, WI-10, WI-13 (apply/unapply, record_purchase, save_work_order as
-transactional RPCs). These depend on WI-11, which is why it went first. Note that WI-9
-now inherits a typed `WorkOrderApplyResult` and a working error banner, so its remaining
-work is the transaction, the status guard, the unique index and the in-flight button
-disable.
+Round 5 is the authorization round, and it now has three things to do rather than two.
+They all touch RLS, so doing them together means one coordinated set of policy changes and
+one verification pass instead of touching policies twice.
 
-Round 5 — SEC-5 (farm-scoped membership; large blast radius, best written by hand rather
-than generated) and SEC-3 (edge function authorization). **Redeploy
-`process-cascade-task` in this round** — its source has Round 3's conversion change but
-the deployed copy does not. Round 6 — PERF-1 through PERF-5 and remaining debt.
+1. **SEC-5 / WI-5 — farm-scoped membership.** Large blast radius; best written by hand
+   rather than generated. `can_edit_farm(uuid)` from Round 4 is the shape the rest of the
+   policies should converge on — it already does the right thing, so WI-5 is largely a
+   matter of threading `farm_id` through every policy that currently calls
+   `is_editor_of(owner_id)` / `is_team_member_of(owner_id)` and then retiring those two.
+2. **SEC-3 — edge function authorization.** **Redeploy `process-cascade-task` in this
+   round**: its source carries Round 3's conversion rewrite but the deployed copy still has
+   the old silent-fallback behaviour.
+3. **The WI-9 ledger backstop, deferred here by decision on 29 Aug 2026.** Round 4 closed
+   the double-posting hole inside the RPCs (row lock + status assertion, tested), but the
+   PRD also wanted a database-level guarantee that holds outside them. The plan: tighten
+   the INSERT policy on `inventory_ledger_entries` so a client can write only
+   `source_type = 'manual'` directly, forcing work-order and shopping-list entries through
+   `apply_work_order` / `unapply_work_order` / `record_purchase`, which bypass RLS as
+   SECURITY DEFINER. Every write path was already surveyed: `InventoryAdjustModal` is the
+   only remaining direct writer and it writes `'manual'`. Verify that manual adjustments
+   still succeed and that a direct work-order insert is refused.
+
+Round 6 — PERF-1 through PERF-5 and remaining debt.
 
 ## Baseline metrics
 
