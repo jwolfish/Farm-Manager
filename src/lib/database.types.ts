@@ -1561,6 +1561,13 @@ export interface Database {
         };
         Returns: undefined;
       };
+      respond_to_invitation: {
+        Args: {
+          p_invitation_id: string;
+          p_accept: boolean;
+        };
+        Returns: Database['public']['Tables']['team_members']['Row'];
+      };
     };
     Enums: {
       [_ in never]: never;

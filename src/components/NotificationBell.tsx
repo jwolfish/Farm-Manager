@@ -71,7 +71,7 @@ export function NotificationBell({ onInviteAccepted }: NotificationBellProps) {
     if (!user) return;
     const payload = notification.payload as { invitation_id: string; owner_name?: string; farm_name?: string };
     setProcessing(notification.id);
-    const { error } = await acceptInvitation(notification.id, payload.invitation_id, user.id);
+    const { error } = await acceptInvitation(notification.id, payload.invitation_id);
     if (!error) {
       setNotifications((prev) => prev.filter((n) => n.id !== notification.id));
       onInviteAccepted();

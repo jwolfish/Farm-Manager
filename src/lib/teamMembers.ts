@@ -173,18 +173,12 @@ export async function fetchSharedFarms(userId: string): Promise<SharedFarm[]> {
 
 export async function acceptInvitation(
   notificationId: string,
-  invitationId: string,
-  userId: string
+  invitationId: string
 ): Promise<{ error: string | null }> {
-  const { error: updateError } = await supabase
-    .from('team_members')
-    .update({
-      status: 'accepted',
-      invited_user_id: userId,
-      accepted_at: new Date().toISOString(),
-    })
-    .eq('id', invitationId)
-    .eq('status', 'pending');
+  const { error: updateError } = await supabase.rpc('respond_to_invitation', {
+    p_invitation_id: invitationId,
+    p_accept: true,
+  });
 
   if (updateError) {
     console.error('Error accepting invitation:', updateError);
@@ -203,10 +197,10 @@ export async function declineInvitation(
   notificationId: string,
   invitationId: string
 ): Promise<{ error: string | null }> {
-  const { error } = await supabase
-    .from('team_members')
-    .update({ status: 'declined' })
-    .eq('id', invitationId);
+  const { error } = await supabase.rpc('respond_to_invitation', {
+    p_invitation_id: invitationId,
+    p_accept: false,
+  });
 
   if (error) {
     console.error('Error declining invitation:', error);
