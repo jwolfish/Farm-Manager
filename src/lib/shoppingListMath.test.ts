@@ -115,3 +115,36 @@ describe('neededAfterOnHand', () => {
     expect(neededAfterOnHand(10, 0)).toBe(10);
   });
 });
+
+describe('accumulateNeed — liquid fertilizer density (F-1)', () => {
+  it('accumulates a gallon rate against a per-ton product when a density is given', () => {
+    // 6-24-6 at 5.9 gal/ac over 100 ac, held in tons, at 11.1 lb/gal.
+    // 590 gal x 11.1 = 6549 lb = 3.2745 ton.
+    const result = accumulateNeed(
+      [{ rate: 5.9, rateUnit: 'gallon', acreage: 100 }],
+      'ton',
+      11.1
+    );
+    expect(result.issues).toEqual([]);
+    expect(result.unit).toBe('ton');
+    expect(result.total).toBeCloseTo(3.2745, 9);
+  });
+
+  it('flags the same line rather than undercounting when the density is missing', () => {
+    const result = accumulateNeed(
+      [{ rate: 5.9, rateUnit: 'gallon', acreage: 100 }],
+      'ton',
+      null
+    );
+    expect(result.total).toBe(0);
+    expect(result.issues).toHaveLength(1);
+    expect(result.issues[0]).toContain('density');
+  });
+
+  it('leaves dry products alone when no density is passed', () => {
+    // 200 lb/ac over 100 ac held in tons = 10 ton, unchanged by F-1.
+    const result = accumulateNeed([{ rate: 200, rateUnit: 'pound', acreage: 100 }], 'ton');
+    expect(result.issues).toEqual([]);
+    expect(result.total).toBeCloseTo(10, 12);
+  });
+});

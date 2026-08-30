@@ -17,6 +17,12 @@ export interface FertilizerProduct {
   application_rate_unit: string | null;
   notes: string | null;
   master_product_id: string | null;
+  /**
+   * lb per US gallon. NULL for dry products. Present on liquids so a product
+   * sold by the ton and applied in gallons can be costed at all — mass and
+   * volume do not otherwise interconvert.
+   */
+  density_lb_per_gal: number | null;
 }
 
 interface Props {
@@ -27,7 +33,7 @@ interface Props {
   onHideForm: () => void;
 }
 
-const defaultForm = { product_name: '', price_per_unit: '', unit_type: 'gallon', application_rate: '', application_rate_unit: 'gallon', notes: '' };
+const defaultForm = { product_name: '', price_per_unit: '', unit_type: 'gallon', application_rate: '', application_rate_unit: 'gallon', notes: '', is_liquid: false, density_lb_per_gal: '' };
 
 export function FertilizersTab({ fertilizers, seasonId, onReload, showForm, onHideForm }: Props) {
   const { user } = useAuth();
@@ -49,6 +55,8 @@ export function FertilizersTab({ fertilizers, seasonId, onReload, showForm, onHi
       application_rate: fertilizer.application_rate?.toString() || '',
       application_rate_unit: fertilizer.application_rate_unit || 'gallon',
       notes: fertilizer.notes || '',
+      is_liquid: fertilizer.density_lb_per_gal !== null,
+      density_lb_per_gal: fertilizer.density_lb_per_gal?.toString() || '',
     });
   };
 
@@ -62,6 +70,17 @@ export function FertilizersTab({ fertilizers, seasonId, onReload, showForm, onHi
     const appRate = formData.application_rate ? parseFloat(formData.application_rate) : null;
     if (appRate !== null && (!isFinite(appRate) || appRate <= 0)) { setFormError('Application rate must be a number greater than 0.'); return; }
 
+    // A liquid must carry its density, otherwise it cannot be costed when the
+    // price unit and the rate unit are on opposite sides of mass and volume.
+    let density: number | null = null;
+    if (formData.is_liquid) {
+      density = parseFloat(formData.density_lb_per_gal);
+      if (!isFinite(density) || density <= 0) {
+        setFormError('A liquid product needs a density in pounds per gallon, greater than 0.');
+        return;
+      }
+    }
+
     try {
       const payload = {
         product_name: formData.product_name,
@@ -70,6 +89,7 @@ export function FertilizersTab({ fertilizers, seasonId, onReload, showForm, onHi
         application_rate: appRate,
         application_rate_unit: formData.application_rate_unit || null,
         notes: formData.notes || null,
+        density_lb_per_gal: density,
       };
 
       const isUpdating = !!editingId;
@@ -204,6 +224,43 @@ export function FertilizersTab({ fertilizers, seasonId, onReload, showForm, onHi
                   <option value="pound">Pound</option>
                 </select>
               </div>
+            </div>
+            <div className="rounded-lg border border-gray-200 bg-gray-50 p-4">
+              <label className="flex items-center gap-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={formData.is_liquid}
+                  onChange={(e) =>
+                    setFormData({
+                      ...formData,
+                      is_liquid: e.target.checked,
+                      density_lb_per_gal: e.target.checked ? formData.density_lb_per_gal : '',
+                    })
+                  }
+                  className="w-5 h-5 rounded border-gray-300 text-green-600 focus:ring-green-500"
+                />
+                <span className="text-sm font-medium text-gray-700">This is a liquid product</span>
+              </label>
+              {formData.is_liquid && (
+                <div className="mt-3">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Density (lb per gallon)
+                  </label>
+                  <input
+                    type="text"
+                    inputMode="decimal"
+                    value={formData.density_lb_per_gal}
+                    onChange={(e) => setFormData({ ...formData, density_lb_per_gal: e.target.value })}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                    placeholder="11.1"
+                  />
+                  <p className="mt-2 text-xs text-gray-500">
+                    Needed when the price unit and the application rate are on opposite sides of
+                    weight and volume — a product bought by the ton and applied in gallons, for
+                    example. Without it those items cannot be costed.
+                  </p>
+                </div>
+              )}
             </div>
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-2">Notes (optional)</label>

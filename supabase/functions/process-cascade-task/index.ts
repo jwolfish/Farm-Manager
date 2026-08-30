@@ -28,7 +28,12 @@ const MAX_WARNINGS = 100;
 // The semantics, unit registry and base factors below are identical.
 // ---------------------------------------------------------------------------
 
-type ConversionFailureReason = "unknown-unit" | "incompatible-class" | "invalid-amount";
+type ConversionFailureReason =
+  | "unknown-unit"
+  | "incompatible-class"
+  | "invalid-amount"
+  /** Mass<->volume, which is bridgeable, but no density was available. */
+  | "needs-density";
 
 type ConversionResult =
   | { ok: true; value: number }
@@ -119,6 +124,58 @@ function convertUnits(fromUnit: string, toUnit: string, amount: number): Convers
   return { ok: true, value: amount * (fromDef.factor / toDef.factor) };
 }
 
+function unitClassOf(unit: string): UnitClass | null {
+  return lookupUnit(normalizeUnit(unit))?.unitClass ?? null;
+}
+
+/*
+ * Product-aware conversion. Mass and volume stay separate in convertUnits above
+ * because bridging them needs a per-product density; a liquid fertilizer sold by
+ * the ton and applied in gallons supplies one.
+ *
+ * densityLbPerGal has three meaningful values and the difference between the
+ * last two is deliberate:
+ *   undefined  no density concept (chemical, seed) — behaves like convertUnits
+ *   null       density applies but is not set — returns needs-density
+ *   number     bridge through it
+ */
+function convertProductUnits(
+  fromUnit: string,
+  toUnit: string,
+  amount: number,
+  densityLbPerGal?: number | null,
+): ConversionResult {
+  const direct = convertUnits(fromUnit, toUnit, amount);
+  if (direct.ok) return direct;
+
+  if (direct.reason !== "incompatible-class") return direct;
+  if (densityLbPerGal === undefined) return direct;
+
+  const fromClass = unitClassOf(fromUnit);
+  const toClass = unitClassOf(toUnit);
+  const massToVolume = fromClass === "mass" && toClass === "volume";
+  const volumeToMass = fromClass === "volume" && toClass === "mass";
+  if (!massToVolume && !volumeToMass) return direct;
+
+  if (
+    densityLbPerGal === null ||
+    !Number.isFinite(densityLbPerGal) ||
+    densityLbPerGal <= 0
+  ) {
+    return { ok: false, reason: "needs-density", from: direct.from, to: direct.to };
+  }
+
+  if (volumeToMass) {
+    const gallons = convertUnits(fromUnit, "gal", amount);
+    if (!gallons.ok) return gallons;
+    return convertUnits("lb", toUnit, gallons.value * densityLbPerGal);
+  }
+
+  const pounds = convertUnits(fromUnit, "lb", amount);
+  if (!pounds.ok) return pounds;
+  return convertUnits("gal", toUnit, pounds.value / densityLbPerGal);
+}
+
 function describeConversionFailure(
   failure: Extract<ConversionResult, { ok: false }>
 ): string {
@@ -131,6 +188,8 @@ function describeConversionFailure(
       return `cannot convert ${from} to ${to} — unrecognised unit`;
     case "invalid-amount":
       return `cannot convert ${from} to ${to} — the amount is not a number`;
+    case "needs-density":
+      return `cannot convert ${from} to ${to} — enter a density (lb per gallon) on this product`;
   }
 }
 
@@ -138,7 +197,8 @@ function calculateCostWithConversion(
   rate: number,
   rateUnit: string,
   price: number,
-  priceUnit: string
+  priceUnit: string,
+  densityLbPerGal?: number | null
 ): ConversionResult {
   if (typeof price !== "number" || !Number.isFinite(price)) {
     return {
@@ -148,7 +208,7 @@ function calculateCostWithConversion(
       to: normalizeUnit(priceUnit),
     };
   }
-  const converted = convertUnits(rateUnit, priceUnit, rate);
+  const converted = convertProductUnits(rateUnit, priceUnit, rate, densityLbPerGal);
   if (!converted.ok) return converted;
   return { ok: true, value: converted.value * price };
 }
@@ -244,7 +304,7 @@ async function recalculateFertilizerProgramCost(
   const items = must(
     await supabase
       .from("fertilizer_program_items")
-      .select("id, application_rate, application_rate_unit, fertilizer_products(id, price_per_unit, unit_type)")
+      .select("id, application_rate, application_rate_unit, fertilizer_products(id, price_per_unit, unit_type, density_lb_per_gal)")
       .eq("program_id", programId),
     `load items for fertilizer program ${programId}`,
   );
@@ -258,7 +318,8 @@ async function recalculateFertilizerProgramCost(
       Number(item.application_rate),
       String(item.application_rate_unit),
       Number(product.price_per_unit),
-      String(product.unit_type)
+      String(product.unit_type),
+      product.density_lb_per_gal == null ? null : Number(product.density_lb_per_gal)
     );
     if (!cost.ok) {
       // Contributes nothing rather than a wrong number (WI-11).

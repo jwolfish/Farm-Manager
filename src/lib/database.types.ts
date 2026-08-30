@@ -460,6 +460,7 @@ export type Database = {
           application_rate: number | null
           application_rate_unit: string | null
           created_at: string | null
+          density_lb_per_gal: number | null
           id: string
           master_product_id: string | null
           notes: string | null
@@ -474,6 +475,7 @@ export type Database = {
           application_rate?: number | null
           application_rate_unit?: string | null
           created_at?: string | null
+          density_lb_per_gal?: number | null
           id?: string
           master_product_id?: string | null
           notes?: string | null
@@ -488,6 +490,7 @@ export type Database = {
           application_rate?: number | null
           application_rate_unit?: string | null
           created_at?: string | null
+          density_lb_per_gal?: number | null
           id?: string
           master_product_id?: string | null
           notes?: string | null

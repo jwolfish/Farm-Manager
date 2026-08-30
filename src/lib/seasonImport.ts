@@ -31,6 +31,8 @@ export interface FertilizerProduct {
   application_rate_unit: string | null;
   notes: string | null;
   master_product_id: string | null;
+  /** lb per US gallon, liquids only. Carried forward so it is entered once. */
+  density_lb_per_gal: number | null;
 }
 
 export interface IndividualChemical {
@@ -279,6 +281,7 @@ export async function importSeasonData(
         application_rate: fert.application_rate,
         application_rate_unit: fert.application_rate_unit,
         notes: fert.notes,
+        density_lb_per_gal: fert.density_lb_per_gal,
         master_product_id: masterProductRemap.get(fert.master_product_id ?? '') ?? fert.master_product_id,
       }));
 

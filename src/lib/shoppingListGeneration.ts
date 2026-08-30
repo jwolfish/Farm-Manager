@@ -244,7 +244,7 @@ export async function generateFertilizerLines(
       id,
       fertilizer_program_items (
         application_rate, application_rate_unit,
-        fertilizer_products ( id, product_name, unit_type )
+        fertilizer_products ( id, product_name, unit_type, density_lb_per_gal )
       )
     `)
     .in('id', [...allProgramIds]);
@@ -254,7 +254,10 @@ export async function generateFertilizerLines(
 
   // Collect contributions per fertilizer product, converting on the way in to
   // the product's own unit rather than summing mixed rate units (WI-12).
-  const fertMeta = new Map<string, { prodId: string; name: string; priceUnit: string }>();
+  const fertMeta = new Map<
+    string,
+    { prodId: string; name: string; priceUnit: string; density: number | null }
+  >();
   const fertContributions = new Map<string, NeedContribution[]>();
 
   for (const f of fields as any[]) {
@@ -280,6 +283,7 @@ export async function generateFertilizerLines(
             prodId: prod.id,
             name: prod.product_name,
             priceUnit: prod.unit_type ?? rateUnit,
+            density: prod.density_lb_per_gal ?? null,
           });
           fertContributions.set(prod.id, []);
         }
@@ -291,7 +295,11 @@ export async function generateFertilizerLines(
   // Fertilizer has no on-hand tracking in this release
   const lines: ShoppingLineInput[] = [];
   for (const meta of fertMeta.values()) {
-    const accumulated = accumulateNeed(fertContributions.get(meta.prodId) ?? [], meta.priceUnit);
+    const accumulated = accumulateNeed(
+      fertContributions.get(meta.prodId) ?? [],
+      meta.priceUnit,
+      meta.density
+    );
     lines.push({
       masterProductId: null,
       productName: meta.name,

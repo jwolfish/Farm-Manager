@@ -6,6 +6,7 @@ import {
   isKnownUnit,
   normalizeUnit,
   ConversionResult,
+  convertProductUnits,
 } from './unitConversions';
 
 /** Unwrap a result the test expects to have succeeded. */
@@ -214,5 +215,98 @@ describe('describeConversionFailure', () => {
     const message = describeConversionFailure(failure);
     expect(message).toContain('fl oz');
     expect(message).toContain('lb');
+  });
+});
+
+describe('convertProductUnits — density bridge (F-1)', () => {
+  const DENSITY_6_24_6 = 11.1; // lb per US gallon
+
+  it('passes non-bridging conversions straight through', () => {
+    expect(convertProductUnits('qt', 'fl oz', 2, DENSITY_6_24_6)).toEqual({ ok: true, value: 64 });
+    expect(convertProductUnits('lb', 'oz', 1, DENSITY_6_24_6)).toEqual({ ok: true, value: 16 });
+  });
+
+  it('is identical to convertUnits when no density argument is given', () => {
+    // The three-case convention: undefined means "this product has no concept
+    // of density" (a chemical), so a mass/volume pair stays a category error.
+    // Do not collapse this into the null case.
+    expect(convertProductUnits('lb', 'gal', 5)).toEqual({
+      ok: false, reason: 'incompatible-class', from: 'lb', to: 'gal',
+    });
+  });
+
+  it('reports needs-density when a density applies but is not set', () => {
+    expect(convertProductUnits('gal', 'ton', 5, null)).toEqual({
+      ok: false, reason: 'needs-density', from: 'gal', to: 'ton',
+    });
+  });
+
+  it('treats a zero, negative or non-finite density as missing', () => {
+    for (const bad of [0, -1, NaN, Infinity]) {
+      const result = convertProductUnits('gal', 'ton', 5, bad);
+      expect(result).toEqual({ ok: false, reason: 'needs-density', from: 'gal', to: 'ton' });
+    }
+  });
+
+  it('bridges volume to mass', () => {
+    expect(value(convertProductUnits('gal', 'lb', 1, DENSITY_6_24_6))).toBeCloseTo(11.1, 12);
+    // The real check: 4 gal/ac of 6-24-6 is the 44 lb/ac that was entered by
+    // hand for the 2025 season. If this drifts, the density is not being used.
+    expect(value(convertProductUnits('gal', 'lb', 4, DENSITY_6_24_6))).toBeCloseTo(44.4, 12);
+  });
+
+  it('bridges mass to volume', () => {
+    expect(value(convertProductUnits('lb', 'gal', 11.1, DENSITY_6_24_6))).toBeCloseTo(1, 12);
+    expect(value(convertProductUnits('ton', 'gal', 1, DENSITY_6_24_6))).toBeCloseTo(2000 / 11.1, 9);
+  });
+
+  it('bridges through units other than lb and gal on either side', () => {
+    // 1 qt = 0.25 gal -> 2.775 lb -> 44.4 oz
+    expect(value(convertProductUnits('qt', 'oz', 1, DENSITY_6_24_6))).toBeCloseTo(44.4, 9);
+  });
+
+  it('round-trips within 1e-9', () => {
+    for (const amount of [0.1, 1, 5.9, 250]) {
+      const there = convertProductUnits('gal', 'ton', amount, DENSITY_6_24_6);
+      expect(there.ok).toBe(true);
+      if (!there.ok) return;
+      const back = convertProductUnits('ton', 'gal', there.value, DENSITY_6_24_6);
+      expect(Math.abs(value(back) - amount)).toBeLessThan(1e-9);
+    }
+  });
+
+  it('does not bridge classes that a density cannot join', () => {
+    // A density says nothing about bags or seeds, so these stay errors even
+    // when one is supplied.
+    expect(convertProductUnits('bag', 'seed', 1, DENSITY_6_24_6)).toEqual({
+      ok: false, reason: 'incompatible-class', from: 'bag', to: 'seed',
+    });
+  });
+
+  it('leaves unknown units and bad amounts as their own failures', () => {
+    expect(convertProductUnits('widget', 'gal', 1, DENSITY_6_24_6).ok).toBe(false);
+    expect((convertProductUnits('widget', 'gal', 1, DENSITY_6_24_6) as { reason: string }).reason)
+      .toBe('unknown-unit');
+    expect((convertProductUnits('gal', 'ton', NaN, DENSITY_6_24_6) as { reason: string }).reason)
+      .toBe('invalid-amount');
+  });
+
+  it('costs a liquid bought by the ton and applied in gallons', () => {
+    // 5.9 gal/ac x 11.1 lb/gal = 65.49 lb = 0.032745 ton, at $725/ton.
+    const cost = calculateCostWithConversion(5.9, 'gal', 725, 'ton', DENSITY_6_24_6);
+    expect(cost.ok).toBe(true);
+    expect(value(cost)).toBeCloseTo(0.032745 * 725, 9);
+  });
+
+  it('refuses to cost the same item when the density is missing', () => {
+    const cost = calculateCostWithConversion(5.9, 'gal', 725, 'ton', null);
+    expect(cost).toEqual({ ok: false, reason: 'needs-density', from: 'gal', to: 'ton' });
+  });
+
+  it('names the fix in the failure message', () => {
+    const failure = convertProductUnits('gal', 'ton', 1, null);
+    expect(failure.ok).toBe(false);
+    if (failure.ok) return;
+    expect(describeConversionFailure(failure)).toContain('density');
   });
 });
