@@ -471,8 +471,44 @@ Five changes, each independently verifiable. The first ships alone and is useful
 | **F-2** | Schema | Three tables, triggers, indexes, RLS, SEC-5 matrix extended | **Done** — migration `20260830213751`, matrix 101/0 |
 | **F-3** | RPCs | `save_fertilizer_contract`, `delete_fertilizer_contract`, auto-cascade | **Done** — migration `20260830215258` |
 | **F-4** | UI | Fertilizer Contracts tab, cards, booking and load entry; the `<ResponsiveModal>` and `<NumberField>` primitives | **Done** — plus `save_fertilizer_load` (`20260830220139`) |
+| **F-4a** | Ticket-first spot buys + one price writer | See below | Not started — **do before F-5** |
 | **F-5** | Handoff | Shopping list "Book this"; Mark as Purchased removed for fertilizer | Not started |
 | **F-6** | Plan calculator | Fields × program → computed load lines; `computed_quantity`; the auto-note; reachable from both the load and booking forms | Not started |
+
+## 10a. F-4a — what the owner's first real use exposed
+
+Found 30 Aug 2026 by entering one spot buy and one load in the running app. Three related
+faults, all in the UI, none needing a migration.
+
+**1. A spot buy cannot be entered where it happens — on the ticket.**
+The owner had to create the ticket, be told there were no tons to draw on, leave for
+**Add booking**, enter the spot buy, then come back. A spot buy and its load are the same
+event; splitting them across two screens is what produced fault 2.
+
+**2. The "Draws against" dropdown defaults to "No booking".**
+So the natural flow records delivered tonnage attributed to nothing. Live proof: a 24-ton
+semi of Urea sits unattributed beside a 24-ton spot buy showing 24 t still to call — the
+same tons counted as both owed and delivered. It should default to the sole booking when a
+product has exactly one.
+
+**3. The partial-draw case the owner identified.**
+A 24-ton load against a booking with 20.35 t left. **The schema already handles this**: a
+load line is per-product *per booking*, and nothing stops two lines for the same product on
+one ticket with different `contract_id`s. So it is two lines — 20.35 t on the contract,
+3.65 t on a spot buy — which is also more truthful than one number, because those tons
+genuinely cost different amounts and the blend should say so.
+
+**The fix, all in `LoadTicketModal`:** per line, choose a booking; when the quantity exceeds
+what remains, offer to spill the remainder onto a new spot buy created inline (label and
+price) without leaving the modal.
+
+**4. And the price field on the Fertilizers tab is now a trap.**
+`fertilizer_products.price_per_unit` has three writers: that form, the F-3 contracts
+trigger, and `record_purchase`. For a product with priced bookings the trigger owns the
+number, but the form still lets you type one — it saves, cascades, moves field costs, and
+is then silently reverted by the next contract change. Make it read-only with "blended from
+N bookings — edit in Fertilizer Contracts" when priced bookings exist, and leave it
+editable when there are none, where it genuinely is the input. F-5 removes the third writer.
 
 F-6 is deliberately last. Everything before it is a complete, usable tracker — the
 calculator removes hand arithmetic from an already-working screen rather than being load
