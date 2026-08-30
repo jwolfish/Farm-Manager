@@ -3,7 +3,7 @@
 **Last updated:** 30 Aug 2026 — Rounds 1–6 (steps 1–3) complete, plus fertilizer F-1
 **Repo:** `jwolfish/Farm-Manager` — Rounds 1–6 and fertilizer F-1 are merged on `main`
 (`93b11a6`), **not yet pushed to origin**.
-**Branch `f-3-fertilizer-contract-rpcs` is NOT yet merged** and carries F-3; F-2 is merged.
+**Branch `f-4-fertilizer-contracts-ui` is NOT yet merged** and carries F-4; F-1 to F-3 are merged.
 **Edge function:** `process-cascade-task` **version 12** — deployed 30 Aug, carries WI-15
 and the F-1 density bridge. *(A note here previously said version 10; the platform was
 already at 11 when F-1 was deployed. The v11 source was fetched and confirmed identical to
@@ -27,7 +27,7 @@ half-finished and nothing is waiting to be merged.
 | ESLint | **109 errors, 28 warnings** (from 136/28) |
 | Build | succeeds — 1,751.91 kB (467.46 kB gz) |
 | SEC-5 policy matrix | **56 assertions, 0 failures** |
-| Migrations | 55 files, matching the database one-for-one |
+| Migrations | 56 files, matching the database one-for-one |
 
 **Closed:** SEC-1, SEC-2, SEC-3, SEC-4, SEC-5, SEC-7 · WI-9, WI-10, WI-11, WI-12, WI-13,
 WI-14, WI-16 · LOG-1, LOG-2, LOG-3, LOG-4, LOG-7, LOG-8, LOG-10 · plus four collaboration
@@ -993,6 +993,54 @@ running rather than assuming.
 **Not yet exercised by a human.** No contract exists in production. The first real test is
 entering two bookings at different prices and watching the product price become the blend —
 and, because the cascade is automatic, watching field costs move with it.
+
+### Fertilizer contract tracking — F-4 — branch `f-4-fertilizer-contracts-ui`
+
+The feature is now usable. Products gains a **Fertilizer Contracts** tab: a season strip,
+one card per product, booking entry, and load-ticket entry.
+
+**One migration was needed that the design did not anticipate:
+`20260830220139_save_fertilizer_load_rpc`.** A delivery ticket is a header plus lines,
+which is the exact shape that produced WI-13 — `saveWorkOrder` inserted header, fields and
+lines in three requests, logged the failures and returned a valid-looking id, leaving work
+orders with no lines. Shipping that again would have been careless, so loads go through one
+RPC in one transaction. Rehearsed first: **9 assertions, 0 failures**, including that a bad
+line leaves **no orphan header**.
+
+**`computeFertilizerNeedByProduct` was extracted from `generateFertilizerLines`.** The card
+shows plan need beside contracted tonnage, and the shopping list shows the same number.
+Two implementations could disagree, so there is one, and the shopping list is now its
+second consumer rather than its owner.
+
+**The two mobile primitives landed**, as agreed:
+
+| | |
+|---|---|
+| `<ResponsiveModal>` | Bottom sheet on a phone, centred card from `sm:` up. Deliberately matches the existing modals' overlay, width and close affordance so retrofitting them later is a swap |
+| `<NumberField>` | `type="text"` with `inputMode="decimal"`, 44 px tap targets. `type="number"` was rejected: it discards input the browser dislikes, changes on scroll, and varies by browser |
+
+`parseNumberField` lives in `mathUtils.ts`, not beside the component — a file exporting
+both a component and a helper breaks Fast Refresh, and doing it the obvious way pushed
+ESLint warnings 28 → 29 before it was moved back.
+
+**The new tab is lazy-loaded**, unlike its sibling tabs. Eager, it added 29 kB to every
+first paint of an app already 168 kB over WI-22's gzip target. Its siblings stay eager
+because converting them is WI-22's job, not this feature's.
+
+**Floor after F-4:**
+
+| | Before | After |
+|---|---|---|
+| Tests | 222 passing, 5 files | **238 passing, 6 files** |
+| TypeScript | 76 | **75** — sets compared with positions stripped; one error *removed* (an unused `farmId` renamed `_farmId`), none added |
+| ESLint | 109 errors, 28 warnings | **109 / 28** |
+| Main chunk | 1,754.29 kB (468.19 gz) | **1,755.04 kB (468.60 gz)** — +0.75 kB, with the tab in its own 28.71 kB (7.58 gz) chunk |
+| Migrations | 55 | **56** |
+
+**Nothing here has been opened in a browser.** The rollup math has 16 unit tests and both
+RPCs were rehearsed against the live database, but no card, modal or button has been
+rendered. That is the honest state: the arithmetic and the writes are proven, the screen is
+not.
 
 ## Open items and standing notes
 

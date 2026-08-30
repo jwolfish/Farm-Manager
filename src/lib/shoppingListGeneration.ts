@@ -179,10 +179,27 @@ export async function generateChemicalLines(
   return lines;
 }
 
-export async function generateFertilizerLines(
-  seasonId: string,
-  farmId: string
-): Promise<ShoppingLineInput[]> {
+/** Plan need for one fertilizer product, in that product's own unit. */
+export interface FertilizerNeed {
+  productId: string;
+  productName: string;
+  unit: string;
+  total: number;
+  /** Contributions that could not be converted; `total` is an undercount. */
+  issues: string[];
+}
+
+/**
+ * Programs x acreage, rolled up per fertilizer product.
+ *
+ * Extracted from `generateFertilizerLines` for F-4: the Fertilizer Contracts tab
+ * shows this same number beside what has actually been contracted, and the two
+ * must not be able to disagree. The shopping list is now a second consumer of
+ * this rather than the only implementation.
+ */
+export async function computeFertilizerNeedByProduct(
+  seasonId: string
+): Promise<FertilizerNeed[]> {
   const [fieldsRes, overridesRes] = await Promise.all([
     supabase
       .from('fields')
@@ -292,26 +309,42 @@ export async function generateFertilizerLines(
     }
   }
 
-  // Fertilizer has no on-hand tracking in this release
-  const lines: ShoppingLineInput[] = [];
+  const needs: FertilizerNeed[] = [];
   for (const meta of fertMeta.values()) {
     const accumulated = accumulateNeed(
       fertContributions.get(meta.prodId) ?? [],
       meta.priceUnit,
       meta.density
     );
-    lines.push({
-      masterProductId: null,
+    needs.push({
+      productId: meta.prodId,
       productName: meta.name,
-      productCategory: 'fertilizer',
-      neededQuantity: accumulated.total,
-      onHandAtGeneration: 0,
-      unitType: accumulated.unit,
+      unit: accumulated.unit,
+      total: accumulated.total,
       issues: accumulated.issues,
     });
   }
 
-  return lines;
+  return needs;
+}
+
+export async function generateFertilizerLines(
+  seasonId: string,
+  _farmId: string
+): Promise<ShoppingLineInput[]> {
+  const needs = await computeFertilizerNeedByProduct(seasonId);
+
+  // Fertilizer has no on-hand tracking, by design — it goes on the ground
+  // rather than into the shed, so there is no balance to subtract.
+  return needs.map((need) => ({
+    masterProductId: null,
+    productName: need.productName,
+    productCategory: 'fertilizer',
+    neededQuantity: need.total,
+    onHandAtGeneration: 0,
+    unitType: need.unit,
+    issues: need.issues,
+  }));
 }
 
 export async function generateSeedLines(

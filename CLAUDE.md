@@ -35,16 +35,17 @@ The status doc is the source of truth for what is done. Update it when a round l
 
 ## Known baseline — do not treat these as regressions you caused
 
-- `npx tsc --noEmit -p tsconfig.app.json` reports **76 errors** (was 103 at review, 98
+- `npx tsc --noEmit -p tsconfig.app.json` reports **75 errors** (was 103 at review, 98
   before WI-19 began). The regeneration of `database.types.ts` briefly took it to 103 —
   12 errors resolved, 17 revealed that the stale hand-written file had been hiding —
   before the unused-symbol sweep brought it to 76. See the WI-19 section of the status
   doc for the full accounting; every movement is itemised there.
 - `npx eslint .` reports **109 errors, 28 warnings** (was 136/28 at review).
-- `npx vite build` succeeds and emits a **1,754.29 kB** main chunk (468.19 kB gz). It was
+- `npx vite build` succeeds and emits a **1,755.04 kB** main chunk (468.60 kB gz), plus a
+  lazy 28.71 kB `FertilizerContractsTab` chunk. It was
   1,751.91 kB before fertilizer F-1, which added 2.38 kB for the density bridge, the
   Liquid checkbox and its help text.
-- `npm test` reports **222 passing** in 5 files (206 before F-1).
+- `npm test` reports **238 passing** in 6 files.
 - There is **no CI**. Adding it is WI-21 in the PRD.
 - Tests arrived with Round 3: `npm test` (Vitest). Test files are excluded from
   `tsconfig.app.json` so they do not move the 103-error baseline.
@@ -114,7 +115,7 @@ Bolt and Claude both fail the same way here: confident, plausible, incomplete. P
 checks that can return "no" over judgement:
 
 ```
-npx tsc --noEmit -p tsconfig.app.json   # must stay at 76 or drop
+npx tsc --noEmit -p tsconfig.app.json   # must stay at 75 or drop
 npx eslint .                            # must stay at 109 errors / 28 warnings, or drop
 npx vite build                          # must succeed
 npm test                                # must stay green

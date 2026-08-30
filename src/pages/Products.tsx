@@ -1,7 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { Suspense, lazy, useCallback, useEffect, useRef, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
-import { Plus, Package, Droplet, FlaskConical, Layers, Copy, ShoppingCart } from 'lucide-react';
+import { Plus, Package, Droplet, FlaskConical, Layers, Copy, ShoppingCart, Truck } from "lucide-react";
 import { FertilizerPrograms } from '../components/FertilizerPrograms';
 import { ChemicalPrograms } from '../components/ChemicalPrograms';
 import { CrossFarmCopyModal } from '../components/CrossFarmCopyModal';
@@ -15,12 +15,27 @@ import { ChemicalsTab } from '../components/products/ChemicalsTab';
 import type { IndividualChemical } from '../components/products/ChemicalsTab';
 import { ShoppingListsTab } from '../components/products/ShoppingListsTab';
 
+/*
+ * Lazy on purpose, unlike its sibling tabs.
+ *
+ * The initial bundle is already 475 kB gzipped against WI-22's 300 kB target,
+ * and that download — not layout — is what actually makes this app feel bad on
+ * rural cell data. Loading a tab nobody has opened would have added ~29 kB to
+ * every first paint. The other tabs are eager because they predate this and
+ * converting them is WI-22's job, not this feature's.
+ */
+const FertilizerContractsTab = lazy(() =>
+  import('../components/products/FertilizerContractsTab').then((m) => ({
+    default: m.FertilizerContractsTab,
+  }))
+);
+
 interface ProductsProps {
   seasonId: string | null;
   readOnly?: boolean;
 }
 
-type ProductType = 'seeds' | 'fertilizers' | 'chemicals' | 'programs' | 'shopping';
+type ProductType = "seeds" | "fertilizers" | "chemicals" | "programs" | "shopping" | "contracts";
 
 export function Products({ seasonId, readOnly = false }: ProductsProps) {
   const { user } = useAuth();
@@ -110,7 +125,8 @@ export function Products({ seasonId, readOnly = false }: ProductsProps) {
     { id: 'fertilizers' as ProductType, name: 'Fertilizers', icon: Droplet },
     { id: 'chemicals' as ProductType, name: 'Chemicals', icon: FlaskConical },
     { id: 'programs' as ProductType, name: 'Application Programs', icon: Layers },
-    { id: 'shopping' as ProductType, name: 'Shopping Lists', icon: ShoppingCart },
+    { id: "shopping" as ProductType, name: "Shopping Lists", icon: ShoppingCart },
+    { id: "contracts" as ProductType, name: "Fertilizer Contracts", icon: Truck },
   ];
 
   if (!seasonId) {
@@ -150,7 +166,7 @@ export function Products({ seasonId, readOnly = false }: ProductsProps) {
         })}
       </div>
 
-      {activeTab !== 'programs' && activeTab !== 'shopping' && !readOnly && (
+      {activeTab !== 'programs' && activeTab !== 'shopping' && activeTab !== 'contracts' && !readOnly && (
         <div className="mb-6 flex items-center gap-3">
           <button
             onClick={() => setShowForm(true)}
@@ -206,6 +222,12 @@ export function Products({ seasonId, readOnly = false }: ProductsProps) {
       )}
       {activeTab === 'shopping' && (
         <ShoppingListsTab seasonId={seasonId} readOnly={readOnly} />
+      )}
+
+      {activeTab === 'contracts' && (
+        <Suspense fallback={<div className="py-12 text-center text-gray-500">Loading…</div>}>
+          <FertilizerContractsTab seasonId={seasonId} readOnly={readOnly} />
+        </Suspense>
       )}
 
       {showCrossFarmModal && seasonId && user && (
