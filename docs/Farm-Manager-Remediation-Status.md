@@ -1,8 +1,8 @@
 # Farm Manager Remediation — Status
 
 **Last updated:** 30 Aug 2026 — Rounds 1–6 (steps 1–3) complete
-**Repo:** `jwolfish/Farm-Manager` @ `main` — Round 6 steps 1–2 pushed at `5cd21c0`;
-step 3 (WI-15) is on branch `wi-15-cascade-honesty`
+**Repo:** `jwolfish/Farm-Manager` @ `main` (`724aa43`) — everything below is merged and
+pushed; nothing is waiting on a branch
 **Edge function:** `process-cascade-task` **version 10** — deployed 30 Aug, carries WI-15
 **Supabase project:** `wvccxjakqwqfmyewclue` (bolt-native-database-63401892)
 **Companion docs:** `Farm-Manager-Code-Review-Summary.md`, `Farm-Manager-Remediation-PRD.md`
