@@ -171,6 +171,22 @@ function calculateFieldTotalCost(fc: Record<string, unknown>): number {
   );
 }
 
+/*
+ * WI-15. Every read in this function must fail loudly.
+ *
+ * The pattern this replaces was `const { data } = await supabase...` followed by
+ * `if (!data) return <nothing to do>`. That makes a failed query indistinguishable
+ * from an empty result, so a cascade that never ran reported itself completed and
+ * the caller was told the price change had propagated when it had not.
+ *
+ * Throwing is what we want here: every call site runs inside the handler's try,
+ * which marks the task failed and records the message.
+ */
+function must<T>(res: { data: T; error: { message: string } | null }, what: string): T {
+  if (res.error) throw new Error(`${what}: ${res.error.message}`);
+  return res.data;
+}
+
 async function withRetry<T>(fn: () => Promise<T>, maxRetries = 3): Promise<T> {
   let lastError: unknown;
   for (let attempt = 0; attempt < maxRetries; attempt++) {
@@ -214,18 +230,24 @@ async function recalculateFertilizerProgramCost(
   programId: string,
   warnings?: WarningBuffer
 ): Promise<{ programId: string; newCost: number; unpricedItems: string[] } | null> {
-  const { data: program } = await supabase
-    .from("fertilizer_programs")
-    .select("id, application_cost")
-    .eq("id", programId)
-    .maybeSingle();
+  const program = must(
+    await supabase
+      .from("fertilizer_programs")
+      .select("id, application_cost")
+      .eq("id", programId)
+      .maybeSingle(),
+    `load fertilizer program ${programId}`,
+  );
 
   if (!program) return null;
 
-  const { data: items } = await supabase
-    .from("fertilizer_program_items")
-    .select("id, application_rate, application_rate_unit, fertilizer_products(id, price_per_unit, unit_type)")
-    .eq("program_id", programId);
+  const items = must(
+    await supabase
+      .from("fertilizer_program_items")
+      .select("id, application_rate, application_rate_unit, fertilizer_products(id, price_per_unit, unit_type)")
+      .eq("program_id", programId),
+    `load items for fertilizer program ${programId}`,
+  );
 
   let totalCostPerAcre = 0;
   const unpricedItems: string[] = [];
@@ -257,18 +279,24 @@ async function recalculateChemicalProgramCost(
   programId: string,
   warnings?: WarningBuffer
 ): Promise<{ programId: string; newCost: number; unpricedItems: string[] } | null> {
-  const { data: program } = await supabase
-    .from("chemical_programs")
-    .select("id, application_cost")
-    .eq("id", programId)
-    .maybeSingle();
+  const program = must(
+    await supabase
+      .from("chemical_programs")
+      .select("id, application_cost")
+      .eq("id", programId)
+      .maybeSingle(),
+    `load chemical program ${programId}`,
+  );
 
   if (!program) return null;
 
-  const { data: items } = await supabase
-    .from("chemical_program_items")
-    .select("id, application_rate, application_rate_unit, individual_chemicals(id, price_per_unit, unit_type)")
-    .eq("program_id", programId);
+  const items = must(
+    await supabase
+      .from("chemical_program_items")
+      .select("id, application_rate, application_rate_unit, individual_chemicals(id, price_per_unit, unit_type)")
+      .eq("program_id", programId),
+    `load items for chemical program ${programId}`,
+  );
 
   let totalCostPerAcre = 0;
   const unpricedItems: string[] = [];
@@ -301,19 +329,25 @@ async function cascadeTemplateUpdateInSeason(
   seasonId: string,
   warnings: WarningBuffer
 ): Promise<{ fieldsUpdated: number; failedFieldIds: string[] }> {
-  const { data: template } = await supabase
-    .from("cost_templates")
-    .select("*")
-    .eq("id", templateId)
-    .eq("season_id", seasonId)
-    .maybeSingle();
+  const template = must(
+    await supabase
+      .from("cost_templates")
+      .select("*")
+      .eq("id", templateId)
+      .eq("season_id", seasonId)
+      .maybeSingle(),
+    `load template ${templateId}`,
+  );
 
   if (!template) return { fieldsUpdated: 0, failedFieldIds: [] };
 
-  const { data: fieldCostRows } = await supabase
-    .from("field_costs")
-    .select("*")
-    .eq("template_id", templateId);
+  const fieldCostRows = must(
+    await supabase
+      .from("field_costs")
+      .select("*")
+      .eq("template_id", templateId),
+    `load field costs for template ${templateId}`,
+  );
 
   if (!fieldCostRows || fieldCostRows.length === 0) {
     return { fieldsUpdated: 0, failedFieldIds: [] };
@@ -321,10 +355,25 @@ async function cascadeTemplateUpdateInSeason(
 
   const fieldIds = fieldCostRows.map((r: Record<string, unknown>) => r.field_id as string);
 
-  const { data: overrideRows } = await supabase
-    .from("field_cost_overrides")
-    .select("field_id, cost_item_name")
-    .in("field_id", fieldIds);
+  /*
+   * This read is the one that must never be allowed to fail quietly.
+   *
+   * overridesByField is the ONLY thing stopping this cascade from overwriting a
+   * field's manually-overridden costs. The previous `const { data } = ...` plus
+   * `overrideRows || []` meant a failed query produced an empty override map, so
+   * every override was silently replaced by the template value -- no error, no
+   * warning, wrong money on every affected field.
+   *
+   * The same bug was fixed on the client in e90c377; this is the copy that
+   * actually runs. Guardrail 7: the two must be changed together.
+   */
+  const overrideRows = must(
+    await supabase
+      .from("field_cost_overrides")
+      .select("field_id, cost_item_name")
+      .in("field_id", fieldIds),
+    `load field cost overrides for template ${templateId}`,
+  );
 
   const overridesByField = new Map<string, Set<string>>();
   for (const o of overrideRows || []) {
@@ -398,10 +447,13 @@ async function cascadeProgramUpdateInSeason(
   let templatesUpdated = 0;
   let fieldsUpdated = 0;
 
-  const { data: templates } = await supabase
-    .from("cost_templates")
-    .select(`id, ${programField}, season_id`)
-    .eq("season_id", seasonId);
+  const templates = must(
+    await supabase
+      .from("cost_templates")
+      .select(`id, ${programField}, season_id`)
+      .eq("season_id", seasonId),
+    `load templates for season ${seasonId}`,
+  );
 
   if (!templates) return { templatesUpdated: 0, fieldsUpdated: 0 };
 
@@ -442,11 +494,14 @@ async function runCascadeProductUpdate(
   seasonId: string,
   warnings: WarningBuffer
 ): Promise<CascadeStats> {
-  const { data: programs } = await supabase
-    .from("fertilizer_programs")
-    .select("id, season_id, fertilizer_program_items!inner(fertilizer_product_id)")
-    .eq("fertilizer_program_items.fertilizer_product_id", entityId)
-    .eq("season_id", seasonId);
+  const programs = must(
+    await supabase
+      .from("fertilizer_programs")
+      .select("id, season_id, fertilizer_program_items!inner(fertilizer_product_id)")
+      .eq("fertilizer_program_items.fertilizer_product_id", entityId)
+      .eq("season_id", seasonId),
+    `load fertilizer programs using product ${entityId}`,
+  );
 
   let programsUpdated = 0;
   let templatesUpdated = 0;
@@ -454,9 +509,13 @@ async function runCascadeProductUpdate(
   const failedFieldIds: string[] = [];
 
   for (const program of programs || []) {
-    await withRetry(() => recalculateFertilizerProgramCost(supabase, program.id as string, warnings));
-    programsUpdated++;
+    // WI-15 asked whether the discarded result of a standalone recalculate call
+    // should be persisted or removed. Removed: cascadeProgramUpdateInSeason
+    // recalculates internally and writes the result into the templates, so the
+    // separate call was two wasted queries per program and its return value was
+    // thrown away. There is no stored cost column on *_programs to persist it to.
     const r = await withRetry(() => cascadeProgramUpdateInSeason(supabase, program.id as string, "fertilizer", seasonId, warnings));
+    programsUpdated++;
     templatesUpdated += r.templatesUpdated;
     fieldsUpdated += r.fieldsUpdated;
   }
@@ -470,11 +529,14 @@ async function runCascadeChemicalUpdate(
   seasonId: string,
   warnings: WarningBuffer
 ): Promise<CascadeStats> {
-  const { data: programs } = await supabase
-    .from("chemical_programs")
-    .select("id, season_id, chemical_program_items!inner(chemical_id)")
-    .eq("chemical_program_items.chemical_id", entityId)
-    .eq("season_id", seasonId);
+  const programs = must(
+    await supabase
+      .from("chemical_programs")
+      .select("id, season_id, chemical_program_items!inner(chemical_id)")
+      .eq("chemical_program_items.chemical_id", entityId)
+      .eq("season_id", seasonId),
+    `load chemical programs using chemical ${entityId}`,
+  );
 
   let programsUpdated = 0;
   let templatesUpdated = 0;
@@ -482,9 +544,9 @@ async function runCascadeChemicalUpdate(
   const failedFieldIds: string[] = [];
 
   for (const program of programs || []) {
-    await withRetry(() => recalculateChemicalProgramCost(supabase, program.id as string, warnings));
-    programsUpdated++;
+    // See the fertilizer path above: the standalone recalculate call was redundant.
     const r = await withRetry(() => cascadeProgramUpdateInSeason(supabase, program.id as string, "chemical", seasonId, warnings));
+    programsUpdated++;
     templatesUpdated += r.templatesUpdated;
     fieldsUpdated += r.fieldsUpdated;
   }
@@ -665,10 +727,34 @@ Deno.serve(async (req: Request) => {
     }
     // ---- end SEC-3 --------------------------------------------------------
 
-    await supabaseAdmin
-      .from("cascade_tasks")
-      .update({ status: "running" })
-      .eq("id", taskId);
+    /*
+     * WI-15: claim the task, do not merely announce it.
+     *
+     * This was an unconditional `update({status: "running"})`, so a duplicate
+     * invocation -- a retry, a double-click, two open tabs -- happily started a
+     * second cascade running concurrently over the same rows. Making the write
+     * conditional on the task still being `pending` means exactly one caller wins;
+     * the losers find zero rows updated and return without doing the work twice.
+     *
+     * `started_at` has existed on this table all along and was never written.
+     */
+    const claimed = must(
+      await supabaseAdmin
+        .from("cascade_tasks")
+        .update({ status: "running", started_at: new Date().toISOString() })
+        .eq("id", taskId)
+        .eq("status", "pending")
+        .select("id"),
+      `claim task ${taskId}`,
+    );
+
+    if (!claimed || claimed.length === 0) {
+      // Another invocation already has it. Not an error, but not our work either.
+      return new Response(
+        JSON.stringify({ success: true, taskId, status: "already-claimed", cascaded: false }),
+        { headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
+    }
 
     const warnings = new WarningBuffer();
     let stats: CascadeStats = { programsUpdated: 0, templatesUpdated: 0, fieldsUpdated: 0, failedFieldIds: [] };
@@ -684,13 +770,24 @@ Deno.serve(async (req: Request) => {
         stats = await runCascadeTemplateUpdate(supabaseAdmin, entityId, seasonId, warnings);
       }
 
-      const { data: currentTask } = await supabaseAdmin
+      /*
+       * Deliberately NOT wrapped in must(). This read only recovers prior
+       * result_data so it can be merged forward; the cascade itself has already
+       * succeeded by this point, and failing it here would report a completed
+       * cascade as failed -- the very inversion WI-15 exists to remove. Record the
+       * failure as a warning instead, so the loss of prior data is visible.
+       */
+      const currentTaskRes = await supabaseAdmin
         .from("cascade_tasks")
         .select("result_data")
         .eq("id", taskId)
         .maybeSingle();
 
-      const currentData = (currentTask?.result_data as Record<string, unknown>) || {};
+      if (currentTaskRes.error) {
+        warnings.add(`Could not read prior result_data for task ${taskId}: ${currentTaskRes.error.message}`);
+      }
+
+      const currentData = (currentTaskRes.data?.result_data as Record<string, unknown>) || {};
       const hasFailures = stats.failedFieldIds.length > 0;
       const finalStatus = hasFailures ? "partial" : "completed";
 
@@ -708,6 +805,14 @@ Deno.serve(async (req: Request) => {
       }).eq("id", taskId);
 
     } catch (execError) {
+      /*
+       * WI-15: the caller must hear about this.
+       *
+       * The task row was already being marked `failed` here, but the function then
+       * fell through to an unconditional `{success: true}` with a 200. So the one
+       * place in the system that knew the cascade had failed told the client it had
+       * succeeded, and the client had no reason to look at the task row.
+       */
       const errorMsg = execError instanceof Error ? execError.message : String(execError);
       await supabaseAdmin.from("cascade_tasks").update({
         status: "failed",
@@ -715,11 +820,29 @@ Deno.serve(async (req: Request) => {
         error_message: errorMsg,
         result_data: { warnings: warnings.snapshot() },
       }).eq("id", taskId);
+
+      return new Response(
+        JSON.stringify({ success: false, taskId, status: "failed", error: errorMsg }),
+        { status: 500, headers: { ...corsHeaders, "Content-Type": "application/json" } },
+      );
     }
 
-    return new Response(JSON.stringify({ success: true }), {
-      headers: { ...corsHeaders, "Content-Type": "application/json" },
-    });
+    // Reached only when the cascade ran to completion. `partial` means some fields
+    // failed to update and their ids are on the task row.
+    const hadFailures = stats.failedFieldIds.length > 0;
+    return new Response(
+      JSON.stringify({
+        success: true,
+        taskId,
+        status: hadFailures ? "partial" : "completed",
+        cascaded: true,
+        programsUpdated: stats.programsUpdated,
+        templatesUpdated: stats.templatesUpdated,
+        fieldsUpdated: stats.fieldsUpdated,
+        failedFieldIds: stats.failedFieldIds,
+      }),
+      { headers: { ...corsHeaders, "Content-Type": "application/json" } },
+    );
 
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
