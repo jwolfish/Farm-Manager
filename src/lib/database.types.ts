@@ -468,7 +468,6 @@ export type Database = {
           price_per_unit: number | null
           season_id: string
           supplier: string | null
-          unit_type: string
           updated_at: string | null
           user_id: string
         }
@@ -484,7 +483,6 @@ export type Database = {
           price_per_unit?: number | null
           season_id: string
           supplier?: string | null
-          unit_type: string
           updated_at?: string | null
           user_id: string
         }
@@ -500,7 +498,6 @@ export type Database = {
           price_per_unit?: number | null
           season_id?: string
           supplier?: string | null
-          unit_type?: string
           updated_at?: string | null
           user_id?: string
         }
@@ -1827,6 +1824,7 @@ export type Database = {
       }
       can_edit_farm: { Args: { p_farm_id: string }; Returns: boolean }
       can_view_farm: { Args: { p_farm_id: string }; Returns: boolean }
+      delete_fertilizer_contract: { Args: { p_id: string }; Returns: Json }
       record_purchase: {
         Args: {
           p_line_id: string
@@ -1857,8 +1855,13 @@ export type Database = {
           isSetofReturn: false
         }
       }
+      save_fertilizer_contract: { Args: { p_payload: Json }; Returns: Json }
       save_work_order: { Args: { p_payload: Json }; Returns: string }
       set_active_season: { Args: { p_season_id: string }; Returns: undefined }
+      sync_fertilizer_blended_price: {
+        Args: { p_product_id: string }
+        Returns: number
+      }
       unapply_work_order: {
         Args: { p_quantities: Json; p_work_order_id: string }
         Returns: {

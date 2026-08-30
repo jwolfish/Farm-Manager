@@ -233,8 +233,19 @@ all-or-nothing rule WI-11 applied to `applyWorkOrder`.
 avgPrice = sum(qty × price) / sum(qty)     over contracts, both kinds
 ```
 
-with quantities *and* prices converted to the product unit first — a contract in tons
-against a product priced per pound converts the price by the inverse factor.
+**Superseded at F-3.** This originally said quantities *and* prices were converted into
+the product's unit first. Implementing that inside Postgres meant a **third** copy of the
+unit conversion table — client, edge function, and SQL — in a third language, computing
+the number that drives every field cost. Guardrail 7 records that the existing two copies
+have needed hand-syncing three times already.
+
+So **a contract is denominated in its product's own unit**, and `fertilizer_contracts.
+unit_type` was dropped rather than kept-and-constrained: a constrained duplicate is
+denormalization that can drift, which is the same shape F-2 avoided by not carrying a
+`farm_id`. The average is now exact arithmetic with no conversion at all.
+
+`fertilizer_load_lines.unit_type` **stays** — a load genuinely can arrive in another unit,
+and that rollup is computed in TypeScript for display, not in SQL.
 
 Worked example:
 
@@ -269,6 +280,13 @@ Consequences the owner has accepted:
 - The **first** booking entered for a product immediately moves that product's price off
   whatever was typed on the Fertilizers tab and rewrites every field cost using it.
 - Entering three bookings in a row queues three cascades.
+
+**Landed at F-3 with one change: the recompute is a trigger, not RPC-only.** A trigger on
+`fertilizer_contracts` maintains `fertilizer_products.price_per_unit` as the weighted
+average, the same pattern as `update_master_product_on_hand` maintaining on-hand from the
+ledger. That means the price cannot desync however a contract row arrives — the RPC, a
+hand-crafted REST call, or a future admin fix. The RPC's remaining job is to validate,
+write, and hand the client a cascade target.
 
 Implementation follows the `record_purchase` precedent rather than the pre-WI-10 pattern of
 sequential unguarded client writes:
@@ -451,7 +469,7 @@ Five changes, each independently verifiable. The first ships alone and is useful
 |---|---|---|---|
 | **F-1** | Density and conversion | `density_lb_per_gal` column, `convertProductUnits`, both copies of the cost math, unit tests, season-import carry-forward | **Done** — merged, edge function v12 |
 | **F-2** | Schema | Three tables, triggers, indexes, RLS, SEC-5 matrix extended | **Done** — migration `20260830213751`, matrix 101/0 |
-| **F-3** | RPCs | `save_fertilizer_contract`, `delete_fertilizer_contract`, auto-cascade | Not started |
+| **F-3** | RPCs | `save_fertilizer_contract`, `delete_fertilizer_contract`, auto-cascade | **Done** — migration `20260830215258` |
 | **F-4** | UI | Fertilizer Contracts tab, cards, booking and load entry; the `<ResponsiveModal>` and `<NumberField>` primitives | Not started |
 | **F-5** | Handoff | Shopping list "Book this"; Mark as Purchased removed for fertilizer | Not started |
 | **F-6** | Plan calculator | Fields × program → computed load lines; `computed_quantity`; the auto-note; reachable from both the load and booking forms | Not started |
