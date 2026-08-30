@@ -1,9 +1,9 @@
 # Farm Manager Remediation — Status
 
 **Last updated:** 30 Aug 2026 — Rounds 1–6 (steps 1–3) complete, plus fertilizer F-1
-**Repo:** `jwolfish/Farm-Manager` — Rounds 1–6 are merged on `main` (`f30801f`).
-**Branch `f-1-fertilizer-density` (`e205aa5`) is NOT yet merged** and carries the
-fertilizer contract design doc plus F-1.
+**Repo:** `jwolfish/Farm-Manager` — Rounds 1–6 and fertilizer F-1 are merged on `main`
+(`93b11a6`), **not yet pushed to origin**.
+**Branch `f-2-fertilizer-contract-schema` is NOT yet merged** and carries F-2.
 **Edge function:** `process-cascade-task` **version 12** — deployed 30 Aug, carries WI-15
 and the F-1 density bridge. *(A note here previously said version 10; the platform was
 already at 11 when F-1 was deployed. The v11 source was fetched and confirmed identical to
@@ -27,7 +27,7 @@ half-finished and nothing is waiting to be merged.
 | ESLint | **109 errors, 28 warnings** (from 136/28) |
 | Build | succeeds — 1,751.91 kB (467.46 kB gz) |
 | SEC-5 policy matrix | **56 assertions, 0 failures** |
-| Migrations | 52 files, matching the database one-for-one |
+| Migrations | 54 files, matching the database one-for-one |
 
 **Closed:** SEC-1, SEC-2, SEC-3, SEC-4, SEC-5, SEC-7 · WI-9, WI-10, WI-11, WI-12, WI-13,
 WI-14, WI-16 · LOG-1, LOG-2, LOG-3, LOG-4, LOG-7, LOG-8, LOG-10 · plus four collaboration
@@ -884,6 +884,64 @@ UPDATE fertilizer_products SET price_per_unit = p_price_per_unit
 Rename a fertilizer product after generating a shopping list and this matches nothing,
 `v_entity` stays null, and **no cascade fires** — silently. F-5 removes fertilizer from
 this path entirely, which retires it. If that decision is ever reversed, fix it on its own.
+
+### Fertilizer contract tracking — F-2 — branch `f-2-fertilizer-contract-schema`
+
+Schema only. No client code reads these tables yet, so nothing in the app changes;
+F-3 (RPCs) and F-4 (UI) are what make them visible.
+
+**Migration `20260830213751_fertilizer_contracts_and_loads`** — three tables:
+
+| Table | Holds |
+|---|---|
+| `fertilizer_contracts` | Every commitment. `kind='spot'` is a contract filled the same day, so all prices live here and the weighted average needs no special case |
+| `fertilizer_loads` | One delivery ticket: date, ticket number, load type, supplier, `delivery_fee` |
+| `fertilizer_load_lines` | What was on the ticket — a blend is its component products on separate lines, mirroring the plant's ticket. **Carries no price** |
+
+Four decisions worth keeping:
+
+1. **No denormalized `farm_id`.** RLS resolves the farm through `seasons.farm_id`,
+   which sidesteps the whole SEC-4 class of defect where a denormalized column
+   disagrees with the row it points at and the policy believes the column.
+2. **The consistency triggers are SECURITY INVOKER**, unusually for this codebase.
+   They read `fertilizer_products` and `fertilizer_contracts`, both RLS-protected,
+   so running as the caller means naming a row you cannot see fails the `EXISTS`
+   and raises. It fails closed. A DEFINER version would cheerfully confirm a row
+   the caller has no business naming.
+3. **`contract_id` is `ON DELETE RESTRICT`.** Deleting a booking with loads against
+   it fails loudly rather than orphaning delivered tonnage.
+4. **DELETE uses `can_edit_farm`, not owner-only.** New tables have no existing
+   behaviour to widen, and an editor is meant to manage the farm's fertilizer
+   buying. This deliberately differs from the older tables, where batch 2 left
+   owner-only DELETE alone because changing it would have been a product decision
+   rather than a security fix.
+
+**Rehearsed before applying**, migration and matrix in one transaction that ended by
+raising: **101 assertions passed, 0 failed**. Rollback then confirmed — no tables, no
+trigger functions, no fixture rows. Only then applied for real.
+
+**The rehearsal earned its keep.** The first run failed on `column reference "label"
+is ambiguous` — `label` is both the matrix's actor variable and a column on
+`fertilizer_contracts`. That is a bug in the test, not the schema, but an unrehearsed
+run would have applied the migration and then reported a broken harness against live
+tables.
+
+**SEC-5 matrix is now 101 assertions** (was 56). F-2 added 45: 40 in the actor loop
+covering all three tables × {read, write} × {own farm, other farm} × four actors, plus
+5 proving the consistency triggers and the RESTRICT. One of those five is the control —
+a legitimate line must still insert, because a trigger that refuses everything would
+pass the other four.
+
+**Post-apply, measured:** RLS enabled on all three tables, 4 policies each, SELECT on
+`can_view_farm` and INSERT/UPDATE/DELETE on `can_edit_farm`, **zero references to the
+retired helpers**, and no table anywhere in `public` left without RLS or policies.
+
+**`database.types.ts` regenerated** and spliced mechanically: **174 insertions, 0
+deletions** — purely additive, exactly the three new tables, tail block intact.
+
+**Floor unchanged:** tests 222 passing, TypeScript 76, ESLint 109/28, build
+**byte-identical** at 1,754.29 kB (same chunk hash — types are erased, so anything
+else would have meant something was wrong).
 
 ## Open items and standing notes
 

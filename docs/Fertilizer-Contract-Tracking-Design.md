@@ -447,14 +447,14 @@ is precisely the failure pattern the last six rounds have been removing from thi
 
 Five changes, each independently verifiable. The first ships alone and is useful alone.
 
-| # | Change | Contents |
-|---|---|---|
-| **F-1** | Density and conversion | `density_lb_per_gal` column, `convertProductUnits`, both copies of the cost math, unit tests, season-import carry-forward |
-| **F-2** | Schema | Three tables, triggers, indexes, RLS, SEC-5 matrix extended |
-| **F-3** | RPCs | `save_fertilizer_contract`, `delete_fertilizer_contract`, auto-cascade |
-| **F-4** | UI | Fertilizer Contracts tab, cards, booking and load entry; the `<ResponsiveModal>` and `<NumberField>` primitives |
-| **F-5** | Handoff | Shopping list "Book this"; Mark as Purchased removed for fertilizer |
-| **F-6** | Plan calculator | Fields × program → computed load lines; `computed_quantity`; the auto-note; reachable from both the load and booking forms |
+| # | Change | Contents | State |
+|---|---|---|---|
+| **F-1** | Density and conversion | `density_lb_per_gal` column, `convertProductUnits`, both copies of the cost math, unit tests, season-import carry-forward | **Done** — merged, edge function v12 |
+| **F-2** | Schema | Three tables, triggers, indexes, RLS, SEC-5 matrix extended | **Done** — migration `20260830213751`, matrix 101/0 |
+| **F-3** | RPCs | `save_fertilizer_contract`, `delete_fertilizer_contract`, auto-cascade | Not started |
+| **F-4** | UI | Fertilizer Contracts tab, cards, booking and load entry; the `<ResponsiveModal>` and `<NumberField>` primitives | Not started |
+| **F-5** | Handoff | Shopping list "Book this"; Mark as Purchased removed for fertilizer | Not started |
+| **F-6** | Plan calculator | Fields × program → computed load lines; `computed_quantity`; the auto-note; reachable from both the load and booking forms | Not started |
 
 F-6 is deliberately last. Everything before it is a complete, usable tracker — the
 calculator removes hand arithmetic from an already-working screen rather than being load
