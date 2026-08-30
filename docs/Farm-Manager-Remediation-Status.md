@@ -347,9 +347,57 @@ Verified after applying: `can_view_farm` is SECURITY DEFINER with `search_path` 
 helpers**. Security advisor shows no new class of finding — no "RLS disabled" or "policy
 missing" warnings, which are what a botched policy rewrite would produce.
 
-**Remaining for Round 5:** batch 2 (`seasons`, `fields`, and the season-scoped product and
-program tables — 21 tables, ~52 policies), then retiring `is_team_member_of` /
-`is_editor_of`, then SEC-3 and the deferred ledger backstop.
+**Step 3 done: batch 2 applied — `20260830025438`. THE MATRIX IS GREEN.**
+47 policies across 17 tables: `farms`, `seasons`, `fields`, the season-scoped product and
+program tables, the field-scoped cost and yield tables, and the two program-item tables.
+**28 passed, 0 failed** — SEC-5 is closed for every table the matrix exercises.
+
+Three decisions worth recording:
+
+1. **The `auth.uid() = user_id` half of each predicate was kept.** It was already there and
+   it was never the hole — the hole was `is_editor_of(user_id)` ignoring
+   `team_members.farm_id`. Keeping it means a row whose season has a NULL `farm_id` cannot
+   silently become invisible to the person who created it. `seasons.farm_id` is nullable,
+   so that is a live possibility even though there are no NULLs today.
+2. **DELETE policies were deliberately left alone.** On these tables they are
+   `auth.uid() = user_id` and never referenced the helpers. Converting them to
+   `can_edit_farm` would *widen* them to let any editor delete — a product decision, not a
+   security fix.
+3. **The migration is written as a loop over a table → farm-expression mapping**, not 47
+   spelled-out policies. The first draft was generated as explicit SQL and emitted a stray
+   semicolon before every `WITH CHECK`, which would have failed on all 17 UPDATE policies.
+   The mapping is the only interesting content; generating the boilerplate removes the
+   transcription risk. It is replay-safe: a second run matches nothing and reports that,
+   and any count other than 0 or 47 aborts.
+
+Rehearsed the same way as batch 1 — migration plus matrix in one rolled-back transaction,
+**47 rewritten, 40 assertions passed, 0 failed** — then applied. Post-apply checks: 75
+policies now farm-scoped, and **no table anywhere in `public` has RLS disabled or zero
+policies**, which is what a rewrite that orphaned a table would look like.
+
+**Four policies still use the old helpers**, all SELECT, all deferred to batch 3 because
+they need their own semantics rather than a farm lookup:
+
+| Policy | Why it is different |
+|---|---|
+| `user_profiles.SELECT` | A profile is not farm-scoped; the rule is "someone who invited me" |
+| `cascade_tasks.SELECT` | Tasks are per-user and season-scoped; ties into SEC-3 |
+| `field_chemical_applications.SELECT` | Reached via `field_cost_id → field_costs → fields` |
+| `field_fertilizer_applications.SELECT` | Same shape |
+
+While mapping those, a separate pre-existing bug surfaced: the INSERT/UPDATE/DELETE
+policies on both `field_*_applications` tables check `field_costs.user_id = auth.uid()`
+only, with no collaborator path at all — **an editor on a shared farm cannot write them**.
+That is a collaboration bug rather than a security hole, and belongs with batch 3.
+
+**Also worth knowing: `team_members` currently has zero rows.** No collaboration is live in
+production, so this whole area has been changing behaviour that nothing exercises yet. It
+lowers the risk of these batches considerably, and it means the matrix — not production
+usage — is the only thing actually testing collaboration.
+
+**Remaining for Round 5:** batch 3 (the four policies above, the `field_*_applications`
+write bug, and retiring `is_team_member_of` / `is_editor_of`), then SEC-3, then the
+deferred ledger backstop.
 
 ## Open items
 
