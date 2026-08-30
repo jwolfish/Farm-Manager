@@ -520,6 +520,47 @@ domain verification to avoid spam folders — a real external dependency. The ow
 no-email route for now. Worth revisiting if collaborators are ever people who will not be
 told out of band.
 
+### Shared farms never appeared — found 30 Aug 2026, fixed
+
+Immediately after the invitation fix above, the owner signed up as the invitee, accepted
+successfully, and still saw only their own default farm. The database was correct in every
+respect — `status = 'accepted'`, `invited_user_id` linked, and as the invitee every needed
+row was visible through RLS: the membership, the farm, the owner's profile, all three
+seasons. The fault was entirely client-side.
+
+`fetchSharedFarms()` asked PostgREST to embed the owner's profile like this:
+
+```
+owner_profile:user_profiles!team_members_user_id_fkey(email)
+```
+
+`team_members_user_id_fkey` is a foreign key to **`auth.users`**, not to `user_profiles`,
+and there is no foreign key between `team_members` and `user_profiles` at all. The
+relationship cannot resolve, so the request errored, the function logged it to the console
+and returned `[]`. **No shared farm has ever appeared for anyone** — which is why
+`team_members` sat at zero rows and collaboration looked untested rather than broken.
+
+**The type checker had been reporting this the whole time.** The error removed by the fix
+was:
+
+```
+TS2352: Conversion of type
+  SelectQueryError<"could not find the relation between team_members and user_profiles">
+```
+
+The generated Supabase types encode failed relationships as an error type, so `tsc` was
+naming the exact bug in plain language. It sat inside the 103 pre-existing errors that this
+whole remediation has been treating as background noise. **That is the strongest argument
+yet for WI-19**: the baseline is not just untidy, it is actively hiding real defects. This
+one broke an entire feature.
+
+**Fix:** the owner's profile is fetched in a separate query keyed by `user_id` rather than
+embedded. `farms(farm_name)` is a genuine foreign key and still embeds fine. As a bonus
+`ownerName` is now populated — it was previously hardcoded `null`. No schema change, and no
+dependency on every owner having a profile row.
+
+TypeScript baseline drops 99 → 98, entirely from removing that error.
+
 ## Open items
 
 **Migration filenames must match the recorded version.** Applying through the Supabase MCP

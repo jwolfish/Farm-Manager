@@ -145,9 +145,15 @@ export async function fetchSentInvitations(ownerUserId: string, farmId: string):
 }
 
 export async function fetchSharedFarms(userId: string): Promise<SharedFarm[]> {
+  // The owner's profile is fetched separately, NOT embedded. `team_members.user_id`
+  // has a foreign key to auth.users, not to user_profiles, so asking PostgREST for
+  // `user_profiles!team_members_user_id_fkey` names a constraint that points at a
+  // different table. That relationship cannot resolve: the request errored, this
+  // function swallowed it and returned [], and so no shared farm ever appeared for
+  // anyone. `farms(farm_name)` below is a genuine foreign key and embeds fine.
   const { data, error } = await supabase
     .from('team_members')
-    .select('id, user_id, role, farm_id, farms(farm_name), owner_profile:user_profiles!team_members_user_id_fkey(email)')
+    .select('id, user_id, role, farm_id, farms(farm_name)')
     .eq('invited_user_id', userId)
     .eq('status', 'accepted');
 
@@ -156,15 +162,33 @@ export async function fetchSharedFarms(userId: string): Promise<SharedFarm[]> {
     return [];
   }
 
-  return (data || []).map((row) => {
+  const rows = data ?? [];
+  if (rows.length === 0) return [];
+
+  const ownerIds = [...new Set(rows.map((row) => row.user_id))];
+  const { data: owners, error: ownersError } = await supabase
+    .from('user_profiles')
+    .select('id, email, full_name')
+    .in('id', ownerIds);
+
+  if (ownersError) {
+    // The farm is still usable without the owner's name, so carry on.
+    console.error('Error fetching farm owner profiles:', ownersError);
+  }
+
+  const ownerById = new Map(
+    (owners ?? []).map((owner) => [owner.id, owner as { id: string; email: string; full_name: string | null }])
+  );
+
+  return rows.map((row) => {
     const farms = row.farms as { farm_name: string } | null;
-    const ownerProfile = row.owner_profile as { email: string } | null;
+    const owner = ownerById.get(row.user_id);
     return {
       invitationId: row.id,
       farmId: row.farm_id ?? '',
       ownerId: row.user_id,
-      ownerName: null,
-      ownerEmail: ownerProfile?.email ?? '',
+      ownerName: owner?.full_name ?? null,
+      ownerEmail: owner?.email ?? '',
       farmName: farms?.farm_name ?? null,
       role: row.role as TeamRole,
     };
