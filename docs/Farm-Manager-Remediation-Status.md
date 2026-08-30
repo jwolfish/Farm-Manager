@@ -3,7 +3,7 @@
 **Last updated:** 30 Aug 2026 — Rounds 1–6 (steps 1–3) complete, plus fertilizer F-1
 **Repo:** `jwolfish/Farm-Manager` — Rounds 1–6 and fertilizer F-1 are merged on `main`
 (`93b11a6`), **not yet pushed to origin**.
-**Branch `f-2-fertilizer-contract-schema` is NOT yet merged** and carries F-2.
+**Branch `f-3-fertilizer-contract-rpcs` is NOT yet merged** and carries F-3; F-2 is merged.
 **Edge function:** `process-cascade-task` **version 12** — deployed 30 Aug, carries WI-15
 and the F-1 density bridge. *(A note here previously said version 10; the platform was
 already at 11 when F-1 was deployed. The v11 source was fetched and confirmed identical to
@@ -27,7 +27,7 @@ half-finished and nothing is waiting to be merged.
 | ESLint | **109 errors, 28 warnings** (from 136/28) |
 | Build | succeeds — 1,751.91 kB (467.46 kB gz) |
 | SEC-5 policy matrix | **56 assertions, 0 failures** |
-| Migrations | 54 files, matching the database one-for-one |
+| Migrations | 55 files, matching the database one-for-one |
 
 **Closed:** SEC-1, SEC-2, SEC-3, SEC-4, SEC-5, SEC-7 · WI-9, WI-10, WI-11, WI-12, WI-13,
 WI-14, WI-16 · LOG-1, LOG-2, LOG-3, LOG-4, LOG-7, LOG-8, LOG-10 · plus four collaboration
@@ -942,6 +942,57 @@ deletions** — purely additive, exactly the three new tables, tail block intact
 **Floor unchanged:** tests 222 passing, TypeScript 76, ESLint 109/28, build
 **byte-identical** at 1,754.29 kB (same chunk hash — types are erased, so anything
 else would have meant something was wrong).
+
+### Fertilizer contract tracking — F-3 — branch `f-3-fertilizer-contract-rpcs`
+
+Migration `20260830215258_fertilizer_contract_rpcs_and_blended_price`. Still no client
+code; F-4 is the UI.
+
+**`fertilizer_contracts.unit_type` was dropped — a design change made during F-3, not a
+tidy-up.** The weighted average was specified to convert each contract's quantity *and*
+price into the product's unit. Doing that inside Postgres meant a **third** copy of the
+unit conversion table — client, edge function, and SQL — in a third language, computing
+the number that drives every field cost. Guardrail 7 records that the existing two copies
+have needed hand-syncing three times.
+
+The owner chose instead that a contract is denominated in its product's own unit. The
+column was dropped rather than kept-and-constrained, because a constrained duplicate is
+denormalization that can drift — the same shape F-2 avoided by not carrying a `farm_id`.
+`fertilizer_load_lines.unit_type` stays: a load genuinely can arrive in another unit, and
+that rollup is TypeScript, for display.
+
+**The blended price is maintained by a trigger, not only by the RPC.** Same pattern as
+`update_master_product_on_hand`. The price therefore cannot desync however a contract row
+arrives — through the RPC, a hand-crafted REST call, or a future admin fix.
+
+| Behaviour | Why |
+|---|---|
+| Unpriced contracts excluded from the average, still counted as tonnage | A booking made before the price is settled must not drag the blend toward zero |
+| Price rounded to 2dp before comparison | Float noise must not fire a cascade |
+| Deleting the last priced contract leaves the price **unchanged** | An undefined average must never zero out a price someone entered by hand |
+| The product a booking is for cannot be changed on update | Re-pointing a contract would silently move money between products |
+
+**Rehearsed before applying — 18 assertions, 0 failures.** The worked example lands
+exactly: 60 t @ $550 + 20 t @ $580 + 8 t @ $640 = **$565.00/ton**. Then delete the spot and
+it returns to $557.50; delete the rest and it stays at $557.50 rather than zeroing.
+Also covered: RPC authorization (editor yes, stranger no, on both save and delete), zero
+quantity and negative price refused, the `ON DELETE RESTRICT` when a load references the
+booking, and the grants.
+
+**Post-apply, measured:** all four functions `SECURITY DEFINER` with `search_path` pinned;
+`save_`/`delete_` executable by `authenticated` and **not** by `anon`; the two internal
+functions executable by **neither** role.
+
+**SEC-5 matrix re-run against the live post-F-3 schema: 101 passed, 0 failed.** That also
+proves the committed harness still parses after the column drop, which is why it was worth
+running rather than assuming.
+
+**Floor unchanged:** tests 222, TypeScript 76, ESLint 109/28, build byte-identical at
+1,754.29 kB. Types regenerated: 3 `unit_type` lines removed, 3 function signatures added.
+
+**Not yet exercised by a human.** No contract exists in production. The first real test is
+entering two bookings at different prices and watching the product price become the blend —
+and, because the cascade is automatic, watching field costs move with it.
 
 ## Open items and standing notes
 

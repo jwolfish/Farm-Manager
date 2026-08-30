@@ -87,10 +87,10 @@ BEGIN
   VALUES (v_s1,v_a,'ZZ Urea',550,'ton') RETURNING id INTO v_fp1;
   INSERT INTO fertilizer_products (season_id,user_id,product_name,price_per_unit,unit_type)
   VALUES (v_s2,v_a,'ZZ Urea',550,'ton') RETURNING id INTO v_fp2;
-  INSERT INTO fertilizer_contracts (season_id,fertilizer_product_id,contracted_quantity,unit_type,price_per_unit,user_id,label)
-  VALUES (v_s1,v_fp1,60,'ton',550,v_a,'ZZ Fall') RETURNING id INTO v_ct1;
-  INSERT INTO fertilizer_contracts (season_id,fertilizer_product_id,contracted_quantity,unit_type,price_per_unit,user_id,label)
-  VALUES (v_s2,v_fp2,60,'ton',550,v_a,'ZZ Fall') RETURNING id INTO v_ct2;
+  INSERT INTO fertilizer_contracts (season_id,fertilizer_product_id,contracted_quantity,price_per_unit,user_id,label)
+  VALUES (v_s1,v_fp1,60,550,v_a,'ZZ Fall') RETURNING id INTO v_ct1;
+  INSERT INTO fertilizer_contracts (season_id,fertilizer_product_id,contracted_quantity,price_per_unit,user_id,label)
+  VALUES (v_s2,v_fp2,60,550,v_a,'ZZ Fall') RETURNING id INTO v_ct2;
   INSERT INTO fertilizer_loads (season_id,delivered_on,user_id,ticket_number,delivery_fee)
   VALUES (v_s1,'2098-10-01',v_a,'ZZ-1',125) RETURNING id INTO v_ld1;
   INSERT INTO fertilizer_loads (season_id,delivered_on,user_id,ticket_number,delivery_fee)
@@ -163,11 +163,11 @@ BEGIN
       IF (v_n>0)=e_w2 THEN v_pass:=v_pass+1; ELSE v_fail:=v_fail+1; v_out:=v_out||format('%s F2 inv update      FAIL got %s want %s%s',label,v_n,e_w2,E'\n'); END IF;
 
       -- ---- F-2 fertilizer contract tracking, writes --------------------
-      BEGIN INSERT INTO fertilizer_contracts (season_id,fertilizer_product_id,contracted_quantity,unit_type,user_id,label)
-            VALUES (v_s1,v_fp1,1,'ton',actor,'ZZ probe'); got:=true; EXCEPTION WHEN OTHERS THEN got:=false; END;
+      BEGIN INSERT INTO fertilizer_contracts (season_id,fertilizer_product_id,contracted_quantity,user_id,label)
+            VALUES (v_s1,v_fp1,1,actor,'ZZ probe'); got:=true; EXCEPTION WHEN OTHERS THEN got:=false; END;
       IF got=e_w1 THEN v_pass:=v_pass+1; ELSE v_fail:=v_fail+1; v_out:=v_out||format('%s F1 contract write  FAIL got %s want %s%s',label,got,e_w1,E'\n'); END IF;
-      BEGIN INSERT INTO fertilizer_contracts (season_id,fertilizer_product_id,contracted_quantity,unit_type,user_id,label)
-            VALUES (v_s2,v_fp2,1,'ton',actor,'ZZ probe'); got:=true; EXCEPTION WHEN OTHERS THEN got:=false; END;
+      BEGIN INSERT INTO fertilizer_contracts (season_id,fertilizer_product_id,contracted_quantity,user_id,label)
+            VALUES (v_s2,v_fp2,1,actor,'ZZ probe'); got:=true; EXCEPTION WHEN OTHERS THEN got:=false; END;
       IF got=e_w2 THEN v_pass:=v_pass+1; ELSE v_fail:=v_fail+1; v_out:=v_out||format('%s F2 contract write  FAIL got %s want %s%s',label,got,e_w2,E'\n'); END IF;
       BEGIN INSERT INTO fertilizer_loads (season_id,delivered_on,user_id,ticket_number)
             VALUES (v_s1,'2098-11-01',actor,'ZZ probe'); got:=true; EXCEPTION WHEN OTHERS THEN got:=false; END;
@@ -193,8 +193,8 @@ BEGIN
   SET LOCAL ROLE authenticated;
   DECLARE got boolean;
   BEGIN
-    BEGIN INSERT INTO fertilizer_contracts (season_id,fertilizer_product_id,contracted_quantity,unit_type,user_id,label)
-          VALUES (v_s1,v_fp2,1,'ton',v_a,'ZZ probe'); got:=true; EXCEPTION WHEN OTHERS THEN got:=false; END;
+    BEGIN INSERT INTO fertilizer_contracts (season_id,fertilizer_product_id,contracted_quantity,user_id,label)
+          VALUES (v_s1,v_fp2,1,v_a,'ZZ probe'); got:=true; EXCEPTION WHEN OTHERS THEN got:=false; END;
     IF got=false THEN v_pass:=v_pass+1; ELSE v_fail:=v_fail+1; v_out:=v_out||'trigger: contract naming another season''s product ALLOWED - FAIL'||E'\n'; END IF;
 
     BEGIN INSERT INTO fertilizer_load_lines (load_id,fertilizer_product_id,quantity,unit_type)
