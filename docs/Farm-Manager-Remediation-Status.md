@@ -317,6 +317,40 @@ needs only a `can_view_farm(farm_id)` sibling; the work is threading the resolve
 through every policy — direct for farm-scoped tables, via `seasons.farm_id` for
 season-scoped ones, via `fields → seasons.farm_id` for field-scoped ones.
 
+The PRD proposed two-argument helpers (`is_editor_of_farm(owner, farm)`). The
+one-argument form is used instead: the owner is derivable from the farm, and passing both
+invites the two to disagree.
+
+**Step 2 done: batch 1 applied — `20260830024657`.** Seven tables, 28 policies, plus
+`can_view_farm(farm_id)` and a partial index on `team_members (invited_user_id, farm_id)
+WHERE status='accepted'`, since both helpers are now on the hot path for every row check.
+
+| Batch 1 table | Farm resolved by |
+|---|---|
+| `master_products`, `inventory_ledger_entries`, `shopping_lists`, `shopping_list_lines`, `work_orders` | `farm_id` on the row |
+| `work_order_fields`, `work_order_lines` | parent `work_orders.farm_id` |
+
+Policy names are unchanged, so the diff is the predicate only.
+
+**Rehearsed before it was applied.** The whole migration plus the full matrix ran inside a
+single transaction that was rolled back by raising at the end: **24 passed, 0 failed**,
+with the owner retaining full access to both farms. Only then was it applied for real. The
+rollback was confirmed afterwards — no helper, no stray policies, originals intact.
+
+**Matrix after batch 1: 8 failures → 5.** The three that went green are exactly the ones
+this batch covered — editor and viewer reading Farm Two's products, and editor updating
+Farm Two's inventory. The remaining five are all `fields` and `seasons`, which batch 2
+covers. No regressions: owner still reaches both farms, viewer still cannot write.
+
+Verified after applying: `can_view_farm` is SECURITY DEFINER with `search_path` pinned,
+`anon` cannot execute it, and **zero policies on the seven tables still reference the old
+helpers**. Security advisor shows no new class of finding — no "RLS disabled" or "policy
+missing" warnings, which are what a botched policy rewrite would produce.
+
+**Remaining for Round 5:** batch 2 (`seasons`, `fields`, and the season-scoped product and
+program tables — 21 tables, ~52 policies), then retiring `is_team_member_of` /
+`is_editor_of`, then SEC-3 and the deferred ledger backstop.
+
 ## Open items
 
 **Migration filenames must match the recorded version.** Applying through the Supabase MCP
