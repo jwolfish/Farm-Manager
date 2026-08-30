@@ -22,6 +22,15 @@ making changes — they explain what is broken, what has already been fixed, and
 @docs/Farm-Manager-Remediation-PRD.md
 @docs/Farm-Manager-Code-Review-Summary.md
 
+## Fertilizer contract tracking (new feature, in progress)
+
+Six steps, F-1 … F-6. F-1 (liquid density) has landed on `f-1-fertilizer-density`. The
+design records the reasoning behind decisions that look arbitrary otherwise — why a spot
+buy is modelled as a contract, why load lines carry no price, why the plan calculator's
+field selection is a note rather than a record.
+
+@docs/Fertilizer-Contract-Tracking-Design.md
+
 The status doc is the source of truth for what is done. Update it when a round lands.
 
 ## Known baseline — do not treat these as regressions you caused
@@ -32,7 +41,10 @@ The status doc is the source of truth for what is done. Update it when a round l
   before the unused-symbol sweep brought it to 76. See the WI-19 section of the status
   doc for the full accounting; every movement is itemised there.
 - `npx eslint .` reports **109 errors, 28 warnings** (was 136/28 at review).
-- `npx vite build` succeeds and emits a **1,751.91 kB** main chunk.
+- `npx vite build` succeeds and emits a **1,754.29 kB** main chunk (468.19 kB gz). It was
+  1,751.91 kB before fertilizer F-1, which added 2.38 kB for the density bridge, the
+  Liquid checkbox and its help text.
+- `npm test` reports **222 passing** in 5 files (206 before F-1).
 - There is **no CI**. Adding it is WI-21 in the PRD.
 - Tests arrived with Round 3: `npm test` (Vitest). Test files are excluded from
   `tsconfig.app.json` so they do not move the 103-error baseline.
@@ -102,8 +114,8 @@ Bolt and Claude both fail the same way here: confident, plausible, incomplete. P
 checks that can return "no" over judgement:
 
 ```
-npx tsc --noEmit -p tsconfig.app.json   # must stay at 103 or drop
-npx eslint .                            # must stay at 136 or drop
+npx tsc --noEmit -p tsconfig.app.json   # must stay at 76 or drop
+npx eslint .                            # must stay at 109 errors / 28 warnings, or drop
 npx vite build                          # must succeed
 npm test                                # must stay green
 ```

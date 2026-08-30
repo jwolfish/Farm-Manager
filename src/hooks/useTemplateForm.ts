@@ -24,6 +24,8 @@ export interface FertilizerProgram {
       product_name: string;
       price_per_unit: number;
       unit_type: string;
+      /** lb per US gallon, liquids only. */
+      density_lb_per_gal: number | null;
     };
   }[];
 }
@@ -152,7 +154,7 @@ export function useTemplateForm(
             id, program_name, application_cost,
             fertilizer_program_items (
               id, application_rate, application_rate_unit,
-              fertilizer_products ( id, product_name, price_per_unit, unit_type )
+              fertilizer_products ( id, product_name, price_per_unit, unit_type, density_lb_per_gal )
             )
           `)
           .eq('season_id', seasonId)
@@ -209,6 +211,7 @@ export function useTemplateForm(
         item.application_rate_unit,
         item.fertilizer_products.price_per_unit,
         item.fertilizer_products.unit_type,
+        item.fertilizer_products.density_lb_per_gal ?? null,
       );
       // Unconvertible units contribute nothing rather than a wrong number.
       return cost.ok ? sum + cost.value : sum;

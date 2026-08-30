@@ -28,12 +28,21 @@
  * 4. Identity is always allowed, including for units this module does not
  *    recognise: converting "widget" to "widget" requires no conversion, so it
  *    succeeds. Only an actual cross-unit conversion can fail.
+ *
+ * 5. Mass and volume still do not interconvert HERE, for the same reason as (3):
+ *    the bridge needs a per-product density this module does not have. A liquid
+ *    fertilizer sold by the ton and applied in gallons supplies one, so
+ *    `convertProductUnits` below takes it as an argument. `convertUnits` itself
+ *    is unchanged and must stay that way — it is what guarantees that a caller
+ *    with no density cannot silently get a mass-to-volume answer.
  */
 
 export type ConversionFailureReason =
   | 'unknown-unit'
   | 'incompatible-class'
-  | 'invalid-amount';
+  | 'invalid-amount'
+  /** Mass<->volume, which is bridgeable, but no density was available. */
+  | 'needs-density';
 
 export type ConversionResult =
   | { ok: true; value: number }
@@ -212,6 +221,71 @@ export function convertUnits(
   return { ok: true, value: amount * (fromDef.factor / toDef.factor) };
 }
 
+function unitClassOf(unit: string): UnitClass | null {
+  return lookupUnit(normalizeUnit(unit))?.unitClass ?? null;
+}
+
+/**
+ * Conversion for a specific product, which may carry a density and therefore
+ * may bridge mass and volume. 6-24-6 is bought by the ton and applied through
+ * the planter in gallons; at 11.1 lb/gal that is a real conversion rather than
+ * a category error.
+ *
+ * `densityLbPerGal` distinguishes three cases, and the difference between the
+ * last two is deliberate rather than sloppy:
+ *
+ *   undefined  This product has no concept of density (a chemical, a seed).
+ *              Behaves exactly like `convertUnits` — a mass/volume pair is
+ *              `incompatible-class`, because telling the owner to "set a
+ *              density" on a chemical would be nonsense.
+ *   null       Density applies to this product but has not been entered.
+ *              Returns `needs-density`, which names the fix.
+ *   number     Bridge through it.
+ *
+ * Tests lock all three. Do not collapse `null` and `undefined` into one case.
+ *
+ * The bridge is inherently inexact — density is a measured decimal — which is
+ * why it lives here and not in the exact-integer table above.
+ */
+export function convertProductUnits(
+  fromUnit: string,
+  toUnit: string,
+  amount: number,
+  densityLbPerGal?: number | null
+): ConversionResult {
+  const direct = convertUnits(fromUnit, toUnit, amount);
+  if (direct.ok) return direct;
+
+  // Only a class mismatch is bridgeable. An unknown unit or a bad amount is
+  // still an error no density can fix.
+  if (direct.reason !== 'incompatible-class') return direct;
+  if (densityLbPerGal === undefined) return direct;
+
+  const fromClass = unitClassOf(fromUnit);
+  const toClass = unitClassOf(toUnit);
+  const massToVolume = fromClass === 'mass' && toClass === 'volume';
+  const volumeToMass = fromClass === 'volume' && toClass === 'mass';
+  if (!massToVolume && !volumeToMass) return direct;
+
+  if (
+    densityLbPerGal === null ||
+    !Number.isFinite(densityLbPerGal) ||
+    densityLbPerGal <= 0
+  ) {
+    return { ok: false, reason: 'needs-density', from: direct.from, to: direct.to };
+  }
+
+  if (volumeToMass) {
+    const gallons = convertUnits(fromUnit, 'gal', amount);
+    if (!gallons.ok) return gallons;
+    return convertUnits('lb', toUnit, gallons.value * densityLbPerGal);
+  }
+
+  const pounds = convertUnits(fromUnit, 'lb', amount);
+  if (!pounds.ok) return pounds;
+  return convertUnits('gal', toUnit, pounds.value / densityLbPerGal);
+}
+
 /** A sentence fit to show a user, naming both units. */
 export function describeConversionFailure(failure: ConversionFailure): string {
   const from = failure.from || '(blank)';
@@ -223,18 +297,25 @@ export function describeConversionFailure(failure: ConversionFailure): string {
       return `cannot convert ${from} to ${to} — unrecognised unit`;
     case 'invalid-amount':
       return `cannot convert ${from} to ${to} — the amount is not a number`;
+    case 'needs-density':
+      return `cannot convert ${from} to ${to} — enter a density (lb per gallon) on this product`;
   }
 }
 
 /**
  * Cost of one acre's application, with the rate converted into the unit the
  * product is priced in. Fails rather than guessing when the units do not meet.
+ *
+ * `densityLbPerGal` follows the three-case convention documented on
+ * `convertProductUnits`: omit it for chemicals and seed, pass
+ * `product.density_lb_per_gal ?? null` for fertilizer.
  */
 export function calculateCostWithConversion(
   applicationRate: number,
   applicationUnit: string,
   pricePerUnit: number,
-  priceUnit: string
+  priceUnit: string,
+  densityLbPerGal?: number | null
 ): ConversionResult {
   if (typeof pricePerUnit !== 'number' || !Number.isFinite(pricePerUnit)) {
     return {
@@ -245,7 +326,12 @@ export function calculateCostWithConversion(
     };
   }
 
-  const converted = convertUnits(applicationUnit, priceUnit, applicationRate);
+  const converted = convertProductUnits(
+    applicationUnit,
+    priceUnit,
+    applicationRate,
+    densityLbPerGal
+  );
   if (!converted.ok) return converted;
 
   return { ok: true, value: converted.value * pricePerUnit };

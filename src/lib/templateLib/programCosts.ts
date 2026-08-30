@@ -50,7 +50,8 @@ export async function recalculateFertilizerProgramCost(
           id,
           price_per_unit,
           unit_type,
-          season_id
+          season_id,
+          density_lb_per_gal
         )
       `)
       .eq('program_id', programId);
@@ -75,7 +76,8 @@ export async function recalculateFertilizerProgramCost(
         item.application_rate,
         item.application_rate_unit,
         product.price_per_unit,
-        product.unit_type
+        product.unit_type,
+        product.density_lb_per_gal ?? null
       );
 
       if (!cost.ok) {

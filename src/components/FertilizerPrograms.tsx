@@ -10,6 +10,8 @@ interface FertilizerProduct {
   product_name: string;
   price_per_unit: number;
   unit_type: string;
+  /** lb per US gallon, liquids only. Bridges mass and volume when costing. */
+  density_lb_per_gal: number | null;
 }
 
 interface ProgramItem {
@@ -305,7 +307,8 @@ export function FertilizerPrograms({ seasonId }: FertilizerProgramsProps) {
         item.application_rate,
         item.application_rate_unit,
         product.price_per_unit,
-        product.unit_type
+        product.unit_type,
+        product.density_lb_per_gal ?? null
       );
       // An item whose units cannot meet contributes nothing; the per-item row
       // below says so rather than folding a wrong number into the total.
@@ -535,7 +538,8 @@ export function FertilizerPrograms({ seasonId }: FertilizerProgramsProps) {
                           item.application_rate,
                           item.application_rate_unit,
                           product.price_per_unit,
-                          product.unit_type
+                          product.unit_type,
+                          product.density_lb_per_gal ?? null
                         ) : null;
                         let costLabel = '';
                         if (cost !== null && cost.ok) {

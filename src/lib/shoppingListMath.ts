@@ -1,4 +1,4 @@
-import { convertUnits, describeConversionFailure } from './unitConversions';
+import { convertProductUnits, describeConversionFailure } from './unitConversions';
 
 /**
  * Pure accumulation for shopping-list generation — WI-12.
@@ -37,10 +37,15 @@ export interface AccumulatedNeed {
  * @param contributions every program/field pairing that needs this product
  * @param preferredUnit the linked master product's unit_type, when there is
  *   one. Falls back to the first contribution's rate unit.
+ * @param densityLbPerGal per the three-case convention on
+ *   `convertProductUnits`: omit for chemicals and seed, pass
+ *   `product.density_lb_per_gal ?? null` for fertilizer. A liquid fertilizer
+ *   applied in gallons and bought by the ton needs it to accumulate at all.
  */
 export function accumulateNeed(
   contributions: NeedContribution[],
-  preferredUnit: string | null
+  preferredUnit: string | null,
+  densityLbPerGal?: number | null
 ): AccumulatedNeed {
   const firstRateUnit = contributions.find((c) => c.rateUnit !== '')?.rateUnit ?? '';
   const unit = preferredUnit != null && preferredUnit !== '' ? preferredUnit : firstRateUnit;
@@ -58,7 +63,12 @@ export function accumulateNeed(
       continue;
     }
 
-    const converted = convertUnits(contribution.rateUnit, unit, amount);
+    const converted = convertProductUnits(
+      contribution.rateUnit,
+      unit,
+      amount,
+      densityLbPerGal
+    );
     if (!converted.ok) {
       issues.push(describeConversionFailure(converted));
       continue;
