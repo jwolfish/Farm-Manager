@@ -26,9 +26,13 @@ The status doc is the source of truth for what is done. Update it when a round l
 
 ## Known baseline — do not treat these as regressions you caused
 
-- `npx tsc --noEmit -p tsconfig.app.json` reports **103 errors**. Pre-existing.
-- `npx eslint .` reports **136 errors, 28 warnings**. Pre-existing.
-- `npx vite build` succeeds and emits a **1,747 kB** main chunk. Pre-existing.
+- `npx tsc --noEmit -p tsconfig.app.json` reports **76 errors** (was 103 at review, 98
+  before WI-19 began). The regeneration of `database.types.ts` briefly took it to 103 —
+  12 errors resolved, 17 revealed that the stale hand-written file had been hiding —
+  before the unused-symbol sweep brought it to 76. See the WI-19 section of the status
+  doc for the full accounting; every movement is itemised there.
+- `npx eslint .` reports **109 errors, 28 warnings** (was 136/28 at review).
+- `npx vite build` succeeds and emits a **1,751.91 kB** main chunk.
 - There is **no CI**. Adding it is WI-21 in the PRD.
 - Tests arrived with Round 3: `npm test` (Vitest). Test files are excluded from
   `tsconfig.app.json` so they do not move the 103-error baseline.
@@ -64,9 +68,14 @@ These are real mistakes made during this work, not hypotheticals.
    `CREATE POLICY` has no `IF NOT EXISTS`. Check the migrations directory for a
    near-identical file before adding one.
 
-6. **`src/lib/database.types.ts` is maintained by hand and has drifted** —
-   `set_active_season` is declared with two arguments but the function takes one. After
-   any migration, update it, and prefer regenerating over hand-editing.
+6. **`src/lib/database.types.ts` is now generated, not hand-written.** Regenerate it after
+   every migration (Supabase MCP `generate_typescript_types`) rather than hand-editing —
+   hand-maintenance drifted it badly enough to hide a broken feature for months.
+   The file ends with a small hand-maintained block that must be preserved across
+   regenerations: `CropType`, `UserRole` and `InvitationStatus` are derived from the
+   generated `Enums`, but `ProductCategory`, `LedgerEntryType`, `LedgerSourceType` and
+   `WorkOrderStatus` are CHECK-constraint columns rather than Postgres enums, so the
+   generator cannot emit them. Re-append that block after regenerating.
 
 7. **Cost math exists twice.** `convertUnits`, `calculateCostWithConversion`,
    `calculateFieldTotalCost` and both `recalculate*ProgramCost` functions are implemented

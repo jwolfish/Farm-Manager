@@ -1,7 +1,6 @@
 import { useState } from 'react';
 import {
-  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, ReferenceLine,
-  ScatterChart, Scatter, ZAxis,
+  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
 } from 'recharts';
 import { SaleRecord, SeasonSummary } from '../../../lib/reportTypes';
 import { ReportCard } from '../../../components/reports/ReportCard';

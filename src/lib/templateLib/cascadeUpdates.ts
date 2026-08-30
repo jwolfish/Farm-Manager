@@ -2,7 +2,6 @@ import { supabase } from '../supabase';
 import { TransactionResult, logCascadeWarning } from '../transactionUtils';
 import { getFieldsUsingTemplate } from './templateCrud';
 import { calculateFieldTotalCost } from './templateCalculations';
-import { getFieldOverrides } from './fieldCostOverrides';
 import { recalculateFertilizerProgramCost, recalculateChemicalProgramCost } from './programCosts';
 import { Database } from '../database.types';
 
@@ -38,6 +37,20 @@ export async function cascadeTemplateUpdate(
     supabase.from('field_cost_overrides').select('*').in('field_id', fieldIds),
     supabase.from('field_costs').select('*').in('field_id', fieldIds),
   ]);
+
+  // Both reads must succeed before anything is written.
+  //
+  // overridesResult is the ONLY thing stopping this cascade from overwriting a field's
+  // manually-overridden costs. Treating a failed read as "no overrides" — which is what
+  // `|| []` did below — silently replaced every override with the template value, with
+  // no error anywhere. Refuse the whole cascade instead, on the same all-or-nothing
+  // rule applyWorkOrder uses (WI-11): a partial cascade leaves plausible wrong numbers.
+  if (overridesResult.error) {
+    throw new Error(`Cascade aborted: could not load field cost overrides (${overridesResult.error.message})`);
+  }
+  if (fieldCostsResult.error) {
+    throw new Error(`Cascade aborted: could not load field costs (${fieldCostsResult.error.message})`);
+  }
 
   const overridesByField = new Map<string, Map<string, boolean>>();
   for (const override of overridesResult.data || []) {
@@ -134,12 +147,18 @@ export async function cascadeTemplateUpdateInSeason(
   taskId?: string
 ): Promise<TransactionResult<{ fieldsUpdated: number }>> {
   try {
-    const { data: template } = await supabase
+    const { data: template, error: templateError } = await supabase
       .from('cost_templates')
       .select('*')
       .eq('id', templateId)
       .eq('season_id', seasonId)
       .maybeSingle();
+
+    // A failed read is not the same as "no such template". Dropping this error
+    // reported a cascade that never ran as one that ran and found nothing to do.
+    if (templateError) {
+      return { success: false, error: `Could not load template ${templateId}: ${templateError.message}` };
+    }
 
     if (!template) return { success: true, data: { fieldsUpdated: 0 } };
 
@@ -165,10 +184,15 @@ export async function cascadeProgramUpdateInSeason(
 
     const programField = programType === 'fertilizer' ? 'fertilizer_programs' : 'chemical_programs';
 
-    const { data: templates } = await supabase
+    const { data: templates, error: templatesError } = await supabase
       .from('cost_templates')
       .select('id, ' + programField + ', season_id')
       .eq('season_id', seasonId);
+
+    // As above: a failed read must not be reported as "no templates to update".
+    if (templatesError) {
+      return { success: false, error: `Could not load templates for season ${seasonId}: ${templatesError.message}` };
+    }
 
     if (!templates) return { success: true, data: { templatesUpdated: 0, fieldsUpdated: 0 } };
 
@@ -234,7 +258,7 @@ export async function cascadeProductUpdateInSeason(
     let templatesUpdated = 0;
     let fieldsUpdated = 0;
 
-    const { data: programs } = await supabase
+    const { data: programs, error: programsError } = await supabase
       .from('fertilizer_programs')
       .select(`
         id,
@@ -245,6 +269,12 @@ export async function cascadeProductUpdateInSeason(
       `)
       .eq('fertilizer_program_items.fertilizer_product_id', productId)
       .eq('season_id', seasonId);
+
+    // Without this, a failed read looked identical to "no program uses this product",
+    // and the price change silently failed to propagate.
+    if (programsError) {
+      return { success: false, error: `Could not load fertilizer programs for product ${productId}: ${programsError.message}` };
+    }
 
     if (programs && programs.length > 0) {
       for (const program of programs) {
@@ -276,7 +306,7 @@ export async function cascadeChemicalUpdateInSeason(
     let templatesUpdated = 0;
     let fieldsUpdated = 0;
 
-    const { data: programs } = await supabase
+    const { data: programs, error: programsError } = await supabase
       .from('chemical_programs')
       .select(`
         id,
@@ -287,6 +317,11 @@ export async function cascadeChemicalUpdateInSeason(
       `)
       .eq('chemical_program_items.chemical_id', chemicalId)
       .eq('season_id', seasonId);
+
+    // As with the fertilizer path: a failed read must not read as "nothing uses this".
+    if (programsError) {
+      return { success: false, error: `Could not load chemical programs for chemical ${chemicalId}: ${programsError.message}` };
+    }
 
     if (programs && programs.length > 0) {
       for (const program of programs) {

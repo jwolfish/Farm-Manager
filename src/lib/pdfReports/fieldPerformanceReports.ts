@@ -1,6 +1,6 @@
 import { FieldPerformanceSummary, SeasonSummary } from '../reportTypes';
 import { CropType } from '../database.types';
-import { fmt, fmtAcre, openPDF, pdfHeader, CROP_LABELS_PDF, CROP_COLORS_PDF, COLORS } from './pdfFormatters';
+import { fmt, fmtAcre, openPDF, pdfHeader, CROP_LABELS_PDF, CROP_COLORS_PDF } from './pdfFormatters';
 import { esc } from '../htmlEscape';
 import { getPDFStyles } from './pdfStyles';
 import { buildHorizontalBarSVG } from './pdfCharts';

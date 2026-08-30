@@ -21,7 +21,7 @@ import { WorkOrderEditModal } from '../components/WorkOrderEditModal';
 import { SavedWorkOrdersList } from '../components/SavedWorkOrdersList';
 import { WorkOrderDetailModal } from '../components/WorkOrderDetailModal';
 import type { SavedWorkOrder } from '../lib/workOrderCrud';
-import { toBestPracticalUnit, convertUnits } from '../lib/unitConversions';
+import { convertUnits } from '../lib/unitConversions';
 import { convertSavedWorkOrdersToSprayFormat } from '../lib/exports/savedWorkOrderAdapter';
 import { exportSprayLogPDF } from '../lib/exports/sprayLogPdfExport';
 

@@ -73,7 +73,6 @@ export function SeedBagRequirements({ currentSeasonId, effectiveUserId }: Props)
           )
         `)
         .eq('season_id', currentSeasonId)
-        .eq('user_id', effectiveUserId)
         .order('name'),
       ]);
 

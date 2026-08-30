@@ -13,16 +13,6 @@ import type { FieldWithCosts } from '../components/fields/FieldCard';
 
 const FIELDS_PAGE_SIZE = 24;
 
-interface Field {
-  id: string;
-  name: string;
-  crop_type: CropType;
-  acreage: number;
-  land_rent_per_acre: number;
-  property_tax_per_acre: number;
-  notes: string | null;
-}
-
 interface FieldsProps {
   seasonId: string | null;
   onViewFieldDetail?: (fieldId: string) => void;

@@ -167,7 +167,6 @@ export function useSprayPlanner(currentSeasonId: string | null, effectiveUserId:
           field_costs ( template_id )
         `)
           .eq('season_id', currentSeasonId!)
-          .eq('user_id', effectiveUserId!)
           .order('name'),
         supabase.from('chemical_programs').select(`
           id, program_name, crop_type, application_cost,
@@ -176,7 +175,6 @@ export function useSprayPlanner(currentSeasonId: string | null, effectiveUserId:
             individual_chemicals ( id, chemical_name, price_per_unit, unit_type, epa_reg_number, master_product_id )
           )
         `)
-          .eq('user_id', effectiveUserId!)
           .eq('season_id', currentSeasonId!)
           .order('program_name'),
       ]);
@@ -416,14 +414,6 @@ export function useSprayPlanner(currentSeasonId: string | null, effectiveUserId:
     }));
 
     return { results, crossRows };
-  };
-
-  const generate = () => {
-    const { results, crossRows } = buildWorkOrders(fields, programs, selectedFields, selectedPrograms, acreOverrides, chemOverrides, sprayVolumeOverrides);
-    setWorkOrders(results);
-    setCrossTotals(crossRows);
-    setExpandedCards(new Set());
-    setTimeout(() => resultsRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
   };
 
   const handleExportCSV = () => {
