@@ -23,15 +23,13 @@ interface ProgramRef {
 
 export async function generateChemicalLines(
   seasonId: string,
-  effectiveUserId: string,
   farmId: string
 ): Promise<ShoppingLineInput[]> {
   const [fieldsRes, overridesRes] = await Promise.all([
     supabase
       .from('fields')
       .select('id, acreage, field_costs(template_id)')
-      .eq('season_id', seasonId)
-      .eq('user_id', effectiveUserId),
+      .eq('season_id', seasonId),
     supabase
       .from('field_cost_overrides')
       .select('field_id, cost_item_name, override_value')
@@ -183,15 +181,13 @@ export async function generateChemicalLines(
 
 export async function generateFertilizerLines(
   seasonId: string,
-  effectiveUserId: string,
   farmId: string
 ): Promise<ShoppingLineInput[]> {
   const [fieldsRes, overridesRes] = await Promise.all([
     supabase
       .from('fields')
       .select('id, acreage, field_costs(template_id)')
-      .eq('season_id', seasonId)
-      .eq('user_id', effectiveUserId),
+      .eq('season_id', seasonId),
     supabase
       .from('field_cost_overrides')
       .select('field_id, cost_item_name, override_value')
@@ -312,7 +308,6 @@ export async function generateFertilizerLines(
 
 export async function generateSeedLines(
   seasonId: string,
-  effectiveUserId: string,
   farmId: string
 ): Promise<ShoppingLineInput[]> {
   const { data: fields } = await supabase
@@ -327,8 +322,7 @@ export async function generateSeedLines(
         )
       )
     `)
-    .eq('season_id', seasonId)
-    .eq('user_id', effectiveUserId);
+    .eq('season_id', seasonId);
 
   if (!fields || fields.length === 0) return [];
 
@@ -423,17 +417,16 @@ export interface ShoppingListCreated {
 export async function createShoppingList(
   farmId: string,
   seasonId: string,
-  category: 'chemical' | 'fertilizer' | 'seed',
-  effectiveUserId: string
+  category: 'chemical' | 'fertilizer' | 'seed'
 ): Promise<ShoppingListCreated | { error: string }> {
   // Generate lines based on category
   let lines: ShoppingLineInput[];
   if (category === 'chemical') {
-    lines = await generateChemicalLines(seasonId, effectiveUserId, farmId);
+    lines = await generateChemicalLines(seasonId, farmId);
   } else if (category === 'fertilizer') {
-    lines = await generateFertilizerLines(seasonId, effectiveUserId, farmId);
+    lines = await generateFertilizerLines(seasonId, farmId);
   } else {
-    lines = await generateSeedLines(seasonId, effectiveUserId, farmId);
+    lines = await generateSeedLines(seasonId, farmId);
   }
 
   if (lines.length === 0) {

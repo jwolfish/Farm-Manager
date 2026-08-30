@@ -130,7 +130,9 @@ export function ShoppingListsTab({ seasonId, readOnly = false }: Props) {
     setGenerating(true);
     setError(null);
     setFlaggedLines([]);
-    const result = await createShoppingList(farmId, seasonId, category, userId);
+    // No user id: the generators read through RLS and scope by season_id, and the
+    // insert does not stamp one. The !userId guard above stays as an auth check.
+    const result = await createShoppingList(farmId, seasonId, category);
     if ('error' in result) {
       setError(result.error);
     } else {

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { X, AlertTriangle, Check, FileText } from 'lucide-react';
-import { getFieldsUsingTemplate, getFieldOverrides, cascadeTemplateUpdate, type CascadeUpdateResult } from '../lib/templateUtils';
+import { getFieldsUsingTemplate, getFieldOverrides, cascadeTemplateUpdate } from '../lib/templateUtils';
 
 interface FieldInfo {
   field_id: string;
@@ -15,7 +15,10 @@ interface FieldInfo {
 interface CascadeUpdateModalProps {
   templateId: string;
   templateName: string;
-  onConfirm: () => Promise<CascadeUpdateResult>;
+  // Resolves when the cascade has finished. It reports its own outcome -- both the
+  // success case and any per-field errors -- through the app's notification system,
+  // so this modal must not try to report on it as well.
+  onConfirm: () => Promise<void>;
   onCancel: () => void;
 }
 
@@ -63,11 +66,7 @@ export function CascadeUpdateModal({
   const handleConfirm = async () => {
     setUpdating(true);
     try {
-      const result = await onConfirm();
-
-      if (result.errors.length > 0) {
-        alert(`Template updated, but some fields encountered errors:\n${result.errors.map(e => e.error).join('\n')}`);
-      }
+      await onConfirm();
     } catch (error) {
       console.error('Error updating template:', error);
       alert('An error occurred while updating the template');

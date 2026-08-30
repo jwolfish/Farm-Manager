@@ -88,7 +88,6 @@ export function ChemicalWorkOrders({ currentSeasonId, effectiveUserId }: Props) 
             field_costs ( template_id )
           `)
             .eq('season_id', currentSeasonId!)
-            .eq('user_id', effectiveUserId!)
             .order('name'),
         ]);
 
