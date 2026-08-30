@@ -47,7 +47,6 @@ export function useSalesTracking(seasonId: string | null) {
       .from('commodity_sales')
       .select('id, crop_type, sale_date, delivery_month, destination, bushels_sold, price_per_bushel, total_revenue, notes')
       .eq('season_id', seasonId)
-      .eq('user_id', user.id)
       .order('sale_date', { ascending: false });
 
     if (error) {
@@ -64,7 +63,6 @@ export function useSalesTracking(seasonId: string | null) {
       .from('commodity_hedges')
       .select('id, crop_type, contract_date, delivery_month, contract_type, broker_elevator, bushels_hedged, futures_price, basis, net_price, notes')
       .eq('season_id', seasonId)
-      .eq('user_id', user.id)
       .order('contract_date', { ascending: false });
 
     if (error) {

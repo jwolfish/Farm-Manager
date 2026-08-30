@@ -378,7 +378,6 @@ async function createSeasonChemical(
     .from('individual_chemicals')
     .select('id')
     .eq('season_id', seasonId)
-    .eq('user_id', userId)
     .eq('chemical_name', chemicalName)
     .maybeSingle();
 

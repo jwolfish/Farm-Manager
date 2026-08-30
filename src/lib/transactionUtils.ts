@@ -14,15 +14,16 @@ export interface TransactionResult<T = unknown> {
 }
 
 export async function validateSeasonContext(
-  seasonId: string,
-  userId: string
+  seasonId: string
 ): Promise<TransactionResult<{ year: number; name: string }>> {
   try {
     const { data: season, error } = await supabase
       .from('seasons')
+      // WI-14: no user_id filter. Seasons are farm-scoped, and RLS already
+      // decides visibility — filtering on the caller's id rejected legitimate
+      // collaborators, because a shared season carries the owner's user_id.
       .select('id, year, name, user_id')
       .eq('id', seasonId)
-      .eq('user_id', userId)
       .maybeSingle();
 
     if (error) {
@@ -43,7 +44,7 @@ export async function executeInTransaction<T>(
   context: TransactionContext,
   operation: (ctx: TransactionContext) => Promise<TransactionResult<T>>
 ): Promise<TransactionResult<T>> {
-  const seasonValidation = await validateSeasonContext(context.seasonId, context.userId);
+  const seasonValidation = await validateSeasonContext(context.seasonId);
 
   if (!seasonValidation.success) {
     return { success: false, error: seasonValidation.error };

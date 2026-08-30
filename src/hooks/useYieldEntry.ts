@@ -85,14 +85,14 @@ export function useYieldEntry(seasonId: string | null) {
 
       const { data: fieldsData, error: fieldsError } = await supabase
         .from('fields').select('id, name, crop_type, acreage')
-        .eq('season_id', seasonId).eq('user_id', user.id).order('name');
+        .eq('season_id', seasonId).order('name');
       if (fieldsError) throw fieldsError;
 
       const fieldIds = (fieldsData || []).map(f => f.id);
 
       const [{ data: yieldsData, error: yieldsError }, { data: costsData, error: costsError }] = await Promise.all([
-        supabase.from('field_yields').select('*').eq('user_id', user.id).in('field_id', fieldIds),
-        supabase.from('field_costs').select('field_id, total_cost_per_acre').eq('user_id', user.id).in('field_id', fieldIds),
+        supabase.from('field_yields').select('*').in('field_id', fieldIds),
+        supabase.from('field_costs').select('field_id, total_cost_per_acre').in('field_id', fieldIds),
       ]);
 
       if (yieldsError) throw yieldsError;
@@ -169,7 +169,7 @@ export function useYieldEntry(seasonId: string | null) {
     try {
       const { data, error } = await supabase
         .from('commodity_sales').select('bushels_sold, price_per_bushel')
-        .eq('season_id', seasonId).eq('user_id', user.id).eq('crop_type', cropType);
+        .eq('season_id', seasonId).eq('crop_type', cropType);
       if (error) throw error;
       if (!data || data.length === 0) { alert(`No ${cropType} sales recorded for this season.`); return; }
       const totalBushels = data.reduce((sum, s) => sum + Number(s.bushels_sold), 0);

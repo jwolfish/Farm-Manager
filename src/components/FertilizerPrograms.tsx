@@ -80,7 +80,6 @@ export function FertilizerPrograms({ seasonId }: FertilizerProgramsProps) {
           )
         `)
         .eq('season_id', seasonId)
-        .eq('user_id', user.id)
         .order('program_name');
 
       if (error) throw error;
@@ -102,7 +101,6 @@ export function FertilizerPrograms({ seasonId }: FertilizerProgramsProps) {
         .from('fertilizer_products')
         .select('*')
         .eq('season_id', seasonId)
-        .eq('user_id', user.id)
         .order('product_name');
 
       if (error) throw error;

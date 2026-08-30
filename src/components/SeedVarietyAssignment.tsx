@@ -55,7 +55,6 @@ export function SeedVarietyAssignmentComponent({
           .from('seed_varieties')
           .select('*')
           .eq('season_id', seasonId)
-          .eq('user_id', userId)
           .order('product_name');
 
         if (error) throw error;

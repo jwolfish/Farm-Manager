@@ -67,8 +67,7 @@ export function useDashboardMetrics(seasonId: string | null) {
     const { data: fields, error: fieldsError } = await supabase
       .from('fields')
       .select(`*, field_costs (*), field_yields (*)`)
-      .eq('season_id', seasonId)
-      .eq('user_id', user.id);
+      .eq('season_id', seasonId);
 
     if (fieldsError) { console.error('Error loading fields:', fieldsError); return; }
 
@@ -137,8 +136,7 @@ export function useDashboardMetrics(seasonId: string | null) {
     const { data: salesRows, error } = await supabase
       .from('commodity_sales')
       .select('crop_type, bushels_sold, price_per_bushel, total_revenue')
-      .eq('season_id', seasonId)
-      .eq('user_id', user.id);
+      .eq('season_id', seasonId);
 
     if (error || !salesRows) return;
 
@@ -170,8 +168,7 @@ export function useDashboardMetrics(seasonId: string | null) {
     const { data: hedgeRows, error } = await supabase
       .from('commodity_hedges')
       .select('crop_type, bushels_hedged, futures_price, basis, net_price')
-      .eq('season_id', seasonId)
-      .eq('user_id', user.id);
+      .eq('season_id', seasonId);
 
     if (error || !hedgeRows) return;
 

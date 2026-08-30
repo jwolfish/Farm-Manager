@@ -56,7 +56,6 @@ export function Products({ seasonId, readOnly = false }: ProductsProps) {
           .from('seed_varieties')
           .select('*, master_products!master_product_id(on_hand_quantity, unit_type)')
           .eq('season_id', seasonId)
-          .eq('user_id', user.id)
           .order('product_name');
         const enriched = (data || []).map((row: any) => ({
           ...row,
@@ -69,7 +68,6 @@ export function Products({ seasonId, readOnly = false }: ProductsProps) {
           .from('fertilizer_products')
           .select('*')
           .eq('season_id', seasonId)
-          .eq('user_id', user.id)
           .order('product_name');
         setFertilizers(data || []);
       } else if (activeTab === 'chemicals') {
@@ -77,7 +75,6 @@ export function Products({ seasonId, readOnly = false }: ProductsProps) {
           .from('individual_chemicals')
           .select('*, master_products!master_product_id(on_hand_quantity, unit_type)')
           .eq('season_id', seasonId)
-          .eq('user_id', user.id)
           .order('chemical_name');
         const enriched = (data || []).map((row: any) => ({
           ...row,

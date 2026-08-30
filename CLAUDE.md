@@ -110,6 +110,13 @@ with no source rows inserts nothing and fires no trigger, which reads as "allowe
 
 ## Conventions
 
+- **Do not filter reads by `user_id`.** Since Round 5 every RLS policy is farm-scoped, so
+  the database already refuses rows from farms the caller cannot reach; `season_id` or
+  `farm_id` does the rest. Adding `.eq('user_id', user.id)` back returns **nothing** on a
+  shared farm, because those rows carry the *owner's* id. That single mistake, spread over
+  a dozen files, made Dashboard, Fields, Products, Yields, Sales and Reports all render
+  empty for a collaborator while Spray Planner and Cost Templates worked. Writes still
+  stamp the real author's `user_id`, which is what preserves "who entered this".
 - Farm-scoped data hangs off `farms` → `seasons` → `fields`. `master_products` are
   farm-scoped and persist across seasons; season-scoped product rows link to them via
   `master_product_id`. That link must never cross a farm boundary — triggers enforce it.

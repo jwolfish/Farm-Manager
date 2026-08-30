@@ -93,7 +93,6 @@ export function ChemicalPrograms({ seasonId }: ChemicalProgramsProps) {
           )
         `)
         .eq('season_id', seasonId)
-        .eq('user_id', user.id)
         .order('program_name');
 
       if (error) throw error;
@@ -115,7 +114,6 @@ export function ChemicalPrograms({ seasonId }: ChemicalProgramsProps) {
         .from('individual_chemicals')
         .select('*')
         .eq('season_id', seasonId)
-        .eq('user_id', user.id)
         .order('chemical_name');
 
       if (error) throw error;

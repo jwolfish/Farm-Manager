@@ -71,7 +71,6 @@ export function Fields({ seasonId, onViewFieldDetail }: FieldsProps) {
         .from('fields')
         .select('*')
         .eq('season_id', seasonId)
-        .eq('user_id', user.id)
         .order('name', { ascending: true });
 
       if (fieldsError) throw fieldsError;

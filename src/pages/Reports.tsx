@@ -99,10 +99,11 @@ interface ReportsProps {
 
 export function Reports({ currentSeasonId }: ReportsProps) {
   const { user } = useAuth();
-  const { effectiveUserId } = useFarm();
+  const { effectiveUserId, activeFarmId } = useFarm();
   const [activeCategory, setActiveCategory] = useState<string | null>(null);
   const [farmName, setFarmName] = useState<string | null>(null);
-  const { data, fieldData, salesData, loading, error } = useReportData(user?.id);
+  // Scoped by farm, not by viewer: a shared farm's rows carry the owner's id.
+  const { data, fieldData, salesData, loading, error } = useReportData(activeFarmId);
 
   useEffect(() => {
     if (!user) return;

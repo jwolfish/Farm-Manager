@@ -249,7 +249,14 @@ function buildFieldPerformance(
   });
 }
 
-export function useReportData(userId: string | undefined) {
+/**
+ * Reports are scoped by FARM, not by the viewer's user id. Filtering on the
+ * viewer returned nothing for a collaborator, because a shared farm's rows carry
+ * the owner's `user_id`. Dropping that filter without adding the farm would have
+ * been worse — it would have blended every farm the viewer can reach into one
+ * report. RLS still decides which farms are reachable at all.
+ */
+export function useReportData(farmId: string | null | undefined) {
   const [data, setData] = useState<SeasonSummary[]>([]);
   const [fieldData, setFieldData] = useState<FieldPerformanceSummary[]>([]);
   const [salesData, setSalesData] = useState<SaleRecord[]>([]);
@@ -257,14 +264,14 @@ export function useReportData(userId: string | undefined) {
   const [error, setError] = useState<string | null>(null);
 
   const loadData = useCallback(async () => {
-    if (!userId) return;
+    if (!farmId) return;
     setLoading(true);
     setError(null);
     try {
       const { data: seasons, error: seasonsError } = await supabase
         .from('seasons')
         .select('id, name, year, corn_price_per_bushel, soybeans_price_per_bushel, wheat_price_per_bushel')
-        .eq('user_id', userId)
+        .eq('farm_id', farmId)
         .order('year', { ascending: true });
 
       if (seasonsError) throw seasonsError;
@@ -293,13 +300,11 @@ export function useReportData(userId: string | undefined) {
               yield_bushels_per_acre, total_yield_bushels
             )
           `)
-          .in('season_id', seasonIds)
-          .eq('user_id', userId),
+          .in('season_id', seasonIds),
         supabase
           .from('commodity_sales')
           .select('id, season_id, crop_type, bushels_sold, price_per_bushel, total_revenue, sale_date, delivery_month, destination, notes')
           .in('season_id', seasonIds)
-          .eq('user_id', userId)
           .order('sale_date', { ascending: true }),
       ]);
 
@@ -361,15 +366,15 @@ export function useReportData(userId: string | undefined) {
     } finally {
       setLoading(false);
     }
-  }, [userId]);
+  }, [farmId]);
 
   useEffect(() => {
-    if (!userId) {
+    if (!farmId) {
       setLoading(false);
       return;
     }
     loadData();
-  }, [userId, loadData]);
+  }, [farmId, loadData]);
 
   return { data, fieldData, salesData, loading, error, reload: loadData };
 }
