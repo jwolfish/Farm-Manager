@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import {
-  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, ReferenceLine,
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell,
 } from 'recharts';
 import { FieldPerformanceSummary, SeasonSummary } from '../../../lib/reportTypes';
 import { ReportCard } from '../../../components/reports/ReportCard';

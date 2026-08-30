@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
-import { X, AlertTriangle, Check, FileText } from 'lucide-react';
-import { getFieldsUsingTemplate, getFieldOverrides, cascadeTemplateUpdate } from '../lib/templateUtils';
+import { X, AlertTriangle, Check } from 'lucide-react';
+import { getFieldsUsingTemplate, getFieldOverrides } from '../lib/templateUtils';
 
 interface FieldInfo {
   field_id: string;

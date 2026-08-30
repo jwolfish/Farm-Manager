@@ -2,7 +2,6 @@ import { supabase } from '../supabase';
 import { TransactionResult, logCascadeWarning } from '../transactionUtils';
 import { getFieldsUsingTemplate } from './templateCrud';
 import { calculateFieldTotalCost } from './templateCalculations';
-import { getFieldOverrides } from './fieldCostOverrides';
 import { recalculateFertilizerProgramCost, recalculateChemicalProgramCost } from './programCosts';
 import { Database } from '../database.types';
 

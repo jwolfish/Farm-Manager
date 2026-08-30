@@ -416,14 +416,6 @@ export function useSprayPlanner(currentSeasonId: string | null, effectiveUserId:
     return { results, crossRows };
   };
 
-  const generate = () => {
-    const { results, crossRows } = buildWorkOrders(fields, programs, selectedFields, selectedPrograms, acreOverrides, chemOverrides, sprayVolumeOverrides);
-    setWorkOrders(results);
-    setCrossTotals(crossRows);
-    setExpandedCards(new Set());
-    setTimeout(() => resultsRef.current?.scrollIntoView({ behavior: 'smooth' }), 100);
-  };
-
   const handleExportCSV = () => {
     if (!workOrders) return;
     const headers = ['Program', 'Field', 'Acres', 'Chemical', 'Rate / Acre', 'Rate Unit', 'Total Needed'];

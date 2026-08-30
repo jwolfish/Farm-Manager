@@ -1,5 +1,5 @@
 import { SeasonSummary, CostBreakdown } from '../reportTypes';
-import { fmt, fmtAcre, openPDF, COLORS, COST_CATEGORY_LABELS } from './pdfFormatters';
+import { fmtAcre, openPDF, COLORS, COST_CATEGORY_LABELS } from './pdfFormatters';
 import { esc } from '../htmlEscape';
 import { getPDFStyles } from './pdfStyles';
 import { buildBarChartSVG, buildPieChartSVG } from './pdfCharts';

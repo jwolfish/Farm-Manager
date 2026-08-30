@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { X, FileText, DollarSign, TrendingUp } from 'lucide-react';
-import { getTemplates, calculateTemplateCost, TemplateWithStats } from '../lib/templateUtils';
+import { getTemplates, TemplateWithStats } from '../lib/templateUtils';
 import type { CropType } from '../lib/database.types';
 
 interface Field {

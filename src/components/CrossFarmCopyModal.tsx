@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react';
-import { useAuth } from '../contexts/AuthContext';
 import { useFarm } from '../contexts/FarmContext';
 import { supabase } from '../lib/supabase';
 import { X, Tractor, Calendar, ArrowRight, AlertTriangle } from 'lucide-react';
@@ -22,7 +21,6 @@ interface SeasonOption {
 }
 
 export function CrossFarmCopyModal({ currentSeasonId, onSelectSourceSeason, onCancel }: CrossFarmCopyModalProps) {
-  const { user } = useAuth();
   const { ownedFarms, activeFarm } = useFarm();
   const [selectedFarmId, setSelectedFarmId] = useState<string | null>(null);
   const [seasons, setSeasons] = useState<SeasonOption[]>([]);

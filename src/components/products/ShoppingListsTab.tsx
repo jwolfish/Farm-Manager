@@ -2,7 +2,6 @@ import { useCallback, useEffect, useState } from 'react';
 import { ShoppingCart, RefreshCw, Check, CreditCard as Edit2, DollarSign, Package, AlertTriangle, FileDown } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { createShoppingList, FlaggedShoppingLine } from '../../lib/shoppingListGeneration';
-import { queueCascadeTask } from '../../lib/backgroundTasks';
 import { useAuth } from '../../contexts/AuthContext';
 import { useFarm } from '../../contexts/FarmContext';
 import { Pagination } from '../Pagination';
@@ -47,12 +46,6 @@ const CATEGORY_LABELS: Record<Category, string> = {
   chemical: 'Chemical',
   fertilizer: 'Fertilizer',
   seed: 'Seed',
-};
-
-const CATEGORY_COLORS: Record<Category, { bg: string; text: string; badge: string }> = {
-  chemical: { bg: 'bg-purple-50', text: 'text-purple-700', badge: 'bg-purple-100' },
-  fertilizer: { bg: 'bg-teal-50', text: 'text-teal-700', badge: 'bg-teal-100' },
-  seed: { bg: 'bg-amber-50', text: 'text-amber-700', badge: 'bg-amber-100' },
 };
 
 const STATUS_STYLES: Record<string, string> = {

@@ -4,7 +4,6 @@ import { useFarm } from '../contexts/FarmContext';
 import {
   getTemplates,
   deleteTemplate,
-  unlinkFieldFromTemplate,
   type TemplateWithStats
 } from '../lib/templateUtils';
 import { TemplateForm } from '../components/TemplateForm';

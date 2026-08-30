@@ -1,5 +1,5 @@
 import { SeasonSummary } from '../reportTypes';
-import { fmt, fmtAcre, openPDF } from './pdfFormatters';
+import { fmt, fmtAcre } from './pdfFormatters';
 import { esc } from '../htmlEscape';
 import { COLORS } from './pdfFormatters';
 import { getPDFStyles } from './pdfStyles';
