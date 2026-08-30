@@ -1,8 +1,9 @@
 # Farm Manager Remediation — Status
 
-**Last updated:** 30 Aug 2026 — Rounds 1–6 (steps 1–2) are all **on `main`**, merged from
-`wi-19-type-baseline` at `7843e3f`, and **not yet pushed to origin**
-**Repo:** `jwolfish/Farm-Manager` @ `main` (`7843e3f`)
+**Last updated:** 30 Aug 2026 — Rounds 1–6 (steps 1–3) complete
+**Repo:** `jwolfish/Farm-Manager` @ `main` — Round 6 steps 1–2 pushed at `5cd21c0`;
+step 3 (WI-15) is on branch `wi-15-cascade-honesty`
+**Edge function:** `process-cascade-task` **version 10** — deployed 30 Aug, carries WI-15
 **Supabase project:** `wvccxjakqwqfmyewclue` (bolt-native-database-63401892)
 **Companion docs:** `Farm-Manager-Code-Review-Summary.md`, `Farm-Manager-Remediation-PRD.md`
 
@@ -38,11 +39,10 @@ manual cost overrides. Remaining, in the order I would do them:
    recharts formatter signatures, 15 unused parameters, and the residue. The nullability
    block is the one with real value left in it — it means reconciling the app's
    hand-written interfaces against the schema.
-2. **Push `main` to origin.** The Round 6 merge is local only.
+2. **Confirm the cascade still works from the app.** WI-15 shipped as edge function
+   version 10 and could not be functionally tested from a terminal — see Round 6 step 3.
+   Trigger one cascade and check the task reaches `completed`.
 3. **Round 6 performance** — PERF-1 … PERF-5, chiefly the 1.75 MB bundle.
-4. **WI-15**, the cascade *function* still returning `{success: true}` after an internal
-   failure. Note the client-side twin of this bug was fixed in `e90c377`; the edge
-   function is untouched and is what actually runs.
 
 **Two loose ends deliberately left:** set the `ALLOWED_ORIGIN` secret when there is a
 stable production URL, and exercise the `viewer` role in the app.
@@ -754,6 +754,48 @@ never uses it, so cascade warnings from the template path are never logged again
 task — its sibling `cascadeProgramUpdateInSeason` does log them. The rest sit on
 signatures mirrored in the edge function (guardrail 7) and should change on both sides at
 once or not at all.
+
+### Round 6, step 3 — WI-15 — CLOSED — commit `ffe763f`, edge function **version 10**
+
+**The headline is not WI-15.** While reading the function for WI-15, the
+override-overwriting bug fixed on the client in `e90c377` turned out to be present here
+too — and this is the copy that actually runs. `cascadeTemplateUpdateInSeason` read
+`field_cost_overrides` with the error discarded and then `overrideRows || []`, so a failed
+read produced an empty override map and every manually-overridden cost was silently
+replaced by the template value.
+
+**Guardrail 7, demonstrated.** The code exists twice and the morning's fix landed on one
+side only. The two are now consistent again.
+
+Latent today — `field_cost_overrides` has 0 rows — but it arms the first time an override
+is entered.
+
+**WI-15 proper, five parts:**
+
+| | |
+|---|---|
+| Ten unchecked reads | New `must()` helper throws on a Postgrest error; every cascade read routed through it. The old pattern made a failed query indistinguishable from an empty result |
+| One read deliberately *not* wrapped | The `result_data` re-read before the final update. The cascade has already succeeded by then, so failing there would report a completed cascade as failed — the exact inversion WI-15 exists to remove. It records a warning instead |
+| `pending → running` | Was unconditional, so a duplicate invocation ran a second cascade concurrently. Now conditional on the task still being `pending`; the loser returns `already-claimed` without redoing the work. Also writes `started_at`, which has existed on the table all along and was never set |
+| `{success: true}` after failure | The task row was already marked `failed`, but the function fell through to an unconditional 200. Failure now returns 500 with the message; success returns the real counts |
+| The discarded recalc result | **Answered "remove", not "persist".** `runCascadeProductUpdate`/`ChemicalUpdate` called `recalculate*ProgramCost` and threw the result away, then called `cascadeProgramUpdateInSeason`, which recalculates internally and writes the result into the templates. So it was two wasted queries per program, not a lost write — and there is no stored cost column on `*_programs` to persist to |
+
+**Verification — read this before trusting it.**
+
+- Syntax checked with esbuild (which ships with Vite). **Not typechecked: Deno is not
+  installed on this machine.**
+- The deployed source was fetched back after deploying and compared against the repository
+  copy, as Round 5 did. Every marker matches — 10 `must()` call sites, the conditional
+  claim, the 500 path, `already-claimed`, zero remaining redundant recalc calls, and the
+  em-dashes in the conversion comments round-tripped without mojibake.
+- **NOT functionally tested, and it cannot be from here.** The function requires a real
+  user JWT (`verify_jwt` is true and it calls `auth.getUser()`), which needs the owner
+  signed in. Minting one would mean handling the owner's password. **The next cascade run
+  from the app is the actual test** — trigger one and check that the task row reaches
+  `completed` with `started_at` set.
+- Rollback if needed: version 9 is the previous deployment.
+
+Floor unchanged: TypeScript 76, tests 206 passing, ESLint 109/28.
 
 ## Open items and standing notes
 
