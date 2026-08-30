@@ -561,6 +561,37 @@ dependency on every owner having a profile row.
 
 TypeScript baseline drops 99 → 98, entirely from removing that error.
 
+### The collaboration cluster — found and fixed 30 Aug 2026
+
+Four defects, one root cause: **the client had never been run by a second user.** The
+database work was sound; every one of these lived in the app. Each fix exposed the next,
+which is what made them findable at all.
+
+| # | Defect | Fix |
+|---|---|---|
+| 1 | Invitations reached nobody — no email code exists, and the in-app notification was only created if the invitee already had an account | Trigger links pending invites at signup (`20260830033819`) |
+| 2 | Shared farms never appeared — `fetchSharedFarms` embedded `user_profiles` through a foreign key that points at `auth.users` | Fetch the owner profile in a separate query |
+| 3 | Dashboard, Fields, Products, Yields, Sales, Reports empty for a collaborator — reads filtered on the viewer's `user_id` | Dropped those filters; RLS is farm-scoped since Round 5. Also closes WI-14 |
+| 4 | Dashboard realtime never fired **for anyone** | Publish the five tables (`20260830040519`) + drop the `user_id` subscription filters |
+
+**On #4, the review was right but understated.** LOG-7 recorded "realtime filters on the
+viewer's user_id, so collaborators get no live updates". True — but `supabase_realtime`
+published only `cascade_tasks`, so Postgres never emitted a change for `fields`,
+`field_costs`, `field_yields`, `commodity_sales` or `commodity_hedges` at all. The filter
+never mattered because there were no events to filter. Fixing the filter alone, as the
+review proposed, would have changed nothing observable.
+
+The review's suggested filter — `effectiveUserId` — would also be wrong now. Writes stamp
+the actual author, so a yield entered by a collaborator carries *their* id and the owner's
+id would miss it. Neither user id means "rows for this farm". RLS does, and Realtime
+applies RLS per subscriber, so the correct filter is none.
+
+**Deferred by decision: exercising the `viewer` role in the app.** The matrix proves a
+viewer can read and cannot write at the database level, and every defect above lived in the
+client rather than the database — so read-only access has the same "never actually run"
+exposure that produced this cluster. Not urgent; worth doing before anyone is given a
+viewer invitation in earnest.
+
 ## Open items
 
 **Migration filenames must match the recorded version.** Applying through the Supabase MCP

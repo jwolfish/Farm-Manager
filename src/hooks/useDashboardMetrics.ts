@@ -216,12 +216,16 @@ export function useDashboardMetrics(seasonId: string | null) {
       debounceTimerRef.current = setTimeout(() => { loadAll(); }, 300);
     };
 
-    const userFilter = `user_id=eq.${user.id}`;
+    // field_costs and field_yields carry no season_id to filter on, and neither
+    // user id identifies "rows for this farm": the owner's id misses anything a
+    // collaborator entered, and the viewer's id misses everything else. Realtime
+    // applies RLS per subscriber, which is farm-scoped since Round 5, so the
+    // correct filter here is no filter at all (LOG-7 / WI-16).
     const channel = supabase
       .channel(`dashboard-updates-${user.id}-${seasonId}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'fields', filter: `season_id=eq.${seasonId}` }, debouncedLoad)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'field_costs', filter: userFilter }, debouncedLoad)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'field_yields', filter: userFilter }, debouncedLoad)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'field_costs' }, debouncedLoad)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'field_yields' }, debouncedLoad)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'commodity_sales', filter: `season_id=eq.${seasonId}` }, debouncedLoad)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'commodity_hedges', filter: `season_id=eq.${seasonId}` }, debouncedLoad)
       .subscribe();
