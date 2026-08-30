@@ -26,14 +26,13 @@ The status doc is the source of truth for what is done. Update it when a round l
 
 ## Known baseline — do not treat these as regressions you caused
 
-- `npx tsc --noEmit -p tsconfig.app.json` reports **103 errors**. Pre-existing.
-  **This is not the same 103 as the original review.** It fell to 98 over Rounds 4–5,
-  then rose to 103 when `database.types.ts` was regenerated on 30 Aug: 12 errors went
-  away and 17 real ones were revealed that the stale hand-written file had been hiding.
-  Most of the 17 are nullability — the old file declared columns non-null that the
-  database allows to be null. See the WI-19 section of the status doc for the accounting.
-- `npx eslint .` reports **134 errors, 28 warnings**. Pre-existing.
-- `npx vite build` succeeds and emits a **1,751.96 kB** main chunk. Pre-existing.
+- `npx tsc --noEmit -p tsconfig.app.json` reports **76 errors** (was 103 at review, 98
+  before WI-19 began). The regeneration of `database.types.ts` briefly took it to 103 —
+  12 errors resolved, 17 revealed that the stale hand-written file had been hiding —
+  before the unused-symbol sweep brought it to 76. See the WI-19 section of the status
+  doc for the full accounting; every movement is itemised there.
+- `npx eslint .` reports **109 errors, 28 warnings** (was 136/28 at review).
+- `npx vite build` succeeds and emits a **1,751.91 kB** main chunk.
 - There is **no CI**. Adding it is WI-21 in the PRD.
 - Tests arrived with Round 3: `npm test` (Vitest). Test files are excluded from
   `tsconfig.app.json` so they do not move the 103-error baseline.

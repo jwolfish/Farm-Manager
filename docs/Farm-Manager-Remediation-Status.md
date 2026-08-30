@@ -1,7 +1,8 @@
 # Farm Manager Remediation — Status
 
-**Last updated:** 30 Aug 2026, end of session — everything below is **on `main` and pushed**
-**Repo:** `jwolfish/Farm-Manager` @ `main` (`065d91d`)
+**Last updated:** 30 Aug 2026 — Rounds 1–5 are **on `main`**; Round 6 step 1–2 is on the
+branch **`wi-19-type-baseline`** (`60ed646`), committed but **not merged and not pushed**
+**Repo:** `jwolfish/Farm-Manager` @ `main` (`a45879e`)
 **Supabase project:** `wvccxjakqwqfmyewclue` (bolt-native-database-63401892)
 **Companion docs:** `Farm-Manager-Code-Review-Summary.md`, `Farm-Manager-Remediation-PRD.md`
 
@@ -16,9 +17,9 @@ half-finished and nothing is waiting to be merged.
 | Verified this session | |
 |---|---|
 | Tests | **206 passing**, 5 files |
-| TypeScript | **98 errors** (from 103 at review) |
-| ESLint | 134 errors, 28 warnings (from 136/28) |
-| Build | succeeds — 1,751.96 kB (467.50 kB gz) |
+| TypeScript | **76 errors** (103 at review, 98 before WI-19) |
+| ESLint | **109 errors, 28 warnings** (from 136/28) |
+| Build | succeeds — 1,751.91 kB (467.46 kB gz) |
 | SEC-5 policy matrix | **56 assertions, 0 failures** |
 | Migrations | 52 files, matching the database one-for-one |
 
@@ -29,14 +30,19 @@ defects found by testing, none of which were in the original review.
 **Partial:** SEC-6 (WI-6 untouched) · SEC-8 (mechanism in place, `ALLOWED_ORIGIN` unset by
 choice) · WI-20 (206 tests, but nowhere near the 80 % target).
 
-**Three things to pick up, in the order I would do them —** see *Next up* at the bottom for
-the reasoning:
+**WI-19 is under way and has already paid for itself** — see *Round 6* below. Three
+defects found by reading the type errors, including a cascade that silently overwrote
+manual cost overrides. Remaining, in the order I would do them:
 
-1. **WI-19, the type/lint baseline.** Promoted from housekeeping to first priority. A
-   feature-breaking bug sat in `tsc` output all session disguised as known noise.
-2. **Round 6 performance** — PERF-1 … PERF-5, chiefly the 1.75 MB bundle.
-3. **WI-15**, the cascade function still returning `{success: true}` after an internal
-   failure.
+1. **Finish WI-19.** 76 errors left: 32 nullability, ~14 unguarded `Json` casts, 10
+   recharts formatter signatures, 15 unused parameters, and the residue. The nullability
+   block is the one with real value left in it — it means reconciling the app's
+   hand-written interfaces against the schema.
+2. **Merge `wi-19-type-baseline`** into `main` and push. Three commits, none pushed yet.
+3. **Round 6 performance** — PERF-1 … PERF-5, chiefly the 1.75 MB bundle.
+4. **WI-15**, the cascade *function* still returning `{success: true}` after an internal
+   failure. Note the client-side twin of this bug was fixed in `e90c377`; the edge
+   function is untouched and is what actually runs.
 
 **Two loose ends deliberately left:** set the `ALLOWED_ORIGIN` secret when there is a
 stable production URL, and exercise the `viewer` role in the app.
@@ -685,6 +691,70 @@ Floor after the change: **tests 206 passing** (unchanged), **ESLint 134/28** (un
 **build 1,751.96 kB** (byte-identical — types are erased, so this is the expected result
 and a change here would have meant something was wrong).
 
+### Round 6, step 2 — the triage, and what it found — commits `e90c377`, `60ed646`
+
+**The thesis held.** Reading the errors rather than fixing them found three defects, one
+of which is worse than anything the original review recorded.
+
+**1. Seven more collaboration filters — the second variant.** Yesterday's defect #3 removed
+`.eq('user_id', viewer.id)`, which made a collaborator see nothing at all. A different
+shape survived that sweep: `.eq('user_id', effectiveUserId)`, where `effectiveUserId` is
+the *owner's* id. That shows the owner's rows but hides rows **the collaborator created
+themselves**, because writes stamp the real author (`Fields.tsx:185`).
+
+Removed from `useSprayPlanner` ×2, `shoppingListGeneration` ×3, `ChemicalWorkOrders`,
+`SeedBagRequirements`. All seven still filter by `season_id`, so scope is unchanged. The
+six remaining `.eq('user_id', …)` calls are correct — three on `team_members`, where
+`user_id` genuinely is the owner, plus season delete guards.
+
+**Proven, not assumed.** In a rolled-back transaction, a field entered by the accepted
+collaborator on the owner's season: **31 rows without the filter, 30 with it.** Rollback
+confirmed — 0 probe rows, 92 fields, untouched. Live data has 1 accepted team member and
+0 non-owner-authored rows, so this was armed and had not yet fired.
+
+**2. Every template cascade told the user it had failed.** `CascadeUpdateModal` did
+`const result = await onConfirm(); if (result.errors.length ...)`, but
+`handleCascadeConfirm` returns nothing on every path — it reports through
+`addNotification`. So `result` was `undefined`, `result.errors` threw, the modal's own
+catch fired, and the user got *"An error occurred while updating the template"* after a
+cascade that had just succeeded. Fixed by correcting the modal's contract rather than
+adding a second reporting path.
+
+**3. A failed cascade read silently overwrote manual cost overrides.** The worst of the
+three, and it was in no review document. `cascadeTemplateUpdate` read
+`field_cost_overrides` and applied `|| []` to the result. That map is the **only** thing
+stopping the cascade from overwriting a field's manually-overridden costs, so a failed
+read replaced every override with the template value — no error, no warning, wrong money.
+It now refuses the whole cascade if either read fails, on the same all-or-nothing rule
+WI-11 applied to `applyWorkOrder`. Four further reads in that file returned
+`{success: true}` with zero counts after a failed query, making "found nothing to do"
+indistinguishable from "never ran"; all four are now checked.
+
+**Then the mechanical sweep:** 25 unused imports, types and dead locals, driven by tsc's
+own output and diffed before and after — 25 removed, **zero new**. Four were checked
+individually rather than deleted blind; all four were genuinely dead, including a
+`generate` in `useSprayPlanner` superseded by `generateWithInventory`.
+
+**Measured after Round 6 step 2:**
+
+| | Before WI-19 | After |
+|---|---|---|
+| TypeScript | 98 | **76** |
+| ESLint | 134 errors, 28 warnings | **109 errors, 28 warnings** |
+| Tests | 206 passing | **206 passing** |
+| Build | 1,751.96 kB | **1,751.91 kB** |
+
+**Not verified in a browser.** All three defects are reachable only with a second signed-in
+user, or with a cost template in use, and neither exists in this database. The
+collaboration fix is proven at the database level; the other two are proven by reading.
+
+**Fifteen unused symbols remain, all function parameters, left deliberately.** One is a
+real gap rather than dead weight: `cascadeTemplateUpdateInSeason` accepts a `taskId` and
+never uses it, so cascade warnings from the template path are never logged against the
+task — its sibling `cascadeProgramUpdateInSeason` does log them. The rest sit on
+signatures mirrored in the edge function (guardrail 7) and should change on both sides at
+once or not at all.
+
 ## Open items and standing notes
 
 Genuinely open: the `set_active_season` type drift below (WI-30). Everything else in this
@@ -828,14 +898,21 @@ place in the system where a failure is silently reported as success.
 
 All figures below are measured, not estimated.
 
-| Metric | Review baseline | After Round 3 | After Round 4 | **End of 30 Aug** |
-|---|---|---|---|---|
-| TypeScript errors | 103 | 103 (identical set) | 99 | **98** |
-| ESLint | 136 errors, 28 warnings | 134 / 28 | 134 / 28 | **134 / 28** |
-| Tests | 0 | 178 passing, 4 files | 206 passing, 5 files | **206 passing, 5 files** |
-| CI | none | none | none | **none — still WI-21** |
-| Main JS chunk | 1,747 kB (465 kB gz) | 1,754.43 kB (467.56 kB gz) | 1,751.97 kB (467.39 kB gz) | **1,751.96 kB (467.50 kB gz)** |
-| Migrations | 40 files | 43 | 46 | **52, matching the database** |
+| Metric | Review baseline | After Round 3 | After Round 4 | End of 30 Aug | **After Round 6 step 2** |
+|---|---|---|---|---|---|
+| TypeScript errors | 103 | 103 (identical set) | 99 | 98 | **76** |
+| ESLint | 136 errors, 28 warnings | 134 / 28 | 134 / 28 | 134 / 28 | **109 / 28** |
+| Tests | 0 | 178 passing, 4 files | 206 passing, 5 files | 206 passing, 5 files | **206 passing, 5 files** |
+| CI | none | none | none | none | **none — still WI-21** |
+| Main JS chunk | 1,747 kB (465 kB gz) | 1,754.43 kB (467.56 kB gz) | 1,751.97 kB (467.39 kB gz) | 1,751.96 kB (467.50 kB gz) | **1,751.91 kB (467.46 kB gz)** |
+| Migrations | 40 files | 43 | 46 | 52 | **52, matching the database** |
+
+**The Round 6 movement, itemised.** 98 → 103 on regenerating `database.types.ts`
+(12 resolved, 17 revealed); 103 → 101 from the cascade-modal contract fix and one
+nullability error that went away with a removed filter; 101 → 76 from the unused-symbol
+sweep. At each step the surviving errors were confirmed to be a strict subset, compared
+with line positions stripped. **No error was suppressed, and none was silenced by a cast
+or an `any`.** The 25-error ESLint drop is the same deletions satisfying `no-unused-vars`.
 
 **Every drop in the TypeScript count is accounted for, and no error was ever suppressed.**
 103 → 99 came from replacing `MarkPurchasedModal`'s hand-rolled write sequence with the
