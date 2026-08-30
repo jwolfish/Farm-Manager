@@ -1,8 +1,8 @@
 # Farm Manager Remediation — Status
 
-**Last updated:** 30 Aug 2026 — Rounds 1–5 are **on `main`**; Round 6 step 1–2 is on the
-branch **`wi-19-type-baseline`** (`60ed646`), committed but **not merged and not pushed**
-**Repo:** `jwolfish/Farm-Manager` @ `main` (`a45879e`)
+**Last updated:** 30 Aug 2026 — Rounds 1–6 (steps 1–2) are all **on `main`**, merged from
+`wi-19-type-baseline` at `7843e3f`, and **not yet pushed to origin**
+**Repo:** `jwolfish/Farm-Manager` @ `main` (`7843e3f`)
 **Supabase project:** `wvccxjakqwqfmyewclue` (bolt-native-database-63401892)
 **Companion docs:** `Farm-Manager-Code-Review-Summary.md`, `Farm-Manager-Remediation-PRD.md`
 
@@ -38,7 +38,7 @@ manual cost overrides. Remaining, in the order I would do them:
    recharts formatter signatures, 15 unused parameters, and the residue. The nullability
    block is the one with real value left in it — it means reconciling the app's
    hand-written interfaces against the schema.
-2. **Merge `wi-19-type-baseline`** into `main` and push. Three commits, none pushed yet.
+2. **Push `main` to origin.** The Round 6 merge is local only.
 3. **Round 6 performance** — PERF-1 … PERF-5, chiefly the 1.75 MB bundle.
 4. **WI-15**, the cascade *function* still returning `{success: true}` after an internal
    failure. Note the client-side twin of this bug was fixed in `e90c377`; the edge
