@@ -96,7 +96,14 @@ export function Team({ onSwitchToFarm, onSwitchToOwnFarm, sharedFarms, onRefresh
     if (err) {
       setError(err);
     } else {
-      setSuccess(`Invitation sent to ${inviteEmail.trim()}`);
+      // No email is sent anywhere in this app. The invitation appears inside
+      // the app when that person signs in — and if they have no account yet, a
+      // trigger connects it to them the moment they register. Saying "sent"
+      // made people wait for a message that was never coming.
+      setSuccess(
+        `Invitation created for ${inviteEmail.trim()}. They'll see it in the app next time they sign in — ` +
+        `no email is sent, so let them know. If they don't have an account yet, ask them to sign up with this exact address.`
+      );
       setInviteEmail('');
       loadData();
     }

@@ -481,6 +481,45 @@ live until that secret is set** on the function. It is left permissive by defaul
 an incorrect origin breaks every cascade with an opaque CORS error, and the value is
 deployment-specific. Setting it is the remaining step to close SEC-8.
 
+### Invitations never reached anyone — found 30 Aug 2026, fixed
+
+**New finding, not in the original review.** The owner sent a real invitation to a second
+address he controls and nothing arrived. It never could have.
+
+**There is no email-sending code anywhere in this project** — no Resend, SendGrid, SMTP,
+nor Supabase's own invite API. `sendInvitation()` inserts a `team_members` row and then,
+*only if the invited email already has a `user_profiles` row*, sets `invited_user_id` and
+creates the in-app notification the Team page reads. Invite anyone who has not signed up
+and none of that second half runs.
+
+It did not heal, either. `fetchSharedFarms()` and the notification list both key off
+`invited_user_id`, and the RLS policy on `team_members` is
+`user_id = auth.uid() OR invited_user_id = auth.uid()` — so the invitee could not see the
+row addressed to their own email even after registering with that exact address.
+
+Two things hid it: the function is called `sendInvitation`, and the UI reported
+**"Invitation sent to …"**. Both describe something that never happened. The review had
+asked whether collaboration was *secure*, and nobody asked whether an invite *arrives*.
+
+**Fix — `20260830033819`.** An AFTER INSERT trigger on `auth.users` links any pending
+invitation addressed to the new account's email and creates the notification
+`sendInvitation()` would have. The invitee signs up, logs in, and it is waiting. No new UI
+was needed, because the existing screens already read exactly those two things. Matching is
+case-insensitive, and a guard prevents double-notifying when `sendInvitation()` already
+created one.
+
+Verified in a rolled-back transaction: invite linked on signup (with mismatched email
+case), notification created, payload shape matches what the Team page reads, and the
+invitee can see the row through RLS afterwards.
+
+The Team page copy now says the invitation was *created*, that no email is sent, and that
+the recipient needs an account with that address.
+
+**Deliberately not done: actually sending email.** That needs a provider, an API key, and
+domain verification to avoid spam folders — a real external dependency. The owner chose the
+no-email route for now. Worth revisiting if collaborators are ever people who will not be
+told out of band.
+
 ## Open items
 
 **Migration filenames must match the recorded version.** Applying through the Supabase MCP
