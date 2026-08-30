@@ -395,9 +395,41 @@ production, so this whole area has been changing behaviour that nothing exercise
 lowers the risk of these batches considerably, and it means the matrix — not production
 usage — is the only thing actually testing collaboration.
 
-**Remaining for Round 5:** batch 3 (the four policies above, the `field_*_applications`
-write bug, and retiring `is_team_member_of` / `is_editor_of`), then SEC-3, then the
-deferred ledger backstop.
+**Step 4 done: batch 3 applied — `20260830030406`. SEC-5 / WI-5 IS CLOSED.**
+
+| Change | Detail |
+|---|---|
+| `user_profiles.SELECT` | You, or someone who owns a farm you can view. Tighter than before: the farm must still exist and the membership still be accepted |
+| `cascade_tasks.SELECT` | The task's owner, or anyone who can view the farm its season belongs to. Previously any collaborator of the owner saw every task on every farm |
+| `field_chemical_applications` ×4 | Farm-scoped through `field_cost_id → field_costs → fields → seasons` |
+| `field_fertilizer_applications` ×4 | Same |
+| `is_team_member_of(uuid)`, `is_editor_of(uuid)` | **Dropped** |
+
+**The `field_*_applications` write bug is fixed.** Their INSERT/UPDATE/DELETE policies
+checked `field_costs.user_id = auth.uid()` and nothing else, so an accepted editor on a
+shared farm could not write them at all. That contradicted WI-5's own acceptance criterion,
+so fixing it completes WI-5 rather than widening scope. It does widen those three commands
+— an editor on the farm can now write them, which is the intended behaviour.
+
+**The helpers were dropped rather than deprecated.** The PRD suggested keeping them as
+thin wrappers for one release. They are gone instead: a wrapper that silently ignores the
+farm is precisely the trap that caused SEC-5, and leaving it callable invites its reuse.
+The migration refuses to drop them if any policy still references them.
+
+**Final state, measured:** 0 policies reference the old helpers · 0 helpers remain ·
+**85 farm-scoped policies** · no table in `public` has RLS disabled or zero policies.
+
+**Final matrix: 56 assertions, 0 failures — MATRIX GREEN.** The committed harness in
+`supabase/tests/` is the exact version that produced that result, now covering all four
+actors against farm-scoped, season-scoped, field-scoped, profile, cascade-task and
+field-application tables.
+
+The matrix's own history: 8 failures before WI-5 → 5 after batch 1 → 0 after batch 2 →
+still 0 after batch 3 with 28 more assertions added.
+
+**Remaining for Round 5:** SEC-3 (edge function authorization, plus the
+`process-cascade-task` redeploy that has been outstanding since Round 3), then the ledger
+backstop deferred from Round 4.
 
 ## Open items
 
