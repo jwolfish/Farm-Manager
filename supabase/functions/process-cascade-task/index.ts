@@ -1,10 +1,20 @@
 import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
 
+/*
+ * SEC-8: the wildcard origin is a fallback, not the intended configuration.
+ * Set the `ALLOWED_ORIGIN` secret on this function to the deployed app origin
+ * and this locks down to it. It is left permissive by default because getting
+ * it wrong breaks every cascade with an opaque CORS error, and the value is
+ * deployment-specific rather than something this repository can know.
+ */
+const ALLOWED_ORIGIN = Deno.env.get("ALLOWED_ORIGIN") ?? "*";
+
 const corsHeaders = {
-  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Origin": ALLOWED_ORIGIN,
   "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
   "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Client-Info, Apikey",
+  "Vary": "Origin",
 };
 
 const MAX_WARNINGS = 100;
@@ -503,6 +513,50 @@ async function runCascadeTemplateUpdate(
   return { programsUpdated: 0, templatesUpdated: 1, fieldsUpdated: result.fieldsUpdated, failedFieldIds: result.failedFieldIds };
 }
 
+/**
+ * SEC-3: confirm the task's entity actually lives in the season the task names.
+ *
+ * Authorization has already established that the caller may edit the season's
+ * farm; this is the containment check on top of it. Without it a caller could
+ * pair a season they legitimately own with another farm's template or product
+ * id and have the service-role client rewrite that farm's costs.
+ *
+ * Task types this function does not cascade have nothing to protect, so they
+ * pass. `recalculate_all_costs` is declared in the client's TaskType union but
+ * is never queued and has no branch here.
+ */
+async function entityBelongsToSeason(
+  supabase: ReturnType<typeof createClient>,
+  taskType: string,
+  entityId: string,
+  seasonId: string,
+  programType: "fertilizer" | "chemical"
+): Promise<boolean> {
+  const inSeason = async (table: string): Promise<boolean> => {
+    const { data, error } = await supabase
+      .from(table)
+      .select("id")
+      .eq("id", entityId)
+      .eq("season_id", seasonId)
+      .maybeSingle();
+    return !error && !!data;
+  };
+
+  switch (taskType) {
+    case "cascade_template_update":
+      return await inSeason("cost_templates");
+    case "cascade_chemical_update":
+      return await inSeason("individual_chemicals");
+    case "cascade_program_update":
+      return await inSeason(programType === "chemical" ? "chemical_programs" : "fertilizer_programs");
+    case "cascade_product_update":
+      // record_purchase queues this for fertilizer products and seed varieties alike.
+      return (await inSeason("fertilizer_products")) || (await inSeason("seed_varieties"));
+    default:
+      return true;
+  }
+}
+
 Deno.serve(async (req: Request) => {
   if (req.method === "OPTIONS") {
     return new Response(null, { status: 200, headers: corsHeaders });
@@ -559,15 +613,62 @@ Deno.serve(async (req: Request) => {
       });
     }
 
-    await supabaseAdmin
-      .from("cascade_tasks")
-      .update({ status: "running" })
-      .eq("id", taskId);
-
     const seasonId = task.season_id as string;
     const taskType = task.task_type as string;
     const entityId = task.entity_id as string;
     const programType = (task.program_type as "fertilizer" | "chemical" | null) ?? "fertilizer";
+
+    // ---- SEC-3 ------------------------------------------------------------
+    // The task row is user-writable, so season_id and entity_id cannot be
+    // trusted just because the row belongs to the caller. Everything below this
+    // point runs with the service-role client, which bypasses RLS, so the
+    // authorization has to happen here.
+    //
+    // The season is resolved with the USER-scoped client on purpose: RLS decides
+    // whether the caller can see it at all. `can_edit_farm` then decides whether
+    // they may change it. A trigger on cascade_tasks enforces the same rule at
+    // insert time, so this is belt and braces rather than the only control.
+    const denyAccess = async (reason: string) => {
+      await supabaseAdmin.from("cascade_tasks").update({
+        status: "failed",
+        completed_at: new Date().toISOString(),
+        error_message: reason,
+      }).eq("id", taskId);
+
+      return new Response(JSON.stringify({ error: "Access denied" }), {
+        status: 403,
+        headers: { ...corsHeaders, "Content-Type": "application/json" },
+      });
+    };
+
+    const { data: season, error: seasonError } = await supabaseUser
+      .from("seasons")
+      .select("id, farm_id")
+      .eq("id", seasonId)
+      .maybeSingle();
+
+    if (seasonError || !season || !season.farm_id) {
+      return await denyAccess("Season is not accessible to the caller");
+    }
+
+    const { data: mayEdit, error: mayEditError } = await supabaseUser
+      .rpc("can_edit_farm", { p_farm_id: season.farm_id });
+
+    if (mayEditError || mayEdit !== true) {
+      return await denyAccess("Caller is not an owner or editor of this farm");
+    }
+
+    // The entity must live in the season the task names, or a caller could pair
+    // their own season with another farm's template id.
+    if (entityId && !(await entityBelongsToSeason(supabaseAdmin, taskType, entityId, seasonId, programType))) {
+      return await denyAccess("Entity does not belong to this season");
+    }
+    // ---- end SEC-3 --------------------------------------------------------
+
+    await supabaseAdmin
+      .from("cascade_tasks")
+      .update({ status: "running" })
+      .eq("id", taskId);
 
     const warnings = new WarningBuffer();
     let stats: CascadeStats = { programsUpdated: 0, templatesUpdated: 0, fieldsUpdated: 0, failedFieldIds: [] };

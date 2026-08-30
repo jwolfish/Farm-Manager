@@ -427,9 +427,59 @@ field-application tables.
 The matrix's own history: 8 failures before WI-5 → 5 after batch 1 → 0 after batch 2 →
 still 0 after batch 3 with 28 more assertions added.
 
-**Remaining for Round 5:** SEC-3 (edge function authorization, plus the
-`process-cascade-task` redeploy that has been outstanding since Round 3), then the ledger
-backstop deferred from Round 4.
+**Step 5 done: the WI-9 ledger backstop — `20260830030908`.** A client may now write only
+`source_type = 'manual'` ledger rows. `work_order` and `shopping_list_line` entries are
+written exclusively by the SECURITY DEFINER RPCs, which run as the function owner and are
+not subject to these policies. UPDATE and DELETE are restricted the same way, and UPDATE's
+`WITH CHECK` also requires `manual`, so a caller cannot insert a manual row and relabel it.
+
+This is the intent of the PRD's proposed unique index without the conflict that made it
+unusable (it would have blocked apply → unapply → re-apply). Rehearsed and verified:
+
+| Case | Result |
+|---|---|
+| Manual adjustment | allowed |
+| Hand-crafted `work_order` row | refused |
+| Hand-crafted `shopping_list_line` row | refused |
+| Relabel a manual row as `work_order` | refused |
+| Delete an RPC-created row | refused |
+| **`apply_work_order` RPC** | **still works** |
+| **`record_purchase` RPC** | **still works** |
+
+It deliberately does not stop a large manual adjustment — someone has to be able to correct
+a miscount, and manual rows are attributable via `created_by` and show in the ledger
+history as manual rather than masquerading as a work order.
+
+**Step 6 done: SEC-3 / WI-3 — CLOSED. `20260830031123` plus edge function version 8.**
+
+The hole: the function verified the JWT and that the task belonged to the caller, then did
+every write with the **service-role** client using `task.season_id` and `task.entity_id`
+verbatim. Nothing checked that the season belonged to a farm the caller could reach, and
+the caller could update their own task row after inserting it.
+
+Two halves, both applied:
+
+1. **Database trigger** on `cascade_tasks`. Rejects inserting a task for a season you
+   cannot edit, and rejects re-pointing an existing task at one. Verified: task for own
+   season allowed; task for a foreign season refused; re-pointing refused; ordinary status
+   updates still allowed; **service-role writes still allowed** — that last one matters,
+   because the function writes status and results that way and a naive trigger would have
+   broken every cascade.
+2. **Edge function.** Resolves the season with the **user-scoped** client so RLS decides
+   visibility, then calls `can_edit_farm` to decide authority, then confirms `entity_id`
+   lives in that season. Any failure marks the task failed and returns 403 instead of
+   letting the service-role client loose on another farm's costs.
+
+**The redeploy outstanding since Round 3 is done.** Version 8 also carries the WI-11
+conversion rewrite, so the deployed function no longer silently returns unconverted
+amounts. The deployed source was fetched back and compared against the repository copy
+rather than assumed.
+
+**SEC-8, partially.** `Access-Control-Allow-Origin` now reads an `ALLOWED_ORIGIN` secret
+and falls back to `*` when unset, so the mechanism is in place but **the wildcard is still
+live until that secret is set** on the function. It is left permissive by default because
+an incorrect origin breaks every cascade with an opaque CORS error, and the value is
+deployment-specific. Setting it is the remaining step to close SEC-8.
 
 ## Open items
 
