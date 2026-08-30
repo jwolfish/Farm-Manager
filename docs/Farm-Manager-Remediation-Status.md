@@ -1,9 +1,14 @@
 # Farm Manager Remediation — Status
 
-**Last updated:** 30 Aug 2026 — Rounds 1–6 (steps 1–3) complete
-**Repo:** `jwolfish/Farm-Manager` @ `main` (`724aa43`) — everything below is merged and
-pushed; nothing is waiting on a branch
-**Edge function:** `process-cascade-task` **version 10** — deployed 30 Aug, carries WI-15
+**Last updated:** 30 Aug 2026 — Rounds 1–6 (steps 1–3) complete, plus fertilizer F-1
+**Repo:** `jwolfish/Farm-Manager` — Rounds 1–6 are merged on `main` (`f30801f`).
+**Branch `f-1-fertilizer-density` (`e205aa5`) is NOT yet merged** and carries the
+fertilizer contract design doc plus F-1.
+**Edge function:** `process-cascade-task` **version 12** — deployed 30 Aug, carries WI-15
+and the F-1 density bridge. *(A note here previously said version 10; the platform was
+already at 11 when F-1 was deployed. The v11 source was fetched and confirmed identical to
+the repo's WI-15 copy, so nothing had been changed out of band — the number was just
+stale.)*
 **Supabase project:** `wvccxjakqwqfmyewclue` (bolt-native-database-63401892)
 **Companion docs:** `Farm-Manager-Code-Review-Summary.md`, `Farm-Manager-Remediation-PRD.md`
 
@@ -812,6 +817,73 @@ is entered.
 - Rollback if needed: version 9 is the previous deployment.
 
 Floor unchanged: TypeScript 76, tests 206 passing, ESLint 109/28.
+
+### Fertilizer contract tracking — F-1 — branch `f-1-fertilizer-density`
+
+New feature work rather than remediation. The design and the reasoning behind every
+decision are in `Fertilizer-Contract-Tracking-Design.md`; F-1 is the first of six steps
+and the only one that touches existing cost math.
+
+**Liquid fertilizer density.** 6-24-6 is a liquid sold by the ton and applied through the
+planter in gallons. Mass and volume do not interconvert, so that pair could not be costed
+and the conversion was being done by hand before entry — 2025's 44 lb/ac rate is exactly
+4 gal at 11.1 lb/gal. Nothing was broken; the arithmetic was just happening in the owner's
+head.
+
+`convertUnits` is **unchanged**, deliberately. It is what guarantees a caller with no
+density cannot obtain a mass-to-volume answer, for the same reason `bag` and `seed` are
+separate classes (guardrail 8). The bridge lives in a new `convertProductUnits` wrapper.
+
+**The density argument has three meaningful values and the distinction is load bearing:**
+
+| Value | Meaning |
+|---|---|
+| `undefined` | No density concept — a chemical or seed. Behaves exactly as before; a mass/volume pair stays `incompatible-class`, because telling someone to set a density on a chemical is nonsense |
+| `null` | Density applies but is not set. Returns the new `needs-density`, which names the fix |
+| `number` | Bridge through it |
+
+Tests lock all three. Do not collapse `null` and `undefined`.
+
+**Threaded through both copies of the cost math** (guardrail 7):
+`calculateCostWithConversion`, `shoppingListMath.accumulateNeed`,
+`generateFertilizerLines`, `recalculateFertilizerProgramCost`, `seasonImport`, and the
+edge function's mirrored module. **Edge function deployed as version 12** and the source
+fetched back and compared, not assumed.
+
+**Migration `20260830211202_add_fertilizer_product_density`** — rehearsed in a transaction
+that was rolled back (column added, 11.1 accepted, zero and negative rejected by the check
+constraint, 19 dry products unaffected), rollback confirmed, then applied. The column is
+nullable because dry products have no density.
+
+**`database.types.ts` regenerated, not hand-edited**, and spliced mechanically with the
+hand-maintained tail block. The resulting diff was **exactly three lines** — which also
+confirms the file carried no other drift since the WI-19 regeneration.
+
+**Floor after F-1:**
+
+| | Before | After |
+|---|---|---|
+| Tests | 206 passing, 5 files | **222 passing, 5 files** |
+| TypeScript | 76 | **76** — sets compared with positions stripped, identical |
+| ESLint | 109 errors, 28 warnings | **109 / 28** |
+| Build | 1,751.91 kB (467.46 kB gz) | **1,754.29 kB (468.19 kB gz)** — +2.38 kB for the bridge, the Liquid checkbox and its help text |
+| Migrations | 52 | **53** |
+
+**Not verified in a browser.** No product has a density set yet, so the bridge has not run
+against real data. The first real exercise is ticking Liquid on 6-24-6, entering 11.1, and
+confirming the program cost changes as expected.
+
+**A latent bug recorded while reading `record_purchase`.** Its fertilizer branch matches
+the product by **name**:
+
+```sql
+UPDATE fertilizer_products SET price_per_unit = p_price_per_unit
+ WHERE season_id = v_season AND product_name = v_line.product_name
+```
+
+Rename a fertilizer product after generating a shopping list and this matches nothing,
+`v_entity` stays null, and **no cascade fires** — silently. F-5 removes fertilizer from
+this path entirely, which retires it. If that decision is ever reversed, fix it on its own.
 
 ## Open items and standing notes
 
