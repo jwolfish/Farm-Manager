@@ -641,6 +641,50 @@ client rather than the database — so read-only access has the same "never actu
 exposure that produced this cluster. Not urgent; worth doing before anyone is given a
 viewer invitation in earnest.
 
+### Round 6, step 1 — `database.types.ts` regenerated — branch `wi-19-type-baseline`
+
+WI-19 opened by regenerating the hand-maintained types file rather than by fixing errors,
+so that no effort was spent hand-patching errors regeneration would delete. **Committed on
+a branch, not straight to `main`** — the practice note above says Round 5's
+commit-direct-to-main left no diff review, and this diff is 1,662 insertions.
+
+**The drift ran in both directions, and the second direction is the instructive one.**
+
+| Direction | Finding |
+|---|---|
+| Missing from the types file | `shopping_lists`, `shopping_list_lines` — both real, both in use (5 and 42 rows) |
+| Declared but not in the database | `field_chemical_program_applications`, `field_fertilizer_program_applications` — created `20260205182505`, dropped `20260217214952`, still declared 6 months later |
+| Missing function | `can_view_farm`, added by Round 5 batch 1 |
+| Wrong arity | `set_active_season` declared with two arguments; the function takes one |
+| Wrong nullability | Widespread — `seasons.is_active`, `created_at`, `updated_at` declared non-null; all three are nullable |
+
+The two dropped junction tables are referenced by **nothing** outside the types file, so
+they were dead declarations rather than a live bug. Verified by grep across `src/` and the
+edge function.
+
+**TypeScript: 98 → 103. The rise is the point, and it is fully accounted for.**
+
+- **12 resolved.** The entire `ShoppingListsTab` cluster (6) and `shoppingListGeneration`
+  (4) — both features were falling through to the `never` table-name overload and were
+  effectively untyped. Plus `set_active_season` and one in `farms.ts`.
+- **17 revealed.** Mostly nullability the old file suppressed by declaring nullable columns
+  non-null. The largest cluster is 11 in `App.tsx` from `Season.is_active`, declared
+  `boolean` against a column that is `boolean | null`.
+
+**The `set_active_season` error deserves a note about what stale types cost.** `App.tsx:216`
+passes the *correct* single argument; the types file was wrong, so the compiler was
+reporting correct code as broken. Noise in that direction is worse than a missing error —
+it is what trains a reader to ignore the compiler, which is how the `fetchSharedFarms`
+message survived in plain sight.
+
+**The revealed nullability is latent, not live.** Production has 4 seasons and **zero**
+NULLs in `is_active`, `created_at` or `updated_at`, so nothing is misbehaving today. The
+columns permit NULL and the app assumes they do not; that is a trap, not a current defect.
+
+Floor after the change: **tests 206 passing** (unchanged), **ESLint 134/28** (unchanged),
+**build 1,751.96 kB** (byte-identical — types are erased, so this is the expected result
+and a change here would have meant something was wrong).
+
 ## Open items and standing notes
 
 Genuinely open: the `set_active_season` type drift below (WI-30). Everything else in this
