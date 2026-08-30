@@ -1,22 +1,71 @@
 # Farm Manager Remediation — Status
 
-**Last updated:** 29 Aug 2026 — Round 3 and the CSV fix are **merged to `main`** (PR #1, `b1e3233`)
-**Repo:** `jwolfish/Farm-Manager` @ `main`
+**Last updated:** 30 Aug 2026, end of session — everything below is **on `main` and pushed**
+**Repo:** `jwolfish/Farm-Manager` @ `main` (`065d91d`)
 **Supabase project:** `wvccxjakqwqfmyewclue` (bolt-native-database-63401892)
 **Companion docs:** `Farm-Manager-Code-Review-Summary.md`, `Farm-Manager-Remediation-PRD.md`
 
+---
+
+## Start here
+
+**Rounds 1–5 are complete.** Every migration is applied to the live database, the edge
+function is deployed at version 8, and the working tree is clean and pushed. Nothing is
+half-finished and nothing is waiting to be merged.
+
+| Verified this session | |
+|---|---|
+| Tests | **206 passing**, 5 files |
+| TypeScript | **98 errors** (from 103 at review) |
+| ESLint | 134 errors, 28 warnings (from 136/28) |
+| Build | succeeds — 1,751.96 kB (467.50 kB gz) |
+| SEC-5 policy matrix | **56 assertions, 0 failures** |
+| Migrations | 52 files, matching the database one-for-one |
+
+**Closed:** SEC-1, SEC-2, SEC-3, SEC-4, SEC-5, SEC-7 · WI-9, WI-10, WI-11, WI-12, WI-13,
+WI-14, WI-16 · LOG-1, LOG-2, LOG-3, LOG-4, LOG-7, LOG-8, LOG-10 · plus four collaboration
+defects found by testing, none of which were in the original review.
+
+**Partial:** SEC-6 (WI-6 untouched) · SEC-8 (mechanism in place, `ALLOWED_ORIGIN` unset by
+choice) · WI-20 (206 tests, but nowhere near the 80 % target).
+
+**Three things to pick up, in the order I would do them —** see *Next up* at the bottom for
+the reasoning:
+
+1. **WI-19, the type/lint baseline.** Promoted from housekeeping to first priority. A
+   feature-breaking bug sat in `tsc` output all session disguised as known noise.
+2. **Round 6 performance** — PERF-1 … PERF-5, chiefly the 1.75 MB bundle.
+3. **WI-15**, the cascade function still returning `{success: true}` after an internal
+   failure.
+
+**Two loose ends deliberately left:** set the `ALLOWED_ORIGIN` secret when there is a
+stable production URL, and exercise the `viewer` role in the app.
+
 ## How this work is being run
 
-Bolt does the coding, one work item per prompt. Claude writes the prompts, then verifies
-each round against GitHub (diff review) and against the live Supabase database (hostile
-queries run inside rolled-back transactions). Bolt cannot verify authorization changes
-itself — it has no second user account and no way to attempt an attack — so the verify
-step is not optional.
+**This changed at Round 3 and the document had not caught up.** Rounds 1–2 were written by
+Bolt from prompts Claude wrote. From Round 3 onward Claude has written the code directly,
+because these rounds turn on signature changes threaded through many call sites and on
+authorization that has to be attacked to be believed — both of which are Bolt's documented
+failure mode (confident, plausible, incomplete).
 
-Prompts are ordered by Bolt's likelihood of success, not strictly by risk. Every prompt
-carries explicit guardrails ("do not refactor outside these files", "pin search_path on
-every SECURITY DEFINER function", "regenerate database.types.ts") because Bolt's failure
-mode is confident, plausible, incomplete work.
+Node was installed on the owner's machine during Round 3, so `npm test`, `tsc`, `eslint`
+and `vite build` now run locally and every claim in this document is measured rather than
+predicted.
+
+**The working method that actually found things:**
+
+- Database changes are **rehearsed before they are applied** — the migration and its test
+  run inside one transaction that ends by raising, so everything rolls back. Only then is
+  it applied for real, and the rollback is confirmed afterwards.
+- Authorization is not considered fixed until **the attack has been attempted and returned
+  zero rows**. Reading a policy and concluding it looks right proved worthless twice.
+- Counts are not evidence. Where a baseline could drift, the error **sets** are compared
+  with line positions stripped, not the totals.
+
+Rounds 3 and 4 went through branches and pull requests. Round 5 onward was committed
+straight to `main`, which meant no diff review before landing — worth reconsidering for
+Round 6.
 
 ## Completed
 
@@ -283,7 +332,7 @@ raising at the end:
 Nothing persisted: leftover fixtures, work-order ledger rows and on-hand were all
 re-checked at zero afterwards.
 
-### Round 5 — IN PROGRESS
+### Round 5 — COMPLETE — SEC-5, SEC-3, and the deferred ledger backstop
 
 **Step 1 done: the policy matrix exists and is RED.** The PRD asks for the pgTAP matrix to
 be written *before* WI-5 touches anything, so that the fix can be proved rather than
@@ -592,7 +641,10 @@ client rather than the database — so read-only access has the same "never actu
 exposure that produced this cluster. Not urgent; worth doing before anyone is given a
 viewer invitation in earnest.
 
-## Open items
+## Open items and standing notes
+
+Genuinely open: the `set_active_season` type drift below (WI-30). Everything else in this
+section is either a practice note or a closed record kept for the reasoning.
 
 **Migration filenames must match the recorded version.** Applying through the Supabase MCP
 stamps its own timestamp, which will not be the one in the filename you wrote. Round 4's
@@ -604,7 +656,10 @@ work that is already in the database.
 arguments; the database function takes one. Evidence that the hand-maintained types have
 drifted (WI-30).
 
-### CSV negative-number regression — commit `7c87e07` (merged to `main` via PR #1) — CLOSED
+### CLOSED — CSV negative-number regression — commit `7c87e07`
+
+*Kept here rather than under Completed because the lesson is about this document: the fix
+it originally prescribed was wrong.*
 
 The Round 2 guard `'=+-@\t\r'.includes(s[0])` prefixed any value starting with `-`,
 including legitimate negative numbers, so negative net profit exported as text that Excel
@@ -673,61 +728,90 @@ programs pages, have never been rendered — they are only reachable with data t
 not currently exist in the database (no unconvertible unit pair is present). Worth a
 manual look if a product is ever given a unit outside its class.
 
-## Next up — Round 5
+## Next up
 
-Round 5 is the authorization round, and it now has three things to do rather than two.
-They all touch RLS, so doing them together means one coordinated set of policy changes and
-one verification pass instead of touching policies twice.
+### 1. WI-19 — the type and lint baseline. Promoted to first.
 
-1. **SEC-5 / WI-5 — farm-scoped membership.** Large blast radius; best written by hand
-   rather than generated. `can_edit_farm(uuid)` from Round 4 is the shape the rest of the
-   policies should converge on — it already does the right thing, so WI-5 is largely a
-   matter of threading `farm_id` through every policy that currently calls
-   `is_editor_of(owner_id)` / `is_team_member_of(owner_id)` and then retiring those two.
-2. **SEC-3 — edge function authorization.** **Redeploy `process-cascade-task` in this
-   round**: its source carries Round 3's conversion rewrite but the deployed copy still has
-   the old silent-fallback behaviour.
-3. **The WI-9 ledger backstop, deferred here by decision on 29 Aug 2026.** Round 4 closed
-   the double-posting hole inside the RPCs (row lock + status assertion, tested), but the
-   PRD also wanted a database-level guarantee that holds outside them. The plan: tighten
-   the INSERT policy on `inventory_ledger_entries` so a client can write only
-   `source_type = 'manual'` directly, forcing work-order and shopping-list entries through
-   `apply_work_order` / `unapply_work_order` / `record_purchase`, which bypass RLS as
-   SECURITY DEFINER. Every write path was already surveyed: `InventoryAdjustModal` is the
-   only remaining direct writer and it writes `'manual'`. Verify that manual adjustments
-   still succeed and that a direct work-order insert is refused.
+The PRD sequences this as maintainability, after the security work. **That ordering is
+wrong and this session proved it.** `fetchSharedFarms` had been broken since it was
+written, and `tsc` had been reporting it the whole time in plain language:
 
-Round 6 — PERF-1 through PERF-5 and remaining debt.
+```
+TS2352: SelectQueryError<"could not find the relation between team_members and user_profiles">
+```
+
+It sat inside the 103 errors this document itself taught everyone to treat as background
+noise. A whole feature — shared farms — never worked, and the compiler said so on every
+run. There is no reason to assume it is the only one.
+
+**Do this first, and start by triaging the remaining 98 for defects rather than by fixing
+them in bulk.** The 88 `no-explicit-any` lint errors matter for the same reason: `any`
+suppresses exactly this class of message. Getting to zero is the goal, but reading them is
+the value.
+
+### 2. Round 6 — performance
+
+PERF-1 … PERF-5. The bundle is the headline: 1,751.96 kB (467.50 kB gz) against WI-22's
+≤ 300 kB gzip target, so it needs `React.lazy` on the pages plus `manualChunks` for
+recharts, jspdf and html2canvas. PERF-2 (the unbounded override query) is a two-line fix.
+PERF-4's O(n²) on-hand trigger now matters more than it did, since Round 4 routes every
+work-order and purchase write through it.
+
+### 3. WI-15 — the cascade function still lies
+
+`process-cascade-task` returns `{success: true}` even when the inner block failed, and
+swallows the `error` on every query so a transient failure reads as "not found". Round 5
+redeployed that function for SEC-3 but deliberately did not touch this. It is the last
+place in the system where a failure is silently reported as success.
+
+### Deliberately deferred, with reasons
+
+- **`ALLOWED_ORIGIN`** — SEC-8's mechanism is deployed but falls back to `*`. Left
+  permissive because the app has no stable production URL, Bolt preview origins rotate, and
+  a wrong value breaks every cascade with an opaque CORS error. Set it when there is a real
+  deployment; extend it to a comma-separated list first if more than one origin is needed.
+- **The `viewer` role in the app** — proven at the database level by the matrix, never
+  exercised through the UI. All four collaboration defects this session lived in the
+  client, so read-only carries the same exposure.
+- **Real email for invitations** — needs a provider, an API key and domain verification.
+  The signup-time trigger covers the case where you can tell someone out of band to
+  register.
+- **WI-27, one implementation of the cost math** — the conversion table now exists twice
+  and has been hand-synchronised three times. Every sync so far has been correct, which is
+  precisely why it will eventually not be.
 
 ## Baseline metrics
 
 All figures below are measured, not estimated.
 
-| Metric | Review baseline | After Round 3 | After Round 4 |
-|---|---|---|---|
-| TypeScript errors | 103 | 103 (identical set) | **99** |
-| ESLint | 136 errors, 28 warnings | 134 / 28 | **134 / 28** |
-| Tests | 0 | 178 passing, 4 files | **206 passing, 5 files** |
-| CI | none | none | none — still WI-21 |
-| Main JS chunk | 1,747 kB (465 kB gz) | 1,754.43 kB (467.56 kB gz) | **1,751.97 kB (467.39 kB gz)** |
+| Metric | Review baseline | After Round 3 | After Round 4 | **End of 30 Aug** |
+|---|---|---|---|---|
+| TypeScript errors | 103 | 103 (identical set) | 99 | **98** |
+| ESLint | 136 errors, 28 warnings | 134 / 28 | 134 / 28 | **134 / 28** |
+| Tests | 0 | 178 passing, 4 files | 206 passing, 5 files | **206 passing, 5 files** |
+| CI | none | none | none | **none — still WI-21** |
+| Main JS chunk | 1,747 kB (465 kB gz) | 1,754.43 kB (467.56 kB gz) | 1,751.97 kB (467.39 kB gz) | **1,751.96 kB (467.50 kB gz)** |
+| Migrations | 40 files | 43 | 46 | **52, matching the database** |
 
-**The TypeScript baseline dropped 103 → 99.** All four were in `MarkPurchasedModal.tsx`
-and all four were eliminated by replacing its hand-rolled write sequence with the
-`record_purchase` RPC: the `price_per_bag` TS2353 described above, an associated TS2769
-overload failure, and two TS2345s where `string | null` was passed where `string` was
-required. No error was suppressed and none was introduced — the remaining 99 are a strict
-subset of the previous 103, compared file-by-file with line positions stripped.
+**Every drop in the TypeScript count is accounted for, and no error was ever suppressed.**
+103 → 99 came from replacing `MarkPurchasedModal`'s hand-rolled write sequence with the
+`record_purchase` RPC, which eliminated four real defects including the `price_per_bag`
+write to a column that does not exist. 99 → 98 came from fixing `fetchSharedFarms`. At each
+step the remaining errors were confirmed to be a strict subset of the previous set,
+compared file-by-file with line positions stripped — a matching total is not evidence.
 
-The bundle shrank 2.46 kB because the modal's inline ledger logic moved into the database.
+**On the bundle:** Round 3 added 5.45 kB (unit registry, alias table, the new maths modules
+and two warning banners); Round 4 gave back 2.46 kB by moving the purchase logic into the
+database. The net against the review is roughly +5 kB, which is a real regression against
+PERF-1 and an accepted one — WI-22 restructures this chunk entirely.
 
-**The bundle grew by 5.45 kB raw / 1.86 kB gzipped**, measured against `main` built on the
-same machine with the same dependency tree. That is the new code: the unit registry and
-alias table, `describeConversionFailure`, `shoppingListMath`, `inventoryMath`, and the two
-new warning banners. It is a real regression against PERF-1 and it is accepted — WI-22
-targets ≤ 300 kB gzipped and will restructure this chunk entirely.
+The review's recorded 1,747 kB / 465 kB was slightly optimistic: `main` measured
+1,748.98 kB / 465.70 kB when built on this machine. Compare against that, not the review.
 
-Note the review's recorded 1,747 kB / 465 kB was slightly optimistic: `main` measures
-1,748.98 kB / 465.70 kB today. Use the middle column as the reference point from here on.
+**A caveat on ESLint.** It has sat at 134/28 since Round 3, which reads like stability but
+is not evidence of anything: nothing this session was aimed at lint, and 88 of those errors
+are `no-explicit-any`, which is the very thing that hides the class of bug WI-19 is now
+first in the queue to find.
 
 Toolchain used for these measurements: Node 24.19.0, npm 11.17.0, Vitest 2.1.9, Vite 5.4.8.
 Note that npm 11 blocks package install scripts by default (`core-js` and `esbuild`
