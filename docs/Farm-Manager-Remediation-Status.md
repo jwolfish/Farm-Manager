@@ -39,9 +39,15 @@ manual cost overrides. Remaining, in the order I would do them:
    recharts formatter signatures, 15 unused parameters, and the residue. The nullability
    block is the one with real value left in it — it means reconciling the app's
    hand-written interfaces against the schema.
-2. **Confirm the cascade still works from the app.** WI-15 shipped as edge function
-   version 10 and could not be functionally tested from a terminal — see Round 6 step 3.
-   Trigger one cascade and check the task reaches `completed`.
+2. **Two ten-minute tests that would close the real gaps**, both cheap and both covering
+   fixes that this session's successful cascade did *not* touch:
+   - **Enter a field cost override, then cascade again.** The override must survive. This
+     is the only way to exercise the most valuable fix of Round 6 step 3, and
+     `field_cost_overrides` has 0 rows so it has never run in anger.
+   - **Have the collaborator account create a field or a chemical**, then check it appears
+     in Spray Planner, Chemical Work Orders, Seed Bag Requirements and a generated shopping
+     list. That is what the seven removed `user_id` filters were about; a collaborator
+     merely *viewing* owner-created data looks identical either way.
 3. **Round 6 performance** — PERF-1 … PERF-5, chiefly the 1.75 MB bundle.
 
 **Two loose ends deliberately left:** set the `ALLOWED_ORIGIN` secret when there is a
@@ -788,11 +794,21 @@ is entered.
   copy, as Round 5 did. Every marker matches — 10 `must()` call sites, the conditional
   claim, the 500 path, `already-claimed`, zero remaining redundant recalc calls, and the
   em-dashes in the conversion comments round-tripped without mojibake.
-- **NOT functionally tested, and it cannot be from here.** The function requires a real
-  user JWT (`verify_jwt` is true and it calls `auth.getUser()`), which needs the owner
-  signed in. Minting one would mean handling the owner's password. **The next cascade run
-  from the app is the actual test** — trigger one and check that the task row reaches
-  `completed` with `started_at` set.
+- **Functionally confirmed by the owner, 30 Aug, in the running app.** A chemical price was
+  changed; cost templates updated, the dashboard reflected the new cost per bushel, and a
+  second editor account with the app open saw the change **live, without a reload**.
+  That single test covers three separate pieces of work: the v10 deploy runs clean under a
+  real JWT (which matters, because it could not be typechecked here), the cascade
+  propagates chemical → programs → templates → field costs → dashboard, and Realtime works
+  across two accounts — the first time a second account has exercised the collaboration
+  work in the app rather than in a test harness.
+- **What that test did not exercise, and still has not been:**
+  - *The override guard* — the most valuable fix in this round. `field_cost_overrides` has
+    0 rows, so there was no override for the cascade to protect. Untested in anger.
+  - *Every failure path* — `must()` throwing, the 500 response, `already-claimed`. These
+    fire only when a query fails or a task is invoked twice.
+  - *The seven `user_id` read filters* — these only matter for rows a **collaborator
+    creates**. A second account viewing owner-created data would look identical either way.
 - Rollback if needed: version 9 is the previous deployment.
 
 Floor unchanged: TypeScript 76, tests 206 passing, ESLint 109/28.
