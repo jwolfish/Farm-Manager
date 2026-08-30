@@ -11,17 +11,24 @@
     Paste the whole file into the Supabase SQL editor and execute it.
 
   It builds its own fixtures — four auth users, two farms under ONE owner, and a
-  season/field/cost/application/product tree under each — runs all 56
-  assertions, then **deliberately raises** so the transaction rolls back. The
-  results come back as the exception message. Nothing is persisted; that is the
-  point. Do not "fix" the RAISE at the end.
+  season/field/cost/application/product/fertilizer-contract tree under each —
+  runs all 101 assertions, then **deliberately raises** so the transaction rolls
+  back. The results come back as the exception message. Nothing is persisted;
+  that is the point. Do not "fix" the RAISE at the end.
 
   Because it raises, the editor shows it as an error. That is expected: read the
   message body, not the status.
 
   WHAT GOOD LOOKS LIKE
-    "56 passed, 0 FAILED" and "MATRIX GREEN". Any line containing FAIL is a real
+    "101 passed, 0 FAILED" and "MATRIX GREEN". Any line containing FAIL is a real
     authorization hole.
+
+  F-2 added 45 of those assertions — 40 in the actor loop plus 5 trigger and
+  ON DELETE RESTRICT checks — covering fertilizer_contracts, fertilizer_loads
+  and fertilizer_load_lines. They were run against the F-2 migration inside a
+  single rolled-back transaction BEFORE it was applied, which is what makes them
+  evidence rather than decoration: a new table shipped with RLS off would show up
+  here as a stranger reading farm two.
 
   HISTORY
     Before WI-5 this reported 8 failures: an editor invited to one farm could
@@ -48,6 +55,7 @@ DECLARE
   v_d uuid := gen_random_uuid();   -- stranger, invited to nothing
   v_f1 uuid; v_f2 uuid; v_s1 uuid; v_s2 uuid; v_mp2 uuid;
   v_fld1 uuid; v_fld2 uuid; v_fc1 uuid; v_fc2 uuid; v_prog uuid; v_n int;
+  v_fp1 uuid; v_fp2 uuid; v_ct1 uuid; v_ct2 uuid; v_ld1 uuid; v_ld2 uuid;
 BEGIN
   ------------------------------------------------------------------ fixtures
   INSERT INTO auth.users (id,instance_id,aud,role,email,encrypted_password,
@@ -72,6 +80,23 @@ BEGIN
   INSERT INTO cascade_tasks (user_id,season_id,task_type) VALUES (v_a,v_s2,'cascade_product_update');
   INSERT INTO master_products (farm_id,product_category,canonical_name,unit_type)
   VALUES (v_f2,'chemical','ZZ Prod Two','gal') RETURNING id INTO v_mp2;
+
+  -- F-2 fertilizer contract tracking: a product, a booking, a load and a line
+  -- under EACH farm, so the matrix can prove the farm boundary on all three.
+  INSERT INTO fertilizer_products (season_id,user_id,product_name,price_per_unit,unit_type)
+  VALUES (v_s1,v_a,'ZZ Urea',550,'ton') RETURNING id INTO v_fp1;
+  INSERT INTO fertilizer_products (season_id,user_id,product_name,price_per_unit,unit_type)
+  VALUES (v_s2,v_a,'ZZ Urea',550,'ton') RETURNING id INTO v_fp2;
+  INSERT INTO fertilizer_contracts (season_id,fertilizer_product_id,contracted_quantity,unit_type,price_per_unit,user_id,label)
+  VALUES (v_s1,v_fp1,60,'ton',550,v_a,'ZZ Fall') RETURNING id INTO v_ct1;
+  INSERT INTO fertilizer_contracts (season_id,fertilizer_product_id,contracted_quantity,unit_type,price_per_unit,user_id,label)
+  VALUES (v_s2,v_fp2,60,'ton',550,v_a,'ZZ Fall') RETURNING id INTO v_ct2;
+  INSERT INTO fertilizer_loads (season_id,delivered_on,user_id,ticket_number,delivery_fee)
+  VALUES (v_s1,'2098-10-01',v_a,'ZZ-1',125) RETURNING id INTO v_ld1;
+  INSERT INTO fertilizer_loads (season_id,delivered_on,user_id,ticket_number,delivery_fee)
+  VALUES (v_s2,'2098-10-01',v_a,'ZZ-2',125) RETURNING id INTO v_ld2;
+  INSERT INTO fertilizer_load_lines (load_id,fertilizer_product_id,contract_id,quantity,unit_type)
+  VALUES (v_ld1,v_fp1,v_ct1,24,'ton'),(v_ld2,v_fp2,v_ct2,24,'ton');
 
   -- B and C are invited to FARM ONE ONLY.
   INSERT INTO team_members (user_id,invited_user_id,farm_id,email,role,status,accepted_at)
@@ -110,6 +135,20 @@ BEGIN
       SELECT count(*) INTO v_n FROM user_profiles WHERE id=v_a;
       IF v_n=e_prof THEN v_pass:=v_pass+1; ELSE v_fail:=v_fail+1; v_out:=v_out||format('%s profile read       FAIL got %s want %s%s',label,v_n,e_prof,E'\n'); END IF;
 
+      -- ---- F-2 fertilizer contract tracking, reads ---------------------
+      -- fertilizer_contracts.label must be qualified: `label` is also this
+      -- loop's actor variable, and an unqualified reference is ambiguous.
+      SELECT count(*) INTO v_n FROM fertilizer_contracts
+       WHERE season_id=v_s1 AND fertilizer_contracts.label NOT LIKE 'ZZ probe%';
+      IF v_n=e_r1 THEN v_pass:=v_pass+1; ELSE v_fail:=v_fail+1; v_out:=v_out||format('%s F1 contract read   FAIL got %s want %s%s',label,v_n,e_r1,E'\n'); END IF;
+      SELECT count(*) INTO v_n FROM fertilizer_contracts
+       WHERE season_id=v_s2 AND fertilizer_contracts.label NOT LIKE 'ZZ probe%';
+      IF v_n=e_r2 THEN v_pass:=v_pass+1; ELSE v_fail:=v_fail+1; v_out:=v_out||format('%s F2 contract read   FAIL got %s want %s%s',label,v_n,e_r2,E'\n'); END IF;
+      SELECT count(*) INTO v_n FROM fertilizer_loads WHERE season_id=v_s2 AND ticket_number NOT LIKE 'ZZ probe%';
+      IF v_n=e_r2 THEN v_pass:=v_pass+1; ELSE v_fail:=v_fail+1; v_out:=v_out||format('%s F2 load read       FAIL got %s want %s%s',label,v_n,e_r2,E'\n'); END IF;
+      SELECT count(*) INTO v_n FROM fertilizer_load_lines WHERE load_id=v_ld2 AND quantity<>99;
+      IF v_n=e_r2 THEN v_pass:=v_pass+1; ELSE v_fail:=v_fail+1; v_out:=v_out||format('%s F2 load line read  FAIL got %s want %s%s',label,v_n,e_r2,E'\n'); END IF;
+
       -- ---- writes ----------------------------------------------------
       BEGIN INSERT INTO fields (season_id,user_id,name,crop_type,acreage) VALUES (v_s1,v_a,'ZZ probe','corn',1); got:=true; EXCEPTION WHEN OTHERS THEN got:=false; END;
       IF got=e_w1 THEN v_pass:=v_pass+1; ELSE v_fail:=v_fail+1; v_out:=v_out||format('%s F1 field write     FAIL got %s want %s%s',label,got,e_w1,E'\n'); END IF;
@@ -123,9 +162,59 @@ BEGIN
       BEGIN UPDATE master_products SET on_hand_quantity=999 WHERE id=v_mp2; GET DIAGNOSTICS v_n=ROW_COUNT; EXCEPTION WHEN OTHERS THEN v_n:=0; END;
       IF (v_n>0)=e_w2 THEN v_pass:=v_pass+1; ELSE v_fail:=v_fail+1; v_out:=v_out||format('%s F2 inv update      FAIL got %s want %s%s',label,v_n,e_w2,E'\n'); END IF;
 
+      -- ---- F-2 fertilizer contract tracking, writes --------------------
+      BEGIN INSERT INTO fertilizer_contracts (season_id,fertilizer_product_id,contracted_quantity,unit_type,user_id,label)
+            VALUES (v_s1,v_fp1,1,'ton',actor,'ZZ probe'); got:=true; EXCEPTION WHEN OTHERS THEN got:=false; END;
+      IF got=e_w1 THEN v_pass:=v_pass+1; ELSE v_fail:=v_fail+1; v_out:=v_out||format('%s F1 contract write  FAIL got %s want %s%s',label,got,e_w1,E'\n'); END IF;
+      BEGIN INSERT INTO fertilizer_contracts (season_id,fertilizer_product_id,contracted_quantity,unit_type,user_id,label)
+            VALUES (v_s2,v_fp2,1,'ton',actor,'ZZ probe'); got:=true; EXCEPTION WHEN OTHERS THEN got:=false; END;
+      IF got=e_w2 THEN v_pass:=v_pass+1; ELSE v_fail:=v_fail+1; v_out:=v_out||format('%s F2 contract write  FAIL got %s want %s%s',label,got,e_w2,E'\n'); END IF;
+      BEGIN INSERT INTO fertilizer_loads (season_id,delivered_on,user_id,ticket_number)
+            VALUES (v_s1,'2098-11-01',actor,'ZZ probe'); got:=true; EXCEPTION WHEN OTHERS THEN got:=false; END;
+      IF got=e_w1 THEN v_pass:=v_pass+1; ELSE v_fail:=v_fail+1; v_out:=v_out||format('%s F1 load write      FAIL got %s want %s%s',label,got,e_w1,E'\n'); END IF;
+      BEGIN INSERT INTO fertilizer_loads (season_id,delivered_on,user_id,ticket_number)
+            VALUES (v_s2,'2098-11-01',actor,'ZZ probe'); got:=true; EXCEPTION WHEN OTHERS THEN got:=false; END;
+      IF got=e_w2 THEN v_pass:=v_pass+1; ELSE v_fail:=v_fail+1; v_out:=v_out||format('%s F2 load write      FAIL got %s want %s%s',label,got,e_w2,E'\n'); END IF;
+      BEGIN INSERT INTO fertilizer_load_lines (load_id,fertilizer_product_id,quantity,unit_type)
+            VALUES (v_ld1,v_fp1,99,'ton'); got:=true; EXCEPTION WHEN OTHERS THEN got:=false; END;
+      IF got=e_w1 THEN v_pass:=v_pass+1; ELSE v_fail:=v_fail+1; v_out:=v_out||format('%s F1 load line write FAIL got %s want %s%s',label,got,e_w1,E'\n'); END IF;
+      BEGIN INSERT INTO fertilizer_load_lines (load_id,fertilizer_product_id,quantity,unit_type)
+            VALUES (v_ld2,v_fp2,99,'ton'); got:=true; EXCEPTION WHEN OTHERS THEN got:=false; END;
+      IF got=e_w2 THEN v_pass:=v_pass+1; ELSE v_fail:=v_fail+1; v_out:=v_out||format('%s F2 load line write FAIL got %s want %s%s',label,got,e_w2,E'\n'); END IF;
+
       RESET ROLE;
     END LOOP;
   END;
+
+  -- F-2 consistency triggers and the ON DELETE RESTRICT, run as the owner, who
+  -- can see everything. These are not authorization checks — they prove the
+  -- farm/season boundary holds even for someone entitled to both sides of it.
+  PERFORM set_config('request.jwt.claim.sub', v_a::text, true);
+  SET LOCAL ROLE authenticated;
+  DECLARE got boolean;
+  BEGIN
+    BEGIN INSERT INTO fertilizer_contracts (season_id,fertilizer_product_id,contracted_quantity,unit_type,user_id,label)
+          VALUES (v_s1,v_fp2,1,'ton',v_a,'ZZ probe'); got:=true; EXCEPTION WHEN OTHERS THEN got:=false; END;
+    IF got=false THEN v_pass:=v_pass+1; ELSE v_fail:=v_fail+1; v_out:=v_out||'trigger: contract naming another season''s product ALLOWED - FAIL'||E'\n'; END IF;
+
+    BEGIN INSERT INTO fertilizer_load_lines (load_id,fertilizer_product_id,quantity,unit_type)
+          VALUES (v_ld1,v_fp2,1,'ton'); got:=true; EXCEPTION WHEN OTHERS THEN got:=false; END;
+    IF got=false THEN v_pass:=v_pass+1; ELSE v_fail:=v_fail+1; v_out:=v_out||'trigger: line naming another season''s product ALLOWED - FAIL'||E'\n'; END IF;
+
+    BEGIN INSERT INTO fertilizer_load_lines (load_id,fertilizer_product_id,contract_id,quantity,unit_type)
+          VALUES (v_ld1,v_fp1,v_ct2,1,'ton'); got:=true; EXCEPTION WHEN OTHERS THEN got:=false; END;
+    IF got=false THEN v_pass:=v_pass+1; ELSE v_fail:=v_fail+1; v_out:=v_out||'trigger: line drawing on another season''s contract ALLOWED - FAIL'||E'\n'; END IF;
+
+    -- The negative cases above are worthless without this one: a trigger that
+    -- refuses everything would pass all three.
+    BEGIN INSERT INTO fertilizer_load_lines (load_id,fertilizer_product_id,contract_id,quantity,unit_type)
+          VALUES (v_ld1,v_fp1,v_ct1,5,'ton'); got:=true; EXCEPTION WHEN OTHERS THEN got:=false; END;
+    IF got=true THEN v_pass:=v_pass+1; ELSE v_fail:=v_fail+1; v_out:=v_out||'trigger: a legitimate line was REFUSED - FAIL'||E'\n'; END IF;
+
+    BEGIN DELETE FROM fertilizer_contracts WHERE id=v_ct1; got:=true; EXCEPTION WHEN OTHERS THEN got:=false; END;
+    IF got=false THEN v_pass:=v_pass+1; ELSE v_fail:=v_fail+1; v_out:=v_out||'RESTRICT: deleted a contract that still has loads - FAIL'||E'\n'; END IF;
+  END;
+  RESET ROLE;
 
   v_out := v_out || format('%s%s passed, %s FAILED%s', E'\n', v_pass, v_fail, E'\n');
   IF v_fail = 0 THEN

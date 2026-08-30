@@ -455,6 +455,180 @@ export type Database = {
         }
         Relationships: []
       }
+      fertilizer_contracts: {
+        Row: {
+          booked_on: string | null
+          contracted_quantity: number
+          created_at: string | null
+          fertilizer_product_id: string
+          id: string
+          kind: string
+          label: string | null
+          notes: string | null
+          price_per_unit: number | null
+          season_id: string
+          supplier: string | null
+          unit_type: string
+          updated_at: string | null
+          user_id: string
+        }
+        Insert: {
+          booked_on?: string | null
+          contracted_quantity: number
+          created_at?: string | null
+          fertilizer_product_id: string
+          id?: string
+          kind?: string
+          label?: string | null
+          notes?: string | null
+          price_per_unit?: number | null
+          season_id: string
+          supplier?: string | null
+          unit_type: string
+          updated_at?: string | null
+          user_id: string
+        }
+        Update: {
+          booked_on?: string | null
+          contracted_quantity?: number
+          created_at?: string | null
+          fertilizer_product_id?: string
+          id?: string
+          kind?: string
+          label?: string | null
+          notes?: string | null
+          price_per_unit?: number | null
+          season_id?: string
+          supplier?: string | null
+          unit_type?: string
+          updated_at?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fertilizer_contracts_fertilizer_product_id_fkey"
+            columns: ["fertilizer_product_id"]
+            isOneToOne: false
+            referencedRelation: "fertilizer_products"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fertilizer_contracts_season_id_fkey"
+            columns: ["season_id"]
+            isOneToOne: false
+            referencedRelation: "seasons"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      fertilizer_load_lines: {
+        Row: {
+          computed_quantity: number | null
+          contract_id: string | null
+          created_at: string | null
+          fertilizer_product_id: string
+          id: string
+          load_id: string
+          notes: string | null
+          quantity: number
+          unit_type: string
+        }
+        Insert: {
+          computed_quantity?: number | null
+          contract_id?: string | null
+          created_at?: string | null
+          fertilizer_product_id: string
+          id?: string
+          load_id: string
+          notes?: string | null
+          quantity: number
+          unit_type: string
+        }
+        Update: {
+          computed_quantity?: number | null
+          contract_id?: string | null
+          created_at?: string | null
+          fertilizer_product_id?: string
+          id?: string
+          load_id?: string
+          notes?: string | null
+          quantity?: number
+          unit_type?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fertilizer_load_lines_contract_id_fkey"
+            columns: ["contract_id"]
+            isOneToOne: false
+            referencedRelation: "fertilizer_contracts"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fertilizer_load_lines_fertilizer_product_id_fkey"
+            columns: ["fertilizer_product_id"]
+            isOneToOne: false
+            referencedRelation: "fertilizer_products"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "fertilizer_load_lines_load_id_fkey"
+            columns: ["load_id"]
+            isOneToOne: false
+            referencedRelation: "fertilizer_loads"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      fertilizer_loads: {
+        Row: {
+          created_at: string | null
+          delivered_on: string
+          delivery_fee: number
+          id: string
+          load_type: string | null
+          notes: string | null
+          season_id: string
+          supplier: string | null
+          ticket_number: string | null
+          updated_at: string | null
+          user_id: string
+        }
+        Insert: {
+          created_at?: string | null
+          delivered_on: string
+          delivery_fee?: number
+          id?: string
+          load_type?: string | null
+          notes?: string | null
+          season_id: string
+          supplier?: string | null
+          ticket_number?: string | null
+          updated_at?: string | null
+          user_id: string
+        }
+        Update: {
+          created_at?: string | null
+          delivered_on?: string
+          delivery_fee?: number
+          id?: string
+          load_type?: string | null
+          notes?: string | null
+          season_id?: string
+          supplier?: string | null
+          ticket_number?: string | null
+          updated_at?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "fertilizer_loads_season_id_fkey"
+            columns: ["season_id"]
+            isOneToOne: false
+            referencedRelation: "seasons"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       fertilizer_products: {
         Row: {
           application_rate: number | null
