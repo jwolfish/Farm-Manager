@@ -502,7 +502,22 @@ genuinely cost different amounts and the blend should say so.
 what remains, offer to spill the remainder onto a new spot buy created inline (label and
 price) without leaving the modal.
 
-**4. And the price field on the Fertilizers tab is now a trap.**
+**4. The Fertilizers tab shows a STALE price after a contract changes.**
+Found immediately after the above, and it is the fault that prompted the whole question.
+The owner saw Urea at $550 on the Fertilizers tab while the database held $590 — written by
+the F-3 trigger at the moment the spot buy was saved. Navigating away and back showed $590.
+
+`Products.tsx` memoises each tab's rows in `loadedTabsRef` and clears only the *active*
+tab. The Contracts tab changes `fertilizer_products.price_per_unit` through the trigger and
+has no way to tell the Fertilizers tab its cached rows are now wrong. Reproducible, not a
+fluke.
+
+**This must be fixed before, or with, the read-only change below** — read-only alone would
+have displayed a read-only *wrong* number, which is worse than an editable one. The
+Contracts tab needs to invalidate the fertilizers cache after any contract write, the way
+`reloadAllTabs` already does for the cross-farm copy.
+
+**5. And the price field on the Fertilizers tab is now a trap.**
 `fertilizer_products.price_per_unit` has three writers: that form, the F-3 contracts
 trigger, and `record_purchase`. For a product with priced bookings the trigger owns the
 number, but the form still lets you type one — it saves, cascades, moves field costs, and
