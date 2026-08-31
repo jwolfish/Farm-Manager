@@ -147,6 +147,111 @@ export function rollUpProduct(
   };
 }
 
+/** Quantities to 4dp, so a split does not read back as 3.6500000000000004. */
+function roundQty(value: number): number {
+  return Math.round(value * 10000) / 10000;
+}
+
+export interface DrawSplit {
+  /** Stays on the booking, in the LINE's unit — the number the user retypes. */
+  onContractInLineUnit: number;
+  /** Spills onto a new spot buy, in the LINE's unit. */
+  onSpotInLineUnit: number;
+  /**
+   * The same spill in the PRODUCT's unit. A contract is denominated in its
+   * product's own unit (F-3), so this is what the new spot buy is booked for.
+   */
+  onSpotInProductUnit: number;
+}
+
+export type DrawPlan =
+  | { ok: false; message: string }
+  | {
+      ok: true;
+      /** The line quantity in the product's unit — what the rollup will count. */
+      quantityInProductUnit: number;
+      /** Left on the chosen booking before this line. Null when none is chosen. */
+      remaining: number | null;
+      /** The line draws more than the booking has left. */
+      overDraws: boolean;
+      /**
+       * How to divide the line. Null when there is nothing to divide, or when
+       * the booking has nothing left at all — then the whole line is a spot buy
+       * and there is no "split" to offer.
+       */
+      split: DrawSplit | null;
+    };
+
+/**
+ * Does this load line draw more than its booking has left, and if so, where
+ * does the remainder go? — F-4a.
+ *
+ * The owner's case: a 24-ton semi against a booking with 20.35 t left. The
+ * schema already allows the truthful answer, because a load line is per-product
+ * *per booking* and nothing stops two lines for the same product on one ticket.
+ * So it is two lines — and that is better than one number, because those tons
+ * genuinely cost different money and the blended price should say so.
+ *
+ * The split is returned in the LINE's unit because that is what the user typed
+ * and will now see divided in two, and again in the PRODUCT's unit because that
+ * is the only unit a contract may be written in.
+ *
+ * `remaining` is `null` when no booking is selected: there is then nothing to
+ * over-draw, so this reports the converted quantity and nothing else.
+ */
+export function planLineDraw(
+  quantity: number,
+  lineUnit: string,
+  productUnit: string,
+  remaining: number | null,
+  densityLbPerGal?: number | null
+): DrawPlan {
+  const converted = convertProductUnits(lineUnit, productUnit, quantity, densityLbPerGal);
+  if (!converted.ok) {
+    return { ok: false, message: describeConversionFailure(converted) };
+  }
+
+  const quantityInProductUnit = converted.value;
+  if (remaining === null) {
+    return { ok: true, quantityInProductUnit, remaining: null, overDraws: false, split: null };
+  }
+
+  // A hair of tolerance: a converted 24.000000000000004 against 24 remaining is
+  // not an over-draw, and offering to spill 4e-15 tons onto a spot buy would be
+  // absurd.
+  const overDraws = quantityInProductUnit - remaining > 1e-6;
+  if (!overDraws || remaining <= 0) {
+    // remaining <= 0 is a real over-draw with nothing to keep on the booking.
+    // The caller offers "book all of it" rather than a split.
+    return { ok: true, quantityInProductUnit, remaining, overDraws, split: null };
+  }
+
+  // Express what fits back in the line's unit, so the two lines add up to what
+  // the user typed rather than to a converted approximation of it.
+  const fits = convertProductUnits(productUnit, lineUnit, remaining, densityLbPerGal);
+  if (!fits.ok) {
+    return { ok: true, quantityInProductUnit, remaining, overDraws, split: null };
+  }
+
+  const onContractInLineUnit = roundQty(fits.value);
+  const onSpotInLineUnit = roundQty(quantity - onContractInLineUnit);
+  if (onContractInLineUnit <= 0 || onSpotInLineUnit <= 0) {
+    return { ok: true, quantityInProductUnit, remaining, overDraws, split: null };
+  }
+
+  return {
+    ok: true,
+    quantityInProductUnit,
+    remaining,
+    overDraws,
+    split: {
+      onContractInLineUnit,
+      onSpotInLineUnit,
+      onSpotInProductUnit: roundQty(quantityInProductUnit - remaining),
+    },
+  };
+}
+
 export interface SeasonTotals {
   deliveryFees: number;
   loadCount: number;
