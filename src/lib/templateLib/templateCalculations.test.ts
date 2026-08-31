@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { calculateTemplateCost, calculateFieldTotalCost } from './templateCalculations';
+import { applyFieldCostOverrides, calculateTemplateCost, calculateFieldTotalCost } from './templateCalculations';
 import type { Database } from '../database.types';
 
 type CostTemplate = Database['public']['Tables']['cost_templates']['Row'];
@@ -118,5 +118,146 @@ describe('calculateFieldTotalCost', () => {
     // Number('') is 0 and Number(null) is 0, so a blank column stays harmless.
     const total = calculateFieldTotalCost({ seed_cost_per_acre: '', fertilizer_cost_per_acre: 40 });
     expect(total).toBe(40);
+  });
+});
+
+/*
+ * These are the regression tests for the defect that ran undetected from February to
+ * August 2026 on nine real fields: the cascade recomputed total_cost_per_acre from the
+ * raw field_costs columns, never consulting field_cost_overrides, so the total reverted
+ * to the pure template figure while every line item on screen still showed the override.
+ *
+ * The invariant, stated once: an override lives in field_cost_overrides.override_value,
+ * NOT in the field_costs column it names. Any total must resolve the two.
+ */
+describe('applyFieldCostOverrides', () => {
+  it('lays a numeric override over the template value in its own column', () => {
+    const resolved = applyFieldCostOverrides(
+      { hauling_cost_per_acre: 80, tillage_cost_per_acre: 20 },
+      new Map<string, unknown>([['hauling_cost_per_acre', 70]])
+    );
+    expect(resolved.hauling_cost_per_acre).toBe(70);
+    // Untouched columns must survive intact.
+    expect(resolved.tillage_cost_per_acre).toBe(20);
+  });
+
+  it('does not mutate the row it is given', () => {
+    const base = { hauling_cost_per_acre: 80 };
+    applyFieldCostOverrides(base, new Map<string, unknown>([['hauling_cost_per_acre', 70]]));
+    expect(base.hauling_cost_per_acre).toBe(80);
+  });
+
+  it('returns a copy when there are no overrides', () => {
+    const base = { hauling_cost_per_acre: 80 };
+    const resolved = applyFieldCostOverrides(base, new Map());
+    expect(resolved).toEqual(base);
+    expect(resolved).not.toBe(base);
+  });
+
+  it('handles a null or undefined override map', () => {
+    expect(applyFieldCostOverrides({ a: 1 }, null)).toEqual({ a: 1 });
+    expect(applyFieldCostOverrides({ a: 1 }, undefined)).toEqual({ a: 1 });
+  });
+
+  it('accepts a numeric string, because override_value is jsonb', () => {
+    const resolved = applyFieldCostOverrides(
+      { hauling_cost_per_acre: 80 },
+      new Map<string, unknown>([['hauling_cost_per_acre', '70']])
+    );
+    expect(resolved.hauling_cost_per_acre).toBe(70);
+  });
+
+  it('leaves the template value standing for a non-numeric override', () => {
+    // Never turn a field cost into NaN. A junk override is not an override.
+    for (const junk of [null, '', 'abc', undefined, {}]) {
+      const resolved = applyFieldCostOverrides(
+        { hauling_cost_per_acre: 80 },
+        new Map<string, unknown>([['hauling_cost_per_acre', junk]])
+      );
+      expect(resolved.hauling_cost_per_acre).toBe(80);
+    }
+  });
+
+  it('accepts a legitimate zero override', () => {
+    // The truthiness trap: 0 is a real answer, not a missing one.
+    const resolved = applyFieldCostOverrides(
+      { hauling_cost_per_acre: 80 },
+      new Map<string, unknown>([['hauling_cost_per_acre', 0]])
+    );
+    expect(resolved.hauling_cost_per_acre).toBe(0);
+  });
+
+  it('resolves a program-array override to the matching cost column as a sum', () => {
+    const resolved = applyFieldCostOverrides(
+      { chemical_cost_per_acre: 80.52 },
+      new Map<string, unknown>([
+        ['chemical_programs', [{ program_id: 'c1', cost_per_acre: 60 }, { program_id: 'c2', cost_per_acre: 45 }]],
+      ])
+    );
+    expect(resolved.chemical_cost_per_acre).toBe(105);
+  });
+
+  it('ignores an array override under a key with no cost column', () => {
+    const resolved = applyFieldCostOverrides(
+      { chemical_cost_per_acre: 80.52 },
+      new Map<string, unknown>([['something_else', [{ cost_per_acre: 999 }]]])
+    );
+    expect(resolved.chemical_cost_per_acre).toBe(80.52);
+    expect(resolved.something_else).toBeUndefined();
+  });
+});
+
+describe('cascade totalling — the nine-field regression', () => {
+  /*
+   * Reproduces the exact production shapes. Both directions matter: the chemical
+   * overrides made the total too LOW, the hauling overrides made it too HIGH, which is
+   * why "the total looked plausible" was never evidence of anything.
+   */
+  it('Home West of Bins: an override above the template raises the total', () => {
+    const fieldCostRow = { chemical_cost_per_acre: 80.52, seed_cost_per_acre: 609 };
+    const overrides = new Map<string, unknown>([['chemical_cost_per_acre', 105]]);
+
+    const wrong = calculateFieldTotalCost(fieldCostRow);
+    const right = calculateFieldTotalCost(applyFieldCostOverrides(fieldCostRow, overrides));
+
+    expect(wrong).toBeCloseTo(689.52, 2);
+    expect(right).toBeCloseTo(714, 2);
+    expect(right - wrong).toBeCloseTo(24.48, 2);
+  });
+
+  it('Umek: an override below the template lowers the total', () => {
+    const fieldCostRow = { hauling_cost_per_acre: 80, seed_cost_per_acre: 603.72 };
+    const overrides = new Map<string, unknown>([['hauling_cost_per_acre', 60]]);
+
+    const wrong = calculateFieldTotalCost(fieldCostRow);
+    const right = calculateFieldTotalCost(applyFieldCostOverrides(fieldCostRow, overrides));
+
+    expect(wrong).toBeCloseTo(683.72, 2);
+    expect(right).toBeCloseTo(663.72, 2);
+    expect(right - wrong).toBeCloseTo(-20, 2);
+  });
+
+  it('a field with no overrides totals identically either way', () => {
+    // The fix must be inert for the overwhelming majority of fields.
+    const fieldCostRow = {
+      seed_cost_per_acre: 100, fertilizer_cost_per_acre: 40, chemical_cost_per_acre: 80.52,
+      tillage_cost_per_acre: 20, hauling_cost_per_acre: 80,
+    };
+    expect(calculateFieldTotalCost(applyFieldCostOverrides(fieldCostRow, new Map())))
+      .toBe(calculateFieldTotalCost(fieldCostRow));
+  });
+
+  it('applying the template on top of an override still honours the override', () => {
+    // This is the cascade's actual shape: row, then template updates, then resolve.
+    const currentFieldCost = { chemical_cost_per_acre: 80.52, hauling_cost_per_acre: 80, seed_cost_per_acre: 500 };
+    const templateUpdates = { chemical_cost_per_acre: 92.10, hauling_cost_per_acre: 85 };
+    const overrides = new Map<string, unknown>([['hauling_cost_per_acre', 70]]);
+
+    const total = calculateFieldTotalCost(
+      applyFieldCostOverrides({ ...currentFieldCost, ...templateUpdates }, overrides)
+    );
+
+    // Chemical follows the template's new 92.10; hauling holds the user's 70.
+    expect(total).toBeCloseTo(500 + 92.10 + 70, 2);
   });
 });

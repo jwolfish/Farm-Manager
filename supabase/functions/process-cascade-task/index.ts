@@ -213,6 +213,51 @@ function calculateCostWithConversion(
   return { ok: true, value: converted.value * price };
 }
 
+/*
+ * A field cost override lives in `field_cost_overrides`, NOT in the `field_costs`
+ * column it names. The column holds the value inherited from the template;
+ * `override_value` holds what the user typed, and the app lays the second over the
+ * first for display. Anything that TOTALS a field must lay them over the same way, or
+ * the total silently reverts to the template figure while every line on screen still
+ * shows the override.
+ *
+ * DUPLICATE of applyFieldCostOverrides in src/lib/templateLib/templateCalculations.ts.
+ * Deno cannot import from src/, so the two must be changed together -- guardrail 7,
+ * and this is the copy that actually runs.
+ */
+const PROGRAM_OVERRIDE_TARGET: Record<string, string> = {
+  fertilizer_programs: "fertilizer_cost_per_acre",
+  chemical_programs: "chemical_cost_per_acre",
+};
+
+function applyFieldCostOverrides(
+  fieldCost: Record<string, unknown>,
+  overrides: Map<string, unknown> | null | undefined,
+): Record<string, unknown> {
+  if (!overrides || overrides.size === 0) return { ...fieldCost };
+
+  const resolved = { ...fieldCost };
+
+  for (const [itemName, value] of overrides) {
+    if (Array.isArray(value)) {
+      const target = PROGRAM_OVERRIDE_TARGET[itemName];
+      if (!target) continue;
+      resolved[target] = (value as Array<{ cost_per_acre?: number }>).reduce(
+        (sum, p) => sum + Number(p?.cost_per_acre || 0),
+        0,
+      );
+      continue;
+    }
+
+    const numeric = Number(value);
+    if (value === null || value === "" || !Number.isFinite(numeric)) continue;
+
+    resolved[itemName] = numeric;
+  }
+
+  return resolved;
+}
+
 function calculateFieldTotalCost(fc: Record<string, unknown>): number {
   return (
     Number(fc.seed_cost_per_acre || 0) +
@@ -419,29 +464,43 @@ async function cascadeTemplateUpdateInSeason(
   /*
    * This read is the one that must never be allowed to fail quietly.
    *
-   * overridesByField is the ONLY thing stopping this cascade from overwriting a
-   * field's manually-overridden costs. The previous `const { data } = ...` plus
-   * `overrideRows || []` meant a failed query produced an empty override map, so
-   * every override was silently replaced by the template value -- no error, no
-   * warning, wrong money on every affected field.
+   * The previous `const { data } = ...` plus `overrideRows || []` meant a failed query
+   * produced an empty override map -- no error, no warning, wrong money on every
+   * affected field. The same bug was fixed on the client in e90c377; this is the copy
+   * that actually runs. Guardrail 7: the two must be changed together.
    *
-   * The same bug was fixed on the client in e90c377; this is the copy that
-   * actually runs. Guardrail 7: the two must be changed together.
+   * CORRECTION, 31 Aug 2026. The comment here used to claim this map was "the ONLY
+   * thing stopping this cascade from overwriting a field's manually-overridden costs."
+   * That was wrong, and being wrong about it hid a live defect for six months.
+   *
+   * An override does NOT live in the field_costs column it names. It lives in
+   * field_cost_overrides.override_value, and getResolvedFieldCosts lays it over the
+   * field_costs row for display. The cascade therefore cannot overwrite an override at
+   * all -- it is in a different table. What the cascade CAN do, and did, is recompute
+   * total_cost_per_acre from the raw columns, so the total quietly reverted to the pure
+   * template figure while every line item on screen still showed the override.
+   *
+   * That is why override_value is now selected: skipping a column is not enough, the
+   * total has to be resolved. Nine real fields were wrong -- six understated by ~$24/ac,
+   * three overstated by $10-$20/ac.
    */
   const overrideRows = must(
     await supabase
       .from("field_cost_overrides")
-      .select("field_id, cost_item_name")
+      .select("field_id, cost_item_name, override_value")
       .in("field_id", fieldIds),
     `load field cost overrides for template ${templateId}`,
   );
 
-  const overridesByField = new Map<string, Set<string>>();
+  // The VALUE is kept, not just the presence of a row -- a Set was enough to decide
+  // which columns to skip writing, but not enough to total the field correctly.
+  const overridesByField = new Map<string, Map<string, unknown>>();
   for (const o of overrideRows || []) {
-    const fid = (o as Record<string, unknown>).field_id as string;
-    const name = (o as Record<string, unknown>).cost_item_name as string;
-    if (!overridesByField.has(fid)) overridesByField.set(fid, new Set());
-    overridesByField.get(fid)!.add(name);
+    const row = o as Record<string, unknown>;
+    const fid = row.field_id as string;
+    const name = row.cost_item_name as string;
+    if (!overridesByField.has(fid)) overridesByField.set(fid, new Map());
+    overridesByField.get(fid)!.set(name, row.override_value);
   }
 
   const fertilizerTemplateCost = Array.isArray(template.fertilizer_programs)
@@ -464,7 +523,7 @@ async function cascadeTemplateUpdateInSeason(
   await Promise.all(fieldCostRows.map(async (currentFieldCost: Record<string, unknown>) => {
     const fieldId = currentFieldCost.field_id as string;
     try {
-      const overrideMap = overridesByField.get(fieldId) ?? new Set<string>();
+      const overrideMap = overridesByField.get(fieldId) ?? new Map<string, unknown>();
       const updates: Record<string, unknown> = {};
 
       if (!overrideMap.has("fertilizer_programs")) {
@@ -479,7 +538,11 @@ async function cascadeTemplateUpdateInSeason(
         }
       }
 
-      updates.total_cost_per_acre = calculateFieldTotalCost({ ...currentFieldCost, ...updates });
+      // Resolved, not raw. See applyFieldCostOverrides above and its twin in
+      // src/lib/templateLib/templateCalculations.ts (guardrail 7).
+      updates.total_cost_per_acre = calculateFieldTotalCost(
+        applyFieldCostOverrides({ ...currentFieldCost, ...updates }, overrideMap),
+      );
 
       const { error: updateError } = await supabase
         .from("field_costs")

@@ -73,7 +73,7 @@ The status doc is the source of truth for what is done. Update it when a round l
   to the main chunk and split `BookingModal` out; F-4b added the season summary to the lazy
   Contracts chunk only; F-6 added the plan calculator to the lazy chunks and **0.02 kB** to
   the main one.
-- `npm test` reports **282 passing** in 7 files.
+- `npm test` reports **295 passing** in 7 files (282 before the override fix added 13).
 - There is **no CI**. Adding it is WI-21 in the PRD.
 - Tests arrived with Round 3: `npm test` (Vitest). Test files are excluded from
   `tsconfig.app.json` so they do not move the 103-error baseline.
@@ -131,7 +131,21 @@ These are real mistakes made during this work, not hypotheticals.
    `bag`, `seed` and `unit` are separate classes on purpose, because bag↔seed needs a
    per-product `units_per_bag` the module does not have.
 
-9. **The conversion factors are exact integers on purpose.** Mass is based on nanograms
+9. **A field cost override does not live in the column it names.** It lives in
+   `field_cost_overrides.override_value`; the `field_costs.<column>` holds the value
+   inherited from the template, and `getResolvedFieldCosts` lays the override over it.
+   `createOrUpdateOverride` never writes the column. **So anything that totals a field
+   must resolve the two first** — use `applyFieldCostOverrides` before
+   `calculateFieldTotalCost`, exactly as `recalculateFieldTotal` does. The cascade did
+   not, and nine real fields carried a wrong total for six months: the per-item lines on
+   screen showed the override while the total silently reverted to the template, wrong in
+   *both* directions, with no error anywhere. Mirrored in the edge function per
+   guardrail 7. Two things that look like the bug and are not: the guard keys
+   `chemical_programs` / `fertilizer_programs` are correct — they are the names for the
+   *array-shaped* overrides — and skipping the column write is harmless once the total
+   resolves, because the overlay wins on display either way.
+
+10. **The conversion factors are exact integers on purpose.** Mass is based on nanograms
    and volume on femtolitres so that every US customary factor is an exactly
    representable integer below 2^53, which makes lb→oz exactly 16 rather than
    16.000000000000004. Do not "tidy" `OZ_IN_NG` or `FL_OZ_IN_FL` into rounder decimal
@@ -148,6 +162,38 @@ npx eslint .                            # must stay at 109 errors / 28 warnings,
 npx vite build                          # must succeed
 npm test                                # must stay green
 ```
+
+**The Supabase CLI is installed as a dev dependency** (`supabase` 2.116.0, added 31 Aug
+2026). Deploy the edge function with:
+
+```
+npm run deploy:cascade
+```
+
+which is `supabase functions deploy process-cascade-task --project-ref wvccxjakqwqfmyewclue
+--use-api`. `--use-api` bundles server-side, so Docker is not required, and no
+`supabase/config.toml` is needed. **It reads the file from disk** — prefer it to the MCP
+`deploy_edge_function` tool, which takes the ~950-line source inline and so risks a
+transcription error in the one file that computes every field cost.
+
+Deploying needs a one-time login **run by the owner in their own terminal**. PowerShell
+blocks `.ps1` scripts on this machine, so `npx supabase login` fails with
+`UnauthorizedAccess` — use `npx.cmd supabase login`, or
+`node node_modules\supabase\dist\supabase.js login`. The token is stored by the CLI and
+never passes through here. `LegacyPlatformAuthRequiredError` means that login has not been
+done or has expired.
+
+**Verify every deploy byte-for-byte** — this is now cheap and there is no excuse for
+markers:
+
+```
+supabase functions download process-cascade-task --project-ref wvccxjakqwqfmyewclue --use-api
+```
+
+into a scratch directory, then `sha256sum` / `diff` it against
+`supabase/functions/process-cascade-task/index.ts`. v14 was confirmed this way. Earlier
+rounds could only compare a handful of distinctive strings, and the recorded version number
+was wrong twice.
 
 For anything touching RLS, policies, or `SECURITY DEFINER` functions, a change is not
 verified until the attack it prevents has actually been attempted against the database
