@@ -36,6 +36,10 @@ Two rules this feature keeps re-learning the hard way:
   `fertilizer_contracts.unit_type` rather than constrain it, so any conversion between a
   load line's unit and a booking's happens in TypeScript. Do not move it into SQL — that
   is the third copy of the unit table guardrail 7 is about.
+- **Never sum a fertilizer quantity across products.** Each product's rollup is in *its
+  own* unit, so a cross-product total adds tons to gallons. The season strip did exactly
+  that for three figures and looked fine only because every product here is priced by the
+  ton (F-4b). Money is the one thing that may be summed across products.
 - **`fertilizer_products.price_per_unit` has more than one writer.** The F-3 trigger owns
   it wherever priced bookings exist; the Fertilizers form is the input only when there are
   none. Anything that writes it must know which case it is in.
@@ -53,11 +57,11 @@ The status doc is the source of truth for what is done. Update it when a round l
   doc for the full accounting; every movement is itemised there.
 - `npx eslint .` reports **109 errors, 28 warnings** (was 136/28 at review).
 - `npx vite build` succeeds and emits a **1,755.99 kB** main chunk (468.72 kB gz), plus a
-  lazy **35.21 kB** `FertilizerContractsTab` chunk (9.33 kB gz). It was
+  lazy **37.97 kB** `FertilizerContractsTab` chunk (9.94 kB gz). It was
   1,751.91 kB before fertilizer F-1, which added 2.38 kB for the density bridge, the
   Liquid checkbox and its help text; F-4a added 0.95 kB to the main chunk and 6.50 kB to
   the lazy one, which is where the new load-ticket modal lives.
-- `npm test` reports **249 passing** in 6 files.
+- `npm test` reports **256 passing** in 6 files.
 - There is **no CI**. Adding it is WI-21 in the PRD.
 - Tests arrived with Round 3: `npm test` (Vitest). Test files are excluded from
   `tsconfig.app.json` so they do not move the 103-error baseline.
