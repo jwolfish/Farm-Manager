@@ -1,9 +1,9 @@
 # Farm Manager Remediation — Status
 
-**Last updated:** 30 Aug 2026 — Rounds 1–6 (steps 1–3) complete, plus fertilizer F-1
-**Repo:** `jwolfish/Farm-Manager` — Rounds 1–6 and fertilizer F-1 are merged on `main`
-(`93b11a6`), **not yet pushed to origin**.
-**Branch `f-4-fertilizer-contracts-ui` is NOT yet merged** and carries F-4; F-1 to F-3 are merged.
+**Last updated:** 30 Aug 2026 — Rounds 1–6 (steps 1–3) complete, plus fertilizer F-1 … F-4a
+**Repo:** `jwolfish/Farm-Manager` — Rounds 1–6 and fertilizer F-1 … F-4 are merged on
+`main`, **not yet pushed to origin**.
+**Branch `f-4a-ticket-first-spot-buys` is NOT yet merged** and carries F-4a; F-1 to F-4 are merged.
 **Edge function:** `process-cascade-task` **version 12** — deployed 30 Aug, carries WI-15
 and the F-1 density bridge. *(A note here previously said version 10; the platform was
 already at 11 when F-1 was deployed. The v11 source was fetched and confirmed identical to
@@ -1041,6 +1041,75 @@ because converting them is WI-22's job, not this feature's.
 RPCs were rehearsed against the live database, but no card, modal or button has been
 rendered. That is the honest state: the arithmetic and the writes are proven, the screen is
 not.
+
+### Fertilizer contract tracking — F-4a — branch `f-4a-ticket-first-spot-buys`
+
+The five faults the owner's first real use of the Contracts tab exposed. All five fixed.
+Full detail in §10b of `Fertilizer-Contract-Tracking-Design.md`.
+
+**The design doc said F-4a needed no migration. That was wrong about one of the five,**
+and the exception is the instructive part. Entering a spot buy on the ticket writes a
+**priced contract and a load in one user action**. As two client calls, a failure on the
+second leaves a booking that has already moved `fertilizer_products.price_per_unit` through
+the F-3 trigger and already fired a cascade, with nothing to tell a retry the booking
+exists — so the retry books the same tons twice. That is the WI-13 shape, and
+`save_fertilizer_load` exists as one RPC precisely to prevent it. So the contract insert
+moved inside it: `20260831010154_fertilizer_load_inline_spot_buys`.
+
+| Fault | Fix |
+|---|---|
+| 1 · a spot buy could not be entered where it happens | Inline label + price on the load line; no leaving the modal |
+| 2 · "Draws against" defaulted to *No booking* | Defaults to the sole booking when there is exactly one, and every option now shows the tons left on it |
+| 3 · the partial draw | A **Split** button divides an over-drawing line — 20.35 t on the booking, 3.65 t on a new spot buy — as two lines, which the schema already allowed |
+| 4 · stale price on the Fertilizers tab | The Contracts tab invalidates the Products page's cached fertilizer rows after any price-moving write |
+| 5 · the price field was a trap | Read-only where priced bookings exist; the update **omits the column** rather than rewriting it, so a re-blend landing mid-edit is not clobbered |
+
+Fault 2 was not cosmetic. Production still holds the proof: one 24 t Urea spot buy and one
+24 t delivery attributed to nothing, so the same tons read as both owed and delivered.
+
+**Rehearsed before applying — 20 assertions, 0 failures**, then rollback confirmed, then
+applied. The assertions that earn their keep: the pre-F-4a path still works untouched; the
+worked example blends to exactly **$565.00/ton**; an unpriced spot buy books tonnage without
+moving a price or firing a cascade; `contract_id` beats `new_contract` so nothing is booked
+twice; **a bad later line leaves neither an orphan header nor an orphan spot buy**; one
+ticket spilling onto two products returns two cascades; a spot buy survives its line being
+edited away; stranger and `anon` both refused.
+
+**A comment inherited from F-4 was wrong and is corrected.** It claimed the load-line
+consistency trigger "runs as the caller, so it fails closed". It does not — the trigger is
+SECURITY INVOKER, and inside a SECURITY DEFINER function the invoker is the function's
+owner. The behaviour is still correct, because the checks compare season ids rather than
+testing caller visibility. Probed rather than assumed: foreign-season product and
+foreign-season contract are both refused, leaving no orphan header. Worth remembering the
+next time a SECURITY INVOKER trigger is described as the safety net for a DEFINER RPC.
+
+**The SEC-5 matrix was not re-run, deliberately.** This migration replaces a function body;
+it creates no table, alters no policy and changes no grant. The new attack surface is the
+RPC itself, and that was attacked directly in the rehearsal. F-3 re-ran the matrix because
+it dropped a column the harness referenced — nothing here touches it.
+
+**`database.types.ts` regenerated: zero diff.** The RPC's signature is unchanged
+(`jsonb → jsonb`), only its body, so the file needed nothing — which also re-confirms it
+carries no drift.
+
+**Floor after F-4a:**
+
+| | Before | After |
+|---|---|---|
+| Tests | 238 passing, 6 files | **249 passing, 6 files** — 11 new on `planLineDraw` |
+| TypeScript | 75 | **75** — sets compared with positions stripped, identical |
+| ESLint | 109 errors, 28 warnings | **109 / 28** |
+| Main chunk | 1,755.04 kB (468.60 gz) | **1,755.99 kB (468.72 gz)** — +0.95 kB, the Products page and the read-only price field |
+| Contracts chunk | 28.71 kB (7.58 gz) | **35.21 kB (9.33 gz)** — +6.50 kB, the whole new modal, still lazy |
+| Migrations | 56 | **57** |
+
+**Not opened in a browser.** The RPC is proven against the live database and the split
+arithmetic has unit tests, but no modal, split button or read-only field has been rendered.
+
+**Left for the owner, not patched in the database.** The existing unattributed 24 t delivery
+is now a three-tap repair in the app — edit the ticket, and the dropdown defaults to the
+sole booking. Rewriting a production row on the owner's behalf is a bigger decision than
+the fix deserves.
 
 ## Open items and standing notes
 

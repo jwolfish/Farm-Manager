@@ -471,7 +471,7 @@ Five changes, each independently verifiable. The first ships alone and is useful
 | **F-2** | Schema | Three tables, triggers, indexes, RLS, SEC-5 matrix extended | **Done** — migration `20260830213751`, matrix 101/0 |
 | **F-3** | RPCs | `save_fertilizer_contract`, `delete_fertilizer_contract`, auto-cascade | **Done** — migration `20260830215258` |
 | **F-4** | UI | Fertilizer Contracts tab, cards, booking and load entry; the `<ResponsiveModal>` and `<NumberField>` primitives | **Done** — plus `save_fertilizer_load` (`20260830220139`) |
-| **F-4a** | Ticket-first spot buys + one price writer | See below | Not started — **do before F-5** |
+| **F-4a** | Ticket-first spot buys + one price writer | See below | **Done** — plus `save_fertilizer_load` inline spot buys (`20260831010154`) |
 | **F-5** | Handoff | Shopping list "Book this"; Mark as Purchased removed for fertilizer | Not started |
 | **F-6** | Plan calculator | Fields × program → computed load lines; `computed_quantity`; the auto-note; reachable from both the load and booking forms | Not started |
 
@@ -479,6 +479,9 @@ Five changes, each independently verifiable. The first ships alone and is useful
 
 Found 30 Aug 2026 by entering one spot buy and one load in the running app. Three related
 faults, all in the UI, none needing a migration.
+
+> **All five are now fixed** — see *10b* below for what was actually built, including the
+> one place where "none needing a migration" turned out to be wrong.
 
 **1. A spot buy cannot be entered where it happens — on the ticket.**
 The owner had to create the ticket, be told there were no tons to draw on, leave for
@@ -529,6 +532,69 @@ F-6 is deliberately last. Everything before it is a complete, usable tracker —
 calculator removes hand arithmetic from an already-working screen rather than being load
 bearing for it. If the schedule slips, this is the piece to drop without stranding
 anything.
+
+## 10b. F-4a as built
+
+**One migration was needed after all, and the reasoning above was wrong about it.**
+Faults 2–5 are pure UI. Fault 1 is not: entering a spot buy on the ticket writes a
+**priced contract and a load in one action**. As two client calls, a failure on the second
+leaves a booking that has already moved `fertilizer_products.price_per_unit` through the
+F-3 trigger and already fired a cascade, with no delivery attached and nothing to tell a
+retry the booking exists — so the retry books the tons twice. That is precisely the WI-13
+shape `save_fertilizer_load` was written as one RPC to prevent, so the contract insert
+moved inside it (`20260831010154`).
+
+A line may now carry an optional `new_contract`, honoured only when `contract_id` is
+absent so an explicit booking always wins. Its `contracted_quantity` is in the **product's**
+unit, converted client-side — keeping the unit table out of SQL, which is the whole reason
+F-3 dropped `fertilizer_contracts.unit_type`. The RPC returns `cascades` as an **array**,
+where the contract RPCs return a single `cascade`, because one ticket can spill onto
+several products.
+
+| Fault | As built |
+|---|---|
+| 1 · spot buy where it happens | Per line: **Buy these on the spot** opens label and price inline. No leaving the modal |
+| 2 · "No booking" default | Defaults to the sole booking when a product has exactly one. Every option now also shows the tons left on it, which is what made the old default invisible |
+| 3 · partial draw | When a line over-draws, a **Split** button divides it — 20.35 t on the booking, 3.65 t on a new spot buy — as two lines, which the schema already allowed |
+| 4 · stale price on Fertilizers | The Contracts tab invalidates the Products page's cached fertilizer rows after any write that can move a price |
+| 5 · the price field trap | Read-only with *"blended from N bookings — edit in Fertilizer Contracts"* when priced bookings exist; still editable when there are none, where the form genuinely is the input. The update **omits the column** rather than rewriting it at its current value, so a re-blend landing mid-edit is not clobbered |
+
+**The split arithmetic is pure and tested** — `planLineDraw` in `fertilizerContractMath.ts`,
+11 unit tests. It returns the division in the **line's** unit (what the user typed and now
+sees halved) and again in the **product's** unit (the only unit a contract may be written
+in). Two cases worth keeping: a booking with nothing left offers "buy all of these on the
+spot" rather than a degenerate 0/24 split, and float dust never triggers an offer to spill
+4e-15 tons.
+
+**Editing a ticket does not delete a spot buy created on an earlier save.** It is a booking
+in its own right and the blended price already reflects it; deleting money behind the
+user's back is worse than leaving it to be deleted on the card where every other booking is.
+
+**Verification.** Rehearsed in a rolled-back transaction before applying — **20 assertions,
+0 failures** — then rollback confirmed, then applied. Covered: the pre-F-4a path still
+works untouched, the worked example blends to exactly $565.00/ton, an unpriced spot buy
+books tonnage without moving a price or firing a cascade, `contract_id` beats
+`new_contract`, a bad later line leaves **neither an orphan header nor an orphan spot buy**,
+one ticket spilling onto two products returns two cascades, a spot buy survives its line
+being edited away, and both a stranger and `anon` are refused.
+
+**A comment inherited from F-4 was wrong and is corrected.** It claimed the load-line
+consistency trigger "runs as the caller, so it fails closed". It does not — the trigger is
+SECURITY INVOKER and the invoker inside a SECURITY DEFINER function is the function's
+owner. The behaviour is still correct, because its checks compare season ids rather than
+testing what the caller can see. Probed rather than assumed: a foreign-season product and
+a foreign-season contract are both refused through the RPC, leaving no orphan header.
+
+**Not opened in a browser.** The RPC is proven against the live database and the split
+arithmetic has unit tests, but no modal, split button or read-only field has been rendered.
+Same honest state F-4 shipped in.
+
+**The live data still shows the original symptom.** Production holds exactly one spot buy
+(24 t Urea @ $590) and one 24-ton delivery that is still **unattributed**, so the card
+reads 24 t delivered *and* 24 t left to call. The fix makes new entries correct; it does
+not retro-attribute that row. It is now a three-tap repair in the app — edit the ticket and
+the dropdown defaults to the sole booking — and is deliberately left for the owner rather
+than patched in the database.
 
 ## 11. Verification
 
