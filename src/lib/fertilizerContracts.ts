@@ -2,6 +2,7 @@ import { supabase } from './supabase';
 import { queueCascadeTask, type TaskType, type CascadeTaskData } from './backgroundTasks';
 import { computeFertilizerNeedByProduct, type FertilizerNeed } from './shoppingListGeneration';
 import type { ContractRow, LoadLineRow } from './fertilizerContractMath';
+import type { PlanField, PlanProgram, PlanProgramItem } from './fertilizerPlanMath';
 
 /**
  * Data access for fertilizer contract tracking — F-4.
@@ -132,6 +133,77 @@ export async function loadContractData(seasonId: string): Promise<ContractData> 
     })),
     needs,
   };
+}
+
+/**
+ * Fields and fertilizer programs for the plan calculator — F-6.
+ *
+ * Reads only. Every error is thrown rather than swallowed: a failed read that
+ * returns an empty selection would present as "this season has no fields",
+ * which is the WI-15 lie this codebase keeps removing.
+ */
+export async function loadPlanInputs(seasonId: string): Promise<{
+  fields: PlanField[];
+  programs: PlanProgram[];
+}> {
+  const [fieldsRes, programsRes] = await Promise.all([
+    supabase
+      .from('fields')
+      .select('id, name, acreage')
+      .eq('season_id', seasonId)
+      .order('name'),
+    supabase
+      .from('fertilizer_programs')
+      .select(`
+        id, program_name,
+        fertilizer_program_items (
+          application_rate, application_rate_unit,
+          fertilizer_products ( id, product_name, unit_type, density_lb_per_gal )
+        )
+      `)
+      .eq('season_id', seasonId)
+      .order('program_name'),
+  ]);
+
+  if (fieldsRes.error) throw new Error(`Could not load fields: ${fieldsRes.error.message}`);
+  if (programsRes.error) {
+    throw new Error(`Could not load fertilizer programs: ${programsRes.error.message}`);
+  }
+
+  const fields: PlanField[] = (fieldsRes.data ?? []).map((f) => ({
+    id: f.id,
+    name: f.name,
+    acreage: Number(f.acreage),
+  }));
+
+  const programs: PlanProgram[] = (programsRes.data ?? []).map((p) => {
+    const rawItems = (p.fertilizer_program_items ?? []) as Array<Record<string, unknown>>;
+    const items: PlanProgramItem[] = [];
+    for (const item of rawItems) {
+      // PostgREST returns an embedded to-one either as an object or, depending
+      // on how it resolves the relationship, as a one-element array.
+      const embedded = item.fertilizer_products;
+      const product = (Array.isArray(embedded) ? embedded[0] : embedded) as
+        | Record<string, unknown>
+        | null
+        | undefined;
+      if (!product) continue;
+      items.push({
+        productId: product.id as string,
+        productName: product.product_name as string,
+        productUnit: product.unit_type as string,
+        density:
+          product.density_lb_per_gal === null || product.density_lb_per_gal === undefined
+            ? null
+            : Number(product.density_lb_per_gal),
+        rate: Number(item.application_rate),
+        rateUnit: (item.application_rate_unit as string | null) ?? '',
+      });
+    }
+    return { id: p.id, name: p.program_name, items };
+  });
+
+  return { fields, programs };
 }
 
 /**

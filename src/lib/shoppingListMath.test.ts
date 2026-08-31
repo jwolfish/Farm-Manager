@@ -148,3 +148,31 @@ describe('accumulateNeed — liquid fertilizer density (F-1)', () => {
     expect(result.total).toBeCloseTo(10, 12);
   });
 });
+
+describe('accumulateNeed — repeated failures are reported once', () => {
+  it('does not repeat the same reason once per field', () => {
+    // Five fields of a liquid with no density: the reason is one fact about the
+    // product, not five facts about the fields. Before this, the plan
+    // calculator rendered the same sentence five times joined by semicolons.
+    const contributions = [80, 60, 40, 158.4, 22].map((acreage) => ({
+      rate: 20,
+      rateUnit: 'gallon',
+      acreage,
+    }));
+    const result = accumulateNeed(contributions, 'ton', null);
+    expect(result.issues).toHaveLength(1);
+    expect(result.issues[0]).toContain('density');
+  });
+
+  it('still reports genuinely different reasons separately', () => {
+    const result = accumulateNeed(
+      [
+        { rate: 20, rateUnit: 'gallon', acreage: 80 },   // needs a density
+        { rate: 5, rateUnit: 'jugs', acreage: 40 },      // unrecognised unit
+      ],
+      'ton',
+      null
+    );
+    expect(result.issues).toHaveLength(2);
+  });
+});

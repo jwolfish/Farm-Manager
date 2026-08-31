@@ -51,13 +51,24 @@ export function accumulateNeed(
   const unit = preferredUnit != null && preferredUnit !== '' ? preferredUnit : firstRateUnit;
 
   let total = 0;
-  const issues: string[] = [];
+  /*
+   * A SET, not an array. One contribution is one field's application, so a
+   * product whose unit will not convert fails identically on every field —
+   * ten fields produced the same sentence ten times, joined with semicolons.
+   * Found by rendering the F-6 plan calculator over five fields: the warning
+   * was five copies of "cannot convert gallon to ton — enter a density".
+   *
+   * The count was never the information; the reason is. Deduplicating here
+   * rather than at each call site fixes the shopping list's flagged lines too,
+   * which had the same repetition.
+   */
+  const issues = new Set<string>();
 
   for (const contribution of contributions) {
     const amount = contribution.rate * contribution.acreage;
 
     if (!Number.isFinite(amount)) {
-      issues.push(
+      issues.add(
         `${contribution.rate} ${contribution.rateUnit}/ac over ${contribution.acreage} ac is not a usable number`
       );
       continue;
@@ -70,14 +81,14 @@ export function accumulateNeed(
       densityLbPerGal
     );
     if (!converted.ok) {
-      issues.push(describeConversionFailure(converted));
+      issues.add(describeConversionFailure(converted));
       continue;
     }
 
     total += converted.value;
   }
 
-  return { total, unit, issues };
+  return { total, unit, issues: [...issues] };
 }
 
 /** Purchase quantity after subtracting stock on hand, never below zero. */

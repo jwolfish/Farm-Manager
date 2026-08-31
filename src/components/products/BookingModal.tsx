@@ -1,8 +1,10 @@
 import { useState } from 'react';
+import { Calculator } from 'lucide-react';
 import { ResponsiveModal } from '../ResponsiveModal';
 import { NumberField } from '../NumberField';
 import { parseNumberField } from '../../lib/mathUtils';
 import { saveContract, type Contract, type FertilizerProduct } from '../../lib/fertilizerContracts';
+import { PlanCalculatorModal, type PlanResult } from './PlanCalculatorModal';
 
 interface Props {
   open: boolean;
@@ -32,6 +34,28 @@ export function BookingModal({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [qtyError, setQtyError] = useState<string | null>(null);
+  const [planOpen, setPlanOpen] = useState(false);
+
+  /**
+   * The same calculator the load ticket uses, asked at a different scope —
+   * "how much do I need to contract for these twelve fields?" (F-6).
+   *
+   * Scoped to this product, because a booking is for one product. The note goes
+   * into the booking's own notes for the same reason it goes onto a ticket: it
+   * records where the number came from, in a sentence, without pretending to be
+   * a structured record of what was applied where.
+   */
+  const applyPlan = ({ lines, note }: PlanResult) => {
+    const line = lines.find((l) => l.productId === product.id);
+    if (line) {
+      setQuantity(String(Math.round(line.total * 100) / 100));
+      setQtyError(null);
+    }
+    if (note) {
+      setNotes((prev) => (prev.trim() === '' ? note : prev.includes(note) ? prev : `${prev} · ${note}`));
+    }
+    setPlanOpen(false);
+  };
 
   const handleSubmit = async () => {
     setError(null);
@@ -76,6 +100,7 @@ export function BookingModal({
   };
 
   return (
+    <>
     <ResponsiveModal
       open={open}
       onClose={onClose}
@@ -143,15 +168,24 @@ export function BookingModal({
           />
         </div>
 
-        <NumberField
-          label="Quantity"
-          value={quantity}
-          onChange={setQuantity}
-          suffix={product.unit_type}
-          error={qtyError}
-          required
-          help={`Bookings are always in ${product.unit_type}, the unit this product is priced in.`}
-        />
+        <div>
+          <NumberField
+            label="Quantity"
+            value={quantity}
+            onChange={setQuantity}
+            suffix={product.unit_type}
+            error={qtyError}
+            required
+            help={`Bookings are always in ${product.unit_type}, the unit this product is priced in.`}
+          />
+          <button
+            type="button"
+            onClick={() => setPlanOpen(true)}
+            className="mt-2 inline-flex items-center gap-1 py-2 px-3 text-sm font-medium text-blue-700 border border-blue-300 rounded-lg hover:bg-blue-50"
+          >
+            <Calculator className="w-4 h-4" /> Work it out from the plan
+          </button>
+        </div>
 
         <NumberField
           label="Price"
@@ -203,5 +237,19 @@ export function BookingModal({
         </p>
       </div>
     </ResponsiveModal>
+
+    {/* Stacked above the booking form, which is z-50. */}
+    {planOpen && (
+      <div className="relative z-[60]">
+        <PlanCalculatorModal
+          open
+          onClose={() => setPlanOpen(false)}
+          seasonId={seasonId}
+          productId={product.id}
+          onApply={applyPlan}
+        />
+      </div>
+    )}
+    </>
   );
 }

@@ -479,7 +479,9 @@ Five changes, each independently verifiable. The first ships alone and is useful
 | **F-4a** | Ticket-first spot buys + one price writer | See below | **Done** — plus `save_fertilizer_load` inline spot buys (`20260831010154`) |
 | **F-4b** | Per-product season summary | Replaces three cross-product totals that were adding tons to gallons | **Done** — no migration |
 | **F-5** | Handoff | Shopping list "Book this"; Mark as Purchased removed for fertilizer | **Done** — plus `record_purchase` refuses fertilizer (`20260831011905`) |
-| **F-6** | Plan calculator | Fields × program → computed load lines; `computed_quantity`; the auto-note; reachable from both the load and booking forms | Not started |
+| **F-6** | Plan calculator | Fields × program → computed load lines; `computed_quantity`; the auto-note; reachable from both the load and booking forms | **Done** — no migration |
+
+**All seven steps are complete.** The feature is finished as designed.
 
 ## 10a. F-4a — what the owner's first real use exposed
 
@@ -701,6 +703,59 @@ PATH on this machine.
 **Floor:** TypeScript 75 (identical set), ESLint 109/28, tests 249 → 256, build succeeds
 with the **main chunk byte-identical** at 1,755.99 kB — everything lands in the lazy
 Contracts chunk, 35.21 → 37.97 kB.
+
+## 10e. F-6 as built — the plan calculator
+
+**Selected fields × selected programs**, mirroring the Spray Planner, rather than walking
+each field's cost template. `computeFertilizerNeedByProduct` already answers *"what does
+the season plan say?"*; this answers *"what if I ran **this** program on **these** fields?"*,
+which is strictly more capable and is the selection model the owner already knows from the
+sibling screen.
+
+Both converge on `accumulateNeed`. That matters more than it looks: F-4 extracted
+`computeFertilizerNeedByProduct` precisely so the contracts tab and the shopping list could
+not disagree, and a third implementation of the arithmetic here would have undone it. The
+two may differ in **scope**; they cannot differ in **maths**.
+
+**`computed_quantity` is finally written.** It has sat in the schema since F-2 and in the
+RPC payload since F-4, always null. The calculator is what fills it, and keeping it beside
+the real quantity is the only way plan-versus-actual drift becomes visible across a season.
+On an over-draw split the kept line keeps the computed figure and the spill gets none — the
+calculator produced *one* number for that product on that ticket, and copying it onto both
+halves would double-count it in any later comparison.
+
+**Applying replaces the lines only when none has been typed into**, and appends otherwise.
+Checking the arithmetic must never silently discard a half-transcribed ticket.
+
+**The note, as specified:** `Ordered for: Home 80, Creek 60 — Fall P&K`, appended to the
+ticket's notes, truncated past eight field names. The booking form writes the same memo
+into the booking's notes, for the same reason: it records where the number came from
+without pretending to be a record of what was applied where.
+
+**Verified in a browser, and it earned it.** Fixtures over five fields and three programs —
+including a liquid with a density and one without — driven at 1280 px and 375 px, then the
+harness deleted. The arithmetic was checked on screen against hand figures: 360.4 ac at
+200 lb/ac = **36.04 ton** Potash, 27.03 ton DAP, and the liquid bridging through 11.1 lb/gal
+to 11.72 ton.
+
+Two real defects came out of it, neither findable by reading:
+
+1. **`accumulateNeed` reported the same failure once per field.** A product whose unit will
+   not convert fails identically on every field, so five fields produced five copies of
+   *"cannot convert gallon to ton — enter a density"* joined by semicolons. Fixed at the
+   source with a `Set`, which **also fixes the shopping list's flagged lines** — they had
+   the same repetition and nobody had noticed. The count was never the information.
+2. The sheet's subtitle truncated on a phone; shortened, since the detail is repeated in
+   full at the foot of the body.
+
+**`PlanCalculator` (presentation) is split from `PlanCalculatorModal` (loading) in its own
+file**, which is what made that verification possible. Splitting only the *component* was
+not enough: the import chain still reached the Supabase client, which throws at module load
+when no credentials are present — as on this machine, which has never had them.
+
+**Floor:** TypeScript 75 (identical set), ESLint 109/28, tests 262 → **282**, build
+succeeds. Main chunk 1,760.78 → **1,760.80 kB**, so effectively all of it lands in the lazy
+chunks. No migration.
 
 ## 11. Verification
 
