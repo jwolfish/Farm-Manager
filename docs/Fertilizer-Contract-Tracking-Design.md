@@ -50,18 +50,23 @@ stamps one `purchased_quantity` and one `purchased_price_per_unit` on the line, 
 `fertilizer_products.price_per_unit` with that single price and cascades. It is a single
 value where a list is needed: a second entry replaces the first rather than adding to it.
 
-### A latent bug found while reading it
+### A latent bug found while reading it — **fixed at F-5**
 
-The fertilizer branch of `record_purchase` matches the product by **name**:
+The fertilizer branch of `record_purchase` matched the product by **name**:
 
 ```sql
 UPDATE fertilizer_products SET price_per_unit = p_price_per_unit
  WHERE season_id = v_season AND product_name = v_line.product_name
 ```
 
-Rename a fertilizer product after generating a list and this matches nothing, `v_entity`
-stays null, and no cascade fires — silently. Section 8 removes fertilizer from this path,
-which retires the bug. If that decision is ever reversed, this needs fixing on its own.
+Rename a fertilizer product after generating a list and this matched nothing, `v_entity`
+stayed null, and no cascade fired — silently, with the line still reporting a successful
+purchase.
+
+**F-5 deleted the branch outright** (`20260831011905`), which is the cleanest possible fix:
+fertilizer no longer travels this path at all. The surviving chemical and seed branches
+resolve through `master_product_id`, which survives a rename — asserted in the F-5
+rehearsal rather than assumed.
 
 ## 3. Liquid fertilizer and density
 
@@ -473,7 +478,7 @@ Five changes, each independently verifiable. The first ships alone and is useful
 | **F-4** | UI | Fertilizer Contracts tab, cards, booking and load entry; the `<ResponsiveModal>` and `<NumberField>` primitives | **Done** — plus `save_fertilizer_load` (`20260830220139`) |
 | **F-4a** | Ticket-first spot buys + one price writer | See below | **Done** — plus `save_fertilizer_load` inline spot buys (`20260831010154`) |
 | **F-4b** | Per-product season summary | Replaces three cross-product totals that were adding tons to gallons | **Done** — no migration |
-| **F-5** | Handoff | Shopping list "Book this"; Mark as Purchased removed for fertilizer | Not started |
+| **F-5** | Handoff | Shopping list "Book this"; Mark as Purchased removed for fertilizer | **Done** — plus `record_purchase` refuses fertilizer (`20260831011905`) |
 | **F-6** | Plan calculator | Fields × program → computed load lines; `computed_quantity`; the auto-note; reachable from both the load and booking forms | Not started |
 
 ## 10a. F-4a — what the owner's first real use exposed
@@ -596,6 +601,58 @@ reads 24 t delivered *and* 24 t left to call. The fix makes new entries correct;
 not retro-attribute that row. It is now a three-tap repair in the app — edit the ticket and
 the dropdown defaults to the sole booking — and is deliberately left for the owner rather
 than patched in the database.
+
+## 10c. F-5 as built
+
+**The handoff, as decided.** Fertilizer shopping-list lines lose *Mark as Purchased* and
+gain **Book this**, which opens the booking form prefilled with the needed tonnage.
+Chemical and seed lines are untouched. A short blue note on the fertilizer list explains
+why the button is different, so the change does not read as a missing feature.
+
+**The other half is a migration the section-8 text implied but did not spell out.**
+Removing the button removes the *affordance*; it does not remove the *writer*. So
+`record_purchase` now raises for a fertilizer line (`20260831011905`), before anything is
+written:
+
+> Fertilizer is priced from its bookings. Record this on the Fertilizer Contracts tab — use
+> "Book this" on the shopping list line.
+
+It raises rather than quietly skipping the price update, because skipping would leave the
+line marked `purchased` carrying a number that changed nothing anywhere — a value recorded
+against no effect, which is the class of quiet lie this remediation keeps removing.
+
+**With that, `fertilizer_products.price_per_unit` has one writer at a time**, which is the
+whole point of F-4a and F-5 together:
+
+| Situation | Who owns the price |
+|---|---|
+| Product has ≥1 priced booking | The F-3 trigger — the Fertilizers form is read-only (F-4a) |
+| Product has no priced booking | The Fertilizers form, where it genuinely is the input |
+| Shopping list | **Nobody.** It computes need and hands off (F-5) |
+
+**Resolution is still by name, deliberately and visibly.** A shopping list snapshots the
+product name and fertilizer lines carry no `master_product_id`, so *Book this* matches the
+line back to a product by name. That is the same fragility the deleted branch had, with the
+difference that decides it: a miss here returns null and the tab says
+*"No fertilizer product named X in this season — it may have been renamed … book it from
+the Fertilizer Contracts tab instead"*, where the old branch reported success. The matcher
+is extracted as `matchFertilizerProductByName` with 6 unit tests, including that an exact
+match beats a case-variant. Carrying a real id on the line would need a schema change for
+one button; if renames turn out to be common, that is the clean later increment.
+
+**The suggested quantity is converted, not assumed.** The line's unit is normally already
+the product's pricing unit, but the suggestion goes through `convertProductUnits` anyway —
+a booking is denominated in its product's own unit, and suggesting a contract size in the
+wrong unit is exactly the sort of plausible wrong number this feature exists to stop. If it
+cannot convert, the form opens with no suggestion rather than a bad one.
+
+**Verification.** Rehearsed in a rolled-back transaction — **9 assertions, 0 failures** —
+then rollback confirmed, then applied. Covered: fertilizer refused with the right message,
+the price untouched, the line not marked purchased, chemical and seed still price and
+cascade, **a renamed chemical still resolves** (the regression guard for the bug being
+retired), and stranger and `anon` both refused.
+
+**Not opened in a browser**, same as F-4 and F-4a.
 
 ## 10d. F-4b — the season summary was adding tons to gallons
 

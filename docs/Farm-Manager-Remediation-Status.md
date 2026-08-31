@@ -1,9 +1,9 @@
 # Farm Manager Remediation — Status
 
-**Last updated:** 30 Aug 2026 — Rounds 1–6 (steps 1–3) complete, plus fertilizer F-1 … F-4a
-**Repo:** `jwolfish/Farm-Manager` — Rounds 1–6 and fertilizer F-1 … F-4 are merged on
-`main`, **not yet pushed to origin**.
-**Branch `f-4a-ticket-first-spot-buys` is NOT yet merged** and carries F-4a; F-1 to F-4 are merged.
+**Last updated:** 30 Aug 2026 — Rounds 1–6 (steps 1–3) complete, plus fertilizer F-1 … F-5
+**Repo:** `jwolfish/Farm-Manager` — Rounds 1–6 and fertilizer F-1 … F-4a are merged on
+`main` **and pushed to origin** (`8fffef5`).
+**Branch `f-5-shopping-list-handoff` is NOT yet merged** and carries F-5; F-1 to F-4a are merged.
 **Edge function:** `process-cascade-task` **version 12** — deployed 30 Aug, carries WI-15
 and the F-1 density bridge. *(A note here previously said version 10; the platform was
 already at 11 when F-1 was deployed. The v11 source was fetched and confirmed identical to
@@ -1111,6 +1111,67 @@ is now a three-tap repair in the app — edit the ticket, and the dropdown defau
 sole booking. Rewriting a production row on the owner's behalf is a bigger decision than
 the fix deserves.
 
+### Fertilizer contract tracking — F-5 — branch `f-5-shopping-list-handoff`
+
+The shopping list stops pricing fertilizer and hands off to a booking. Detail in §10c of
+`Fertilizer-Contract-Tracking-Design.md`.
+
+**This is the round that makes the price rule statable in one line.**
+`fertilizer_products.price_per_unit` had three writers — the Fertilizers form, the F-3
+contracts trigger, and `record_purchase` — with no coordination between them, each firing
+its own cascade. Last write wins, and the loser's money disappears from every field cost
+without a trace. F-4a made the form read-only where priced bookings exist. F-5 removes the
+third.
+
+| Situation | Who owns the price |
+|---|---|
+| Product has ≥1 priced booking | The F-3 trigger; the Fertilizers form is read-only |
+| Product has no priced booking | The Fertilizers form, where it genuinely is the input |
+| Shopping list | **Nobody** — it computes need and hands off |
+
+**Two halves.** The UI half: fertilizer lines lose *Mark as Purchased* and gain **Book
+this**, opening the booking form prefilled with the needed tonnage; chemical and seed lines
+are untouched. The database half (`20260831011905`): `record_purchase` **raises** for a
+fertilizer line, before anything is written. Removing the button removes the affordance,
+not the writer — the RPC stays reachable through a hand-crafted REST call, so the
+invariant is enforced where it can actually be enforced.
+
+It raises rather than quietly skipping the price update, because skipping would leave the
+line marked `purchased` carrying a number that changed nothing anywhere. That is the same
+class of quiet lie WI-15 and the cascade work have been removing.
+
+**The latent `record_purchase` bug recorded in the design doc is now fixed, by deletion.**
+That branch matched the product by `product_name` against a name the shopping list
+snapshotted at generation time, so a rename made it match nothing, set no cascade target,
+and report a successful purchase regardless. The surviving chemical and seed branches
+resolve through `master_product_id` — and the rehearsal **renames a chemical and re-runs
+the purchase** to prove it, rather than asserting it from reading.
+
+**Rehearsed before applying — 9 assertions, 0 failures**, rollback confirmed, then applied.
+Fertilizer refused with the right message; its price untouched; the line not marked
+purchased; chemical and seed still price, still write one ledger row, still cascade; the
+renamed chemical still resolves; stranger and `anon` both refused.
+
+**The client still resolves a line to a product by name, deliberately.** Fertilizer lines
+carry no `master_product_id`, so there is nothing else to match on. The difference from the
+bug just deleted is what a miss does: `matchFertilizerProductByName` returns null and the
+tab says which product it could not find and where to go instead. It is extracted and has
+6 unit tests, including that an exact match beats a case-variant. Putting a real id on the
+line needs a schema change for one button; worth doing if renames turn out to be common.
+
+**Floor after F-5:**
+
+| | Before | After |
+|---|---|---|
+| Tests | 249 passing, 6 files | **255 passing, 6 files** |
+| TypeScript | 75 | **75** — sets compared with positions stripped, identical |
+| ESLint | 109 errors, 28 warnings | **109 / 28** |
+| Main chunk | 1,755.99 kB (468.72 gz) | **1,760.57 kB (470.17 gz)** — the eager shopping tab's share |
+| Fertilizer chunks | 35.21 kB in one file | **33.98 kB across two** — Rollup gave `BookingModal` its own 11.48 kB chunk shared by both lazy boundaries |
+| Migrations | 57 | **58** |
+
+**Not opened in a browser**, same as F-4 and F-4a.
+
 **F-4a confirmed working by the owner, 31 Aug.** A spot buy entered on the ticket, then a
 booking, then a draw from it, then an over-draw split onto a fresh spot buy — the whole
 F-4a sequence, exercised on Potash in the running app. The resulting blend was checked
@@ -1147,9 +1208,27 @@ is one command; it hardcodes `node.exe`'s path because `npm` is not on the tool 
 browser". That is now demonstrably where the remaining defects are: F-4a's five faults were
 all found by using the screen, and F-4b's was too. Rendering is cheap now — prefer it.
 
-**Floor:** TypeScript 75 (identical set), ESLint 109/28, tests 249 → **256**, build succeeds
-with the **main chunk byte-identical** at 1,755.99 kB; the lazy Contracts chunk carries all
-of it, 35.21 → 37.97 kB. No migration.
+**Floor:** TypeScript 75 (identical set), ESLint 109/28, tests 249 → **256** on its own
+branch, build succeeds with the **main chunk byte-identical** at 1,755.99 kB; the lazy
+Contracts chunk carries all of it, 35.21 → 37.97 kB. No migration.
+
+### Where the fertilizer feature stands
+
+F-1 … F-5 plus F-4a and F-4b are merged on `main` and pushed. **Only F-6 remains** — the
+plan calculator (fields × program → computed load lines). It is deliberately last:
+everything before it is a complete, usable tracker, and F-6 only removes hand arithmetic
+from a screen that already works.
+
+Measured on `main` after merging F-4b and F-5 together — not carried over from either
+branch, because neither branch's build figures survive the union:
+
+| | |
+|---|---|
+| Tests | **262 passing**, 6 files |
+| TypeScript | **75** — identical set, positions stripped |
+| ESLint | **109 errors, 28 warnings** |
+| Build | main **1,760.78 kB** (470.23 gz), lazy `FertilizerContractsTab` **25.06 kB** (6.87 gz) and `BookingModal` **11.48 kB** (3.73 gz) |
+| Migrations | **58** |
 
 ## Open items and standing notes
 

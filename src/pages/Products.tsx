@@ -256,7 +256,7 @@ export function Products({ seasonId, readOnly = false }: ProductsProps) {
         </div>
       )}
       {activeTab === 'shopping' && (
-        <ShoppingListsTab seasonId={seasonId} readOnly={readOnly} />
+        <ShoppingListsTab seasonId={seasonId} readOnly={readOnly} onPricesChanged={invalidateFertilizers} />
       )}
 
       {activeTab === 'contracts' && (
