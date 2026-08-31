@@ -23,6 +23,8 @@ import { fetchSharedFarms, SharedFarm } from './lib/teamMembers';
 import { fetchOwnedFarms, createFarm, Farm } from './lib/farms';
 import { Plus } from 'lucide-react';
 import { useCascadeTaskNotifications } from './hooks/useCascadeTaskNotifications';
+// TEMPORARY — the "random reload" investigation. Remove with lib/authDiagnostics.ts.
+import { logAuthDiagnostic } from './lib/authDiagnostics';
 
 interface Season {
   id: string;
@@ -95,6 +97,22 @@ function AppContent() {
       } else {
         setDataLoadError('Loading seasons timed out. Please try again.');
       }
+      /*
+       * TEMPORARY — the "random reload" investigation, trigger T-4.
+       *
+       * setSeasons([]) below makes a FAILED load indistinguishable from a farm that
+       * genuinely has no seasons, and App.tsx then renders "Welcome to Crop Tracker!
+       * Let's create your first growing season." On rural cell data that reads as the
+       * app resetting itself to first-run state. R-5 fixes it properly; this line just
+       * makes it self-reporting in the meantime, so it does not need the Network tab
+       * to be caught. Remove with authDiagnostics.ts.
+       */
+      logAuthDiagnostic('seasons-load-failed', {
+        farmId: farmId.slice(0, 8),
+        reason: isAbort ? 'timeout' : 'error',
+        timeoutMs: SEASON_LOAD_TIMEOUT_MS,
+        note: 'welcome screen may now render as if this farm had no seasons',
+      });
       setSeasons([]);
     } finally {
       setLoading(false);

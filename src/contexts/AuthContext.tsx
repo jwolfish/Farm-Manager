@@ -1,6 +1,21 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { User, Session } from '@supabase/supabase-js';
 import { supabase } from '../lib/supabase';
+// TEMPORARY — the "random reload" investigation. Remove with authDiagnostics.ts.
+import {
+  describeSession,
+  installAuthDiagnosticsGlobal,
+  logAuthDiagnostic,
+  recordPageLoad,
+} from '../lib/authDiagnostics';
+
+// Module scope, so this runs exactly once per real page load -- NOT once per React
+// mount. That difference is the whole question: a second 'provider-mount' entry with
+// no new 'page-load' entry above it is a remount, and proves the browser did not
+// reload. StrictMode double-mounts in development, so expect two in dev, one in a
+// production build.
+recordPageLoad();
+installAuthDiagnosticsGlobal();
 
 interface AuthContextType {
   user: User | null;
@@ -23,7 +38,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const currentAccessTokenRef = useRef<string | null>(null);
 
   useEffect(() => {
+    // TEMPORARY — see authDiagnostics.ts.
+    logAuthDiagnostic('provider-mount');
+
     const timeout = setTimeout(() => {
+      // TEMPORARY — this 5 s escape hatch forces loading false whether or not the
+      // session resolved (LOG-9 in the review). If it fires, App.tsx's full-screen
+      // gate flips and the whole tree re-renders, so it is worth seeing.
+      logAuthDiagnostic('loading-timeout-fired', { afterMs: 5000 });
       setLoading(false);
     }, 5000);
 
@@ -42,9 +64,29 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       });
 
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, session) => {
+      /*
+       * TEMPORARY — see authDiagnostics.ts. This must stay ABOVE every early return
+       * below, because the early returns are precisely the cases under investigation:
+       * a TOKEN_REFRESHED whose token did not change, and INITIAL_SESSION.
+       *
+       * Reading the result:
+       *   TOKEN_REFRESHED roughly hourly, or on tab focus  -> T-1 / T-2
+       *   a SIGNED_OUT nobody asked for                    -> T-3, and check the
+       *     Network tab for a 400 on /auth/v1/token?grant_type=refresh_token
+       */
+      logAuthDiagnostic(`event:${event}`, {
+        ...describeSession(session),
+        knownUserId: currentUserIdRef.current
+          ? currentUserIdRef.current.slice(0, 8)
+          : null,
+        tokenWillChange:
+          (session?.access_token ?? null) !== currentAccessTokenRef.current,
+      });
+
       if (event === 'TOKEN_REFRESHED') {
         if (session) {
           if (session.access_token === currentAccessTokenRef.current) {
+            logAuthDiagnostic('decision', { branch: 'refresh/no-op', setUser: false, setSession: false });
             return;
           }
           currentAccessTokenRef.current = session.access_token;
@@ -52,14 +94,17 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
             currentUserIdRef.current = session.user.id;
             setSession(session);
             setUser(session.user);
+            logAuthDiagnostic('decision', { branch: 'refresh/identity-changed', setUser: true, setSession: true });
           } else {
             setSession(session);
+            logAuthDiagnostic('decision', { branch: 'refresh/same-identity', setUser: false, setSession: true });
           }
         }
         return;
       }
 
       if (event === 'INITIAL_SESSION') {
+        logAuthDiagnostic('decision', { branch: 'initial-session/ignored', setUser: false, setSession: false });
         return;
       }
 
@@ -79,9 +124,29 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       if (userChanged || tokenChanged) {
         setUser(session?.user ?? null);
       }
+
+      /*
+       * TEMPORARY — this is the R-2 measurement.
+       *
+       * `setUser: true` with `userChanged: false` is the defect R-2 describes: a brand
+       * new user object published for the same person, which re-runs every effect
+       * keyed on `user` (R-3's four files) and unmounts whatever they were doing.
+       * If that combination never appears in a real session, R-2 is not the trigger
+       * and the diagnosis should be corrected rather than the code.
+       */
+      logAuthDiagnostic('decision', {
+        branch: `fallthrough/${event}`,
+        userChanged,
+        tokenChanged,
+        setUser: userChanged || tokenChanged,
+        setSession: true,
+      });
     });
 
     return () => {
+      // A remount unsubscribes and resubscribes. Paired with 'provider-mount' this
+      // shows the teardown directly.
+      logAuthDiagnostic('provider-unmount');
       clearTimeout(timeout);
       subscription.unsubscribe();
     };
