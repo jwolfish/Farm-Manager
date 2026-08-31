@@ -1,10 +1,11 @@
 import { useState } from 'react';
-import { Plus, Trash2, Split, AlertTriangle, X } from 'lucide-react';
+import { Plus, Trash2, Split, AlertTriangle, X, Calculator } from 'lucide-react';
 import { ResponsiveModal } from '../ResponsiveModal';
 import { NumberField } from '../NumberField';
 import { parseNumberField } from '../../lib/mathUtils';
 import { convertProductUnits, describeConversionFailure } from '../../lib/unitConversions';
 import { planLineDraw, type DrawSplit } from '../../lib/fertilizerContractMath';
+import { PlanCalculatorModal, type PlanResult } from './PlanCalculatorModal';
 import {
   saveLoad,
   type Contract,
@@ -45,6 +46,13 @@ interface DraftLine {
    * rather than drawn from an existing booking.
    */
   spot: DraftSpot | null;
+  /**
+   * What the plan calculator said, when it was used (F-6). Never edited by hand.
+   * Keeping it beside the real quantity is the only way plan-versus-actual drift
+   * becomes visible across a season — the calculator says 23.4 t, the truck
+   * brings 24, and the difference is worth watching accumulate.
+   */
+  computedQuantity: number | null;
 }
 
 interface Props {
@@ -100,6 +108,7 @@ export function LoadTicketModal({
     quantity: '',
     unitType: unitFor(productId),
     spot: null,
+    computedQuantity: null,
   });
 
   const [deliveredOn, setDeliveredOn] = useState(
@@ -121,11 +130,13 @@ export function LoadTicketModal({
           quantity: String(l.quantity),
           unitType: l.unitType,
           spot: null,
+          computedQuantity: l.computedQuantity,
         }))
       : [blankLine(firstProduct)]
   );
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [planOpen, setPlanOpen] = useState(false);
 
   const setLine = (key: string, patch: Partial<DraftLine>) =>
     setLines((prev) => prev.map((l) => (l.key === key ? { ...l, ...patch } : l)));
@@ -170,9 +181,47 @@ export function LoadTicketModal({
         quantity: String(split.onSpotInLineUnit),
         unitType: line.unitType,
         spot: { label: 'Spot buy', price: '' },
+        // The kept line keeps the computed figure; the spill gets none. The
+        // calculator produced ONE number for this product on this ticket, and
+        // copying it onto both halves would double-count it in any later
+        // plan-versus-actual comparison.
+        computedQuantity: null,
       };
       return [...prev.slice(0, i), kept, spilled, ...prev.slice(i + 1)];
     });
+  };
+
+  /**
+   * Fill the ticket from the plan calculator — F-6.
+   *
+   * REPLACES the lines only when none has been typed into, and appends
+   * otherwise. Silently discarding a half-transcribed ticket because someone
+   * wanted to check the arithmetic would be a poor trade; so would forcing them
+   * to clear it by hand.
+   */
+  const applyPlan = ({ lines: planLines, note }: PlanResult) => {
+    const computed: DraftLine[] = planLines.map((planLine) => ({
+      key: newKey(),
+      productId: planLine.productId,
+      contractId: defaultContractFor(planLine.productId),
+      quantity: String(Math.round(planLine.total * 100) / 100),
+      unitType: planLine.unit,
+      spot: null,
+      computedQuantity: planLine.total,
+    }));
+
+    setLines((prev) => {
+      const untouched = prev.every((l) => l.quantity.trim() === '');
+      return untouched ? computed : [...prev, ...computed];
+    });
+
+    // The field selection becomes a memo rather than a record, by decision: the
+    // owner reorders fields and changes rates once product is in the truck, so a
+    // structured "applied to" row would be wrong often enough to be untrustworthy.
+    if (note) {
+      setNotes((prev) => (prev.trim() === '' ? note : prev.includes(note) ? prev : `${prev} · ${note}`));
+    }
+    setPlanOpen(false);
   };
 
   const startSpot = (line: DraftLine) =>
@@ -237,7 +286,7 @@ export function LoadTicketModal({
         contractId: line.contractId === '' ? null : line.contractId,
         quantity: qty,
         unitType: line.unitType,
-        computedQuantity: null,
+        computedQuantity: line.computedQuantity,
         newContract,
       });
     }
@@ -283,6 +332,7 @@ export function LoadTicketModal({
   };
 
   return (
+    <>
     <ResponsiveModal
       open={open}
       onClose={onClose}
@@ -362,15 +412,27 @@ export function LoadTicketModal({
         </div>
 
         <div className="border-t border-gray-100 pt-4">
-          <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center justify-between gap-2 flex-wrap mb-3">
             <h4 className="text-sm font-semibold text-gray-800">Products on this ticket</h4>
-            <button
-              type="button"
-              onClick={() => setLines((prev) => [...prev, blankLine(firstProduct)])}
-              className="inline-flex items-center gap-1 py-2 px-3 text-sm font-medium text-green-700 hover:bg-green-50 rounded-lg"
-            >
-              <Plus className="w-4 h-4" /> Add line
-            </button>
+            <div className="flex items-center gap-1">
+              {/* Transcribe off the ticket, or work it out from the plan. Both
+                  produce identical load lines — this is a prefill, not a second
+                  kind of record. */}
+              <button
+                type="button"
+                onClick={() => setPlanOpen(true)}
+                className="inline-flex items-center gap-1 py-2 px-3 text-sm font-medium text-blue-700 hover:bg-blue-50 rounded-lg"
+              >
+                <Calculator className="w-4 h-4" /> From plan
+              </button>
+              <button
+                type="button"
+                onClick={() => setLines((prev) => [...prev, blankLine(firstProduct)])}
+                className="inline-flex items-center gap-1 py-2 px-3 text-sm font-medium text-green-700 hover:bg-green-50 rounded-lg"
+              >
+                <Plus className="w-4 h-4" /> Add line
+              </button>
+            </div>
           </div>
 
           <div className="space-y-3">
@@ -595,5 +657,19 @@ export function LoadTicketModal({
         </div>
       </div>
     </ResponsiveModal>
+
+    {/* Stacked above the ticket, which is z-50. Rendered as a sibling rather
+        than inside, so the ticket's own scroll container does not clip it. */}
+    {planOpen && (
+      <div className="relative z-[60]">
+        <PlanCalculatorModal
+          open
+          onClose={() => setPlanOpen(false)}
+          seasonId={seasonId}
+          onApply={applyPlan}
+        />
+      </div>
+    )}
+    </>
   );
 }
