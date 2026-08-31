@@ -1,62 +1,201 @@
 # Farm Manager Remediation — Status
 
-**Last updated:** 30 Aug 2026 — Rounds 1–6 (steps 1–3) complete, plus fertilizer F-1 … F-5
-**Repo:** `jwolfish/Farm-Manager` — Rounds 1–6 and fertilizer F-1 … F-4a are merged on
-`main` **and pushed to origin** (`8fffef5`).
-**Branch `f-5-shopping-list-handoff` is NOT yet merged** and carries F-5; F-1 to F-4a are merged.
-**Edge function:** `process-cascade-task` **version 12** — deployed 30 Aug, carries WI-15
-and the F-1 density bridge. *(A note here previously said version 10; the platform was
-already at 11 when F-1 was deployed. The v11 source was fetched and confirmed identical to
-the repo's WI-15 copy, so nothing had been changed out of band — the number was just
-stale.)*
+**Last updated:** 31 Aug 2026 — Rounds 1–6 (steps 1–3) complete, fertilizer F-1 … F-6
+complete, random-reload diagnosis written and **not yet acted on**.
+**Repo:** `jwolfish/Farm-Manager` — everything below is merged on `main` **and pushed to
+origin** (`83bf040`). Working tree clean; **no branch is waiting to be merged.** The four
+`f-4a` / `f-4b` / `f-5` / `f-6` branches still exist locally but are 0 commits ahead.
+**Edge function:** `process-cascade-task` **version 14** — deployed 31 Aug 18:44 UTC,
+carries WI-15, SEC-3, the F-1 density bridge and the override-total fix. **Verified
+byte-for-byte against the repository copy** by `supabase functions download` plus a
+sha256 comparison — not by markers, as every prior round did. *(This line was stale twice
+before that method existed — it said 10 when the platform was at 11, and 12 when it was at
+13. Confirm with `list_edge_functions` rather than trusting the number written here.)*
 **Supabase project:** `wvccxjakqwqfmyewclue` (bolt-native-database-63401892)
-**Companion docs:** `Farm-Manager-Code-Review-Summary.md`, `Farm-Manager-Remediation-PRD.md`
+**Companion docs:** `Farm-Manager-Code-Review-Summary.md`,
+`Farm-Manager-Remediation-PRD.md`, `Farm-Manager-Random-Reload-Diagnosis.md`
 
 ---
 
 ## Start here
 
-**Rounds 1–5 are complete.** Every migration is applied to the live database, the edge
-function is deployed at version 8, and the working tree is clean and pushed. Nothing is
-half-finished and nothing is waiting to be merged.
+**Rounds 1–6 (steps 1–3) and fertilizer F-1 … F-6 are complete, merged and pushed.** Every
+migration is applied to the live database. Nothing is half-finished and nothing is waiting
+to be merged.
 
-| Verified this session | |
+**A live money defect was found and fixed on 31 Aug — see *The override defect* below.**
+Code fixed in both copies, 13 tests added, nine production rows repaired, edge function
+deployed as **v14** and verified byte-for-byte. The one thing left is a 5-minute check in
+the running app — *How to prove the fix*, at the end of that section.
+
+| Measured 31 Aug 2026 | |
 |---|---|
-| Tests | **206 passing**, 5 files |
-| TypeScript | **76 errors** (103 at review, 98 before WI-19) |
+| Tests | **295 passing**, 7 files (282 before the override fix added 13) |
+| TypeScript | **75 errors** (103 at review, 98 before WI-19) |
 | ESLint | **109 errors, 28 warnings** (from 136/28) |
-| Build | succeeds — 1,751.91 kB (467.46 kB gz) |
-| SEC-5 policy matrix | **56 assertions, 0 failures** |
-| Migrations | 56 files, matching the database one-for-one |
+| Build | succeeds — **1,760.80 kB** (470.25 kB gz), plus lazy `FertilizerContractsTab` 25.96 kB and `BookingModal` 20.02 kB |
+| Migrations | **58 files**, matching the database one-for-one (diffed, not counted) |
+| Edge function | **version 13**, deployed source confirmed identical to the repo |
+| Security advisors | 12 WARN — 11 are the by-design `authenticated_security_definer_function_executable` lint that fires on every RPC, 1 is `auth_leaked_password_protection` (WI-6). No new class of finding |
+| Cascade tasks | 53 total, **0 failed** |
+| SEC-5 policy matrix | **101 assertions, 0 failures** (last run at F-3, against the live post-F-3 schema) |
 
 **Closed:** SEC-1, SEC-2, SEC-3, SEC-4, SEC-5, SEC-7 · WI-9, WI-10, WI-11, WI-12, WI-13,
-WI-14, WI-16 · LOG-1, LOG-2, LOG-3, LOG-4, LOG-7, LOG-8, LOG-10 · plus four collaboration
-defects found by testing, none of which were in the original review.
+WI-14, WI-15, WI-16 · LOG-1, LOG-2, LOG-3, LOG-4, LOG-5, LOG-7, LOG-8, LOG-10 · plus four
+collaboration defects found by testing, none of which were in the original review.
 
 **Partial:** SEC-6 (WI-6 untouched) · SEC-8 (mechanism in place, `ALLOWED_ORIGIN` unset by
-choice) · WI-20 (206 tests, but nowhere near the 80 % target).
+choice) · WI-19 (103 → 75, triage done, 75 remain) · WI-20 (295 tests, but nowhere near the
+80 % target).
 
-**WI-19 is under way and has already paid for itself** — see *Round 6* below. Three
-defects found by reading the type errors, including a cascade that silently overwrote
-manual cost overrides. Remaining, in the order I would do them:
+### The override defect — found and FIXED 31 Aug 2026
 
-1. **Finish WI-19.** 76 errors left: 32 nullability, ~14 unguarded `Json` casts, 10
+**Nine fields carried a wrong total cost per acre for six months.** Code fixed in both
+copies, tests added, production data repaired. **One step outstanding: the edge function is
+not yet redeployed** — see the end of this section.
+
+**The invariant, which nothing in this codebase had written down:** a field cost override
+lives in `field_cost_overrides.override_value`, **not** in the `field_costs` column it
+names. The column holds the value inherited from the template; `getResolvedFieldCosts` lays
+the override over it for display. `createOrUpdateOverride` never writes the column at all —
+confirmed in the data, where the override says 70 and the column says 80.
+
+**The defect.** Anything that *totals* a field must lay the two together the same way.
+`recalculateFieldTotal` in `fieldCostOverrides.ts` always did. **The cascade never did:**
+
+```
+updates.total_cost_per_acre = calculateFieldTotalCost({ ...currentFieldCost, ...updates });
+```
+
+That reads the raw columns, so `total_cost_per_acre` silently reverted to the pure template
+figure while every line item on screen still showed the override. No error, anywhere.
+
+**The damage, measured.** Stored total equalled the un-overridden sum on all nine fields:
+
+| Field | Stored | Correct | Error |
+|---|---|---|---|
+| Home East of Farm South, Home West of Bins, Home West of Lane, T & L Back 40 and Middle, Vandemeer NE | 685–699 | 709–723 | **understated ~$24.48/ac** |
+| Home North Slew | 691.91 | 715.39 | understated $23.48/ac |
+| Adkins, Townline Road | 698.59 / 683.27 | 688.59 / 673.27 | **overstated $10.00/ac** |
+| Umek | 683.72 | 663.72 | overstated $20.00/ac |
+
+Errors in **both directions**, which is why "the totals looked plausible" was never evidence
+of anything. All nine rows were last rewritten at 2026-08-30 21:43:47 UTC, ~78 seconds after
+the F-1 deploy — the cascade run that evening to confirm v10 worked. That test is recorded
+in this document as a success. It was, for everything it checked; nobody looked at the
+overrides.
+
+**A wrong diagnosis, corrected before it was acted on.** The first read of this blamed the
+guard's key names — `overrideMap.has('chemical_programs')` against rows named
+`chemical_cost_per_acre`. That is *not* the bug. Those two keys are the correct names for
+the array-shaped overrides (`OverrideValue = number | ProgramReference[]`), and once the
+total resolves correctly the key mismatch is harmless: the column tracks the template and
+the overlay wins. Had the key names been "fixed" as first proposed, the money would still
+have been wrong, and the three `hauling` fields — whose names always matched — prove it,
+because they were hit too.
+
+**The fix.** New pure `applyFieldCostOverrides` in `templateLib/templateCalculations.ts`,
+mirrored in the edge function (guardrail 7). It handles both override shapes: a number lands
+in its own column, a `ProgramReference[]` under `chemical_programs`/`fertilizer_programs`
+resolves to the matching `*_cost_per_acre` as a sum — which is the first time a
+program-shaped override has ever affected a total anywhere. Junk (`null`, `''`, non-numeric)
+leaves the template value standing rather than producing `NaN`; a legitimate `0` is honoured.
+Both cascades now total `applyFieldCostOverrides({ ...row, ...updates }, overrides)`, and
+both queries select `override_value` rather than just the row's existence.
+
+`templateApplication.ts` was checked and needs no change — it calls `deleteAllOverrides`
+as it applies, so totalling without overrides is correct there.
+
+**Tests: 13 new, 282 → 295.** They pin the invariant, both override shapes, the junk and
+zero cases, non-mutation, and the two production fields as named regressions in both
+directions — plus that a field with no overrides totals identically either way, so the fix
+is inert for the other 52 rows.
+
+**Data repaired.** Nine rows updated, scoped to fields that have an override and only where
+the value actually differed. Verified afterwards: **0 overridden fields still wrong**, the 9
+`field_cost_overrides` rows untouched. Previous values, for reversal: Adkins 698.59, Home
+East of Farm South 686.89, Home North Slew 691.91, Home West of Bins 689.51, Home West of
+Lane 699.05, T & L Back 40 and Middle 690.76, Townline Road 683.27, Umek 683.72,
+Vandemeer NE 685.15.
+
+**Deployed — `process-cascade-task` version 14**, 31 Aug 2026 18:44 UTC, via the newly
+installed Supabase CLI (`npm run deploy:cascade`).
+
+**Verified byte-for-byte, which is new.** Every prior round compared *markers* — call-site
+counts, a few distinctive strings — because the deployed source could only be read back
+through the MCP tool. `supabase functions download` writes it to disk, so the check is now
+a hash:
+
+```
+local  sha256: fda58ee3567e4057cb30da4adbc103189a3980b82d69d9f7221d28cdaec92de3
+remote sha256: fda58ee3567e4057cb30da4adbc103189a3980b82d69d9f7221d28cdaec92de3
+978 lines both sides; diff reports identical
+```
+
+That retires the whole class of doubt this document has carried about what is actually
+running. **Use this method from now on** — see the deploy note in `CLAUDE.md`.
+
+**State after the deploy**, re-checked: all nine fields still `correct`, nothing regressed.
+
+**Not yet exercised: a real cascade against a real override.** The deployed code is
+byte-identical to the code 13 unit tests cover, but no cascade has run since the deploy, so
+the end-to-end path has still never been observed protecting an override. That is the one
+test that closes this properly, and it needs the running app — see *How to prove the fix*
+below.
+
+### How to prove the fix — 5 minutes in the app
+
+The check nobody has ever run. Do it once and this defect is genuinely closed:
+
+1. Note a field with an override — e.g. **Umek**, whose total should read **663.72**
+   (hauling overridden to $60 against the template's $80).
+2. Change any chemical or fertilizer price that feeds a program used by these fields'
+   template, which is what queues a cascade. (A price change back and forth works;
+   the 30 Aug test used exactly this.)
+3. Wait for the cascade notification, then re-check the totals.
+
+**Pass:** all nine totals unchanged, and Umek still 663.72. **Fail:** any total springs back
+to the un-overridden figure (Umek 683.72, Home West of Bins 689.51, etc.).
+
+The query in *The override defect* above answers it in one shot — every row should say
+`correct`.
+
+**Two unrelated inconsistencies found while verifying, deliberately NOT touched:**
+
+| Field | Issue |
+|---|---|
+| `Vandemeer South` | Stored total is $0.01 above the sum of its columns. Float noise in `calculateFieldTotalCost`; harmless |
+| `Home Behind Woods` | Stored total is **$20.00 above** the sum of its columns. It has **no template and no override**, so no cascade ever touched it, and it was last written 2026-02-06. Which number is right is unknowable from the data — fixing it would be guessing. Worth asking the owner |
+
+### Then, in order
+
+1. **The random reload.** `Farm-Manager-Random-Reload-Diagnosis.md` — written 30 Aug,
+   **nothing implemented.** Verified still true on 31 Aug: the full-screen gate at
+   `App.tsx:492` with no `hasLoadedOnce`, `tokenChanged` still gating `setUser` at
+   `AuthContext.tsx:79`, seven dependency arrays still holding a bare `user`, the
+   render-phase `sessionStorage.removeItem` at `App.tsx:510`, no error boundary anywhere,
+   24 `exhaustive-deps` warnings. Start with that document's own advice: the one-line auth
+   log in section 4, *before* fixing anything, then R-1.
+2. **Finish WI-19.** 75 errors left: 32 nullability, ~14 unguarded `Json` casts, 10
    recharts formatter signatures, 15 unused parameters, and the residue. The nullability
    block is the one with real value left in it — it means reconciling the app's
-   hand-written interfaces against the schema.
-2. **Two ten-minute tests that would close the real gaps**, both cheap and both covering
-   fixes that this session's successful cascade did *not* touch:
-   - **Enter a field cost override, then cascade again.** The override must survive. This
-     is the only way to exercise the most valuable fix of Round 6 step 3, and
-     `field_cost_overrides` has 0 rows so it has never run in anger.
-   - **Have the collaborator account create a field or a chemical**, then check it appears
-     in Spray Planner, Chemical Work Orders, Seed Bag Requirements and a generated shopping
-     list. That is what the seven removed `user_id` filters were about; a collaborator
-     merely *viewing* owner-created data looks identical either way.
-3. **Round 6 performance** — PERF-1 … PERF-5, chiefly the 1.75 MB bundle.
+   hand-written interfaces against the schema. Note it also makes R-6 (error boundary)
+   worth more, since those nullability bugs are what would blank the app.
+3. **The collaboration test that is now cheap.** Production now has **2 farms** and **1
+   accepted team member** (it had 1 farm and 0 when this was last written). Have the
+   collaborator account create a field or a chemical, then check it appears in Spray
+   Planner, Chemical Work Orders, Seed Bag Requirements and a generated shopping list.
+   That is what the seven removed `user_id` filters were about; a collaborator merely
+   *viewing* owner-created data looks identical either way.
+4. **Round 6 performance** — PERF-1 … PERF-5, chiefly the bundle: 470 kB gzip against
+   WI-22's ≤ 300 kB target. This is also the real prerequisite for the mobile ambition, not
+   responsive CSS.
+5. **WI-21, CI.** There is still none. Every figure in the table above was measured by hand
+   this session, which is exactly how they went stale.
 
 **Two loose ends deliberately left:** set the `ALLOWED_ORIGIN` secret when there is a
-stable production URL, and exercise the `viewer` role in the app.
+stable production URL, and exercise the `viewer` role in the app (`team_members` still has
+**0** viewer rows).
 
 ## How this work is being run
 
@@ -778,8 +917,18 @@ replaced by the template value.
 **Guardrail 7, demonstrated.** The code exists twice and the morning's fix landed on one
 side only. The two are now consistent again.
 
-Latent today — `field_cost_overrides` has 0 rows — but it arms the first time an override
-is entered.
+**This paragraph originally read "Latent today — `field_cost_overrides` has 0 rows — but it
+arms the first time an override is entered." That was wrong on both counts.** The table has
+held 9 rows since February 2026, and the bug was not latent.
+
+**The fix recorded in this section is real but was aimed at the wrong thing.** Its comment
+claimed the override map was "the ONLY thing stopping this cascade from overwriting a
+field's manually-overridden costs." It is not: an override lives in
+`field_cost_overrides.override_value`, a different table, so the cascade cannot overwrite it
+by writing `field_costs`. What the cascade *was* doing — and what this round did not catch —
+is recomputing `total_cost_per_acre` from the raw columns, so the total reverted to the
+template figure on nine real fields. Fixed 31 Aug; see *The override defect* in *Start
+here*. Guarding the read was still worth doing, but it was never the whole guard.
 
 **WI-15 proper, five parts:**
 
@@ -808,8 +957,11 @@ is entered.
   across two accounts — the first time a second account has exercised the collaboration
   work in the app rather than in a test harness.
 - **What that test did not exercise, and still has not been:**
-  - *The override guard* — the most valuable fix in this round. `field_cost_overrides` has
-    0 rows, so there was no override for the cascade to protect. Untested in anger.
+  - *The override guard* — the most valuable fix in this round. **Superseded 31 Aug: this
+    said `field_cost_overrides` had 0 rows so there was nothing to protect. It had 9, and
+    that very cascade left all nine with a wrong total.** It was exercised in anger, and it
+    guarded the wrong thing — the columns, not the total. See *The override defect* in
+    *Start here*.
   - *Every failure path* — `must()` throwing, the 500 response, `already-claimed`. These
     fire only when a query fails or a task is invoked twice.
   - *The seven `user_id` read filters* — these only matter for rows a **collaborator
@@ -847,7 +999,8 @@ Tests lock all three. Do not collapse `null` and `undefined`.
 **Threaded through both copies of the cost math** (guardrail 7):
 `calculateCostWithConversion`, `shoppingListMath.accumulateNeed`,
 `generateFertilizerLines`, `recalculateFertilizerProgramCost`, `seasonImport`, and the
-edge function's mirrored module. **Edge function deployed as version 12** and the source
+edge function's mirrored module. **Edge function deployed as version 13** — recorded here
+as 12 at the time; the platform reports 13, updated 30 Aug 21:42 UTC — and the source
 fetched back and compared, not assumed.
 
 **Migration `20260830211202_add_fertilizer_product_density`** — rehearsed in a transaction
@@ -1248,8 +1401,8 @@ No migration.
 
 ### Where the fertilizer feature stands
 
-**All seven steps are complete — F-1, F-2, F-3, F-4, F-4a, F-4b, F-5, F-6.** The feature is
-finished as designed.
+**All eight steps are complete — F-1, F-2, F-3, F-4, F-4a, F-4b, F-5, F-6.** The feature is
+finished as designed. *(This line said "seven" while listing eight.)*
 
 Measured on `main` after merging F-4b and F-5 together — not carried over from either
 branch, because neither branch's build figures survive the union — then again after F-6:
@@ -1270,10 +1423,22 @@ the load ticket, the booking form and the shopping-list handoff have not. Given 
 looking at screens has now found defects three rounds running, those are the obvious next
 checks if anything here misbehaves.
 
+**Live data as of 31 Aug 2026**, for whoever picks this up next:
+
+| | |
+|---|---|
+| `fertilizer_contracts` | 7 |
+| `fertilizer_loads` / `fertilizer_load_lines` | 6 / 8 |
+| Load lines with no `contract_id` | **1** — the unattributed 24 t Urea delivery from F-4a, still not repaired. It is a three-tap fix in the app: edit the ticket, and the dropdown now defaults to the sole booking |
+| `fertilizer_products` with no density | 28 — all dry, expected |
+| Farms / accepted team members / viewers | 2 / 1 / **0** |
+
 ## Open items and standing notes
 
-Genuinely open: the `set_active_season` type drift below (WI-30). Everything else in this
-section is either a practice note or a closed record kept for the reasoning.
+**Nothing in this section is open any more.** It is all practice notes and closed records
+kept for the reasoning. The one item that was genuinely open — the `set_active_season` type
+drift — was closed by the Round 6 step 1 regeneration; verified 31 Aug, the types file now
+declares it with the one argument the function actually takes.
 
 **Migration filenames must match the recorded version.** Applying through the Supabase MCP
 stamps its own timestamp, which will not be the one in the filename you wrote. Round 4's
@@ -1281,9 +1446,12 @@ three files were renamed after the fact to match (`203718`, `204336`, `204458`).
 `list_migrations` against the directory after applying, or a `db push` will try to replay
 work that is already in the database.
 
-**Pre-existing, unrelated:** `database.types.ts` declares `set_active_season` with two
-arguments; the database function takes one. Evidence that the hand-maintained types have
-drifted (WI-30).
+**CLOSED — the `set_active_season` type drift.** `database.types.ts` declared it with two
+arguments where the function takes one, so the compiler was reporting *correct* code at
+`App.tsx:216` as broken. Fixed by regenerating the file in Round 6 step 1. Kept here for
+the lesson: noise in that direction is worse than a missing error, because it is what
+trains a reader to ignore the compiler — which is how the `fetchSharedFarms` message
+survived in plain sight for months.
 
 ### CLOSED — CSV negative-number regression — commit `7c87e07`
 
@@ -1359,7 +1527,28 @@ manual look if a product is ever given a unit outside its class.
 
 ## Next up
 
-### 1. WI-19 — the type and lint baseline. Promoted to first.
+### 1. Prove the override fix in the running app — 5 minutes
+
+Everything else about that defect is closed and deployed (v14, verified byte-for-byte).
+What has never once been observed is a cascade actually preserving an override end to end.
+The recipe is *How to prove the fix* at the end of *The override defect*. Until it is run,
+the fix is proven by unit tests and reading, not by the system doing it.
+
+### 2. The random reload
+
+`Farm-Manager-Random-Reload-Diagnosis.md`, R-1 … R-7. Diagnosis only; **nothing has been
+implemented**, re-verified 31 Aug. Follow that document's own sequencing:
+
+- **Instrument first.** The one-line auth log in its section 4 costs nothing and turns four
+  plausible causes into one measured one. Landing R-1 … R-7 without it would repeat exactly
+  the mistake the document exists to explain.
+- **Then R-1**, which is worth more than the rest combined: it contains every trigger, named
+  or not, and demotes each from "the app reset itself" to "a spinner appeared in one panel."
+
+This is also the owner's loudest day-to-day complaint, and the only item in any of these
+documents that the person using the app actually feels every day.
+
+### 3. WI-19 — the type and lint baseline
 
 The PRD sequences this as maintainability, after the security work. **That ordering is
 wrong and this session proved it.** `fetchSharedFarms` had been broken since it was
@@ -1373,25 +1562,26 @@ It sat inside the 103 errors this document itself taught everyone to treat as ba
 noise. A whole feature — shared farms — never worked, and the compiler said so on every
 run. There is no reason to assume it is the only one.
 
-**Do this first, and start by triaging the remaining 98 for defects rather than by fixing
-them in bulk.** The 88 `no-explicit-any` lint errors matter for the same reason: `any`
-suppresses exactly this class of message. Getting to zero is the goal, but reading them is
-the value.
+**Triage the remaining 75 for defects rather than fixing them in bulk.** The 88
+`no-explicit-any` lint errors matter for the same reason: `any` suppresses exactly this
+class of message. Getting to zero is the goal, but reading them is the value. The 32
+nullability errors are the block with real value left, and they are also the argument for
+R-6 — an uncaught null is what blanks the whole app when there is no error boundary.
 
-### 2. Round 6 — performance
+### 4. Round 6 — performance
 
-PERF-1 … PERF-5. The bundle is the headline: 1,751.96 kB (467.50 kB gz) against WI-22's
+PERF-1 … PERF-5. The bundle is the headline: **1,760.80 kB (470.25 kB gz)** against WI-22's
 ≤ 300 kB gzip target, so it needs `React.lazy` on the pages plus `manualChunks` for
 recharts, jspdf and html2canvas. PERF-2 (the unbounded override query) is a two-line fix.
 PERF-4's O(n²) on-hand trigger now matters more than it did, since Round 4 routes every
-work-order and purchase write through it.
+work-order and purchase write through it. Note the reload diagnosis's point: this, not
+responsive CSS, is the real prerequisite for calling the app mobile-ready.
 
-### 3. WI-15 — the cascade function still lies
+### 5. WI-21 — CI
 
-`process-cascade-task` returns `{success: true}` even when the inner block failed, and
-swallows the `error` on every query so a transient failure reads as "not found". Round 5
-redeployed that function for SEC-3 but deliberately did not touch this. It is the last
-place in the system where a failure is silently reported as success.
+Still none. Every figure in this document was measured by hand, which is precisely how the
+figures that were wrong at the top of this file got that way, and how a 9-row table came to
+be recorded as empty.
 
 ### Deliberately deferred, with reasons
 
@@ -1413,14 +1603,23 @@ place in the system where a failure is silently reported as success.
 
 All figures below are measured, not estimated.
 
-| Metric | Review baseline | After Round 3 | After Round 4 | End of 30 Aug | **After Round 6 step 2** |
-|---|---|---|---|---|---|
-| TypeScript errors | 103 | 103 (identical set) | 99 | 98 | **76** |
-| ESLint | 136 errors, 28 warnings | 134 / 28 | 134 / 28 | 134 / 28 | **109 / 28** |
-| Tests | 0 | 178 passing, 4 files | 206 passing, 5 files | 206 passing, 5 files | **206 passing, 5 files** |
-| CI | none | none | none | none | **none — still WI-21** |
-| Main JS chunk | 1,747 kB (465 kB gz) | 1,754.43 kB (467.56 kB gz) | 1,751.97 kB (467.39 kB gz) | 1,751.96 kB (467.50 kB gz) | **1,751.91 kB (467.46 kB gz)** |
-| Migrations | 40 files | 43 | 46 | 52 | **52, matching the database** |
+| Metric | Review baseline | After Round 3 | After Round 4 | End of 30 Aug | After Round 6 step 2 | **Measured 31 Aug** |
+|---|---|---|---|---|---|---|
+| TypeScript errors | 103 | 103 (identical set) | 99 | 98 | 76 | **75** |
+| ESLint | 136 errors, 28 warnings | 134 / 28 | 134 / 28 | 134 / 28 | 109 / 28 | **109 / 28** |
+| Tests | 0 | 178 passing, 4 files | 206 passing, 5 files | 206 passing, 5 files | 206 passing, 5 files | **282 passing, 7 files** |
+| CI | none | none | none | none | none | **none — still WI-21** |
+| Main JS chunk | 1,747 kB (465 kB gz) | 1,754.43 kB (467.56 kB gz) | 1,751.97 kB (467.39 kB gz) | 1,751.96 kB (467.50 kB gz) | 1,751.91 kB (467.46 kB gz) | **1,760.80 kB (470.25 kB gz)** |
+| Lazy chunks | — | — | — | — | — | **`FertilizerContractsTab` 25.96 kB (7.10 gz), `BookingModal` 20.02 kB (6.02 gz)** |
+| Migrations | 40 files | 43 | 46 | 52 | 52 | **58, diffed against the database one-for-one** |
+| Edge function | — | v8 pending | — | v10 | v10 | **v13, source confirmed in sync** |
+
+**The 31 Aug column is the fertilizer feature landing.** 76 → 75 TypeScript and 206 → 282
+tests are F-4 … F-6; the main chunk grew 8.89 kB across F-1 (density bridge, +2.38),
+F-4 (+0.75), F-4a (+0.95), F-5 (the eager Shopping Lists tab's share of the handoff) and
+F-6 (+0.02), with everything else landing in the two lazy chunks. 52 → 58 migrations is
+F-1, F-2, F-3, F-4's `save_fertilizer_load`, F-4a's inline spot buys and F-5's
+`record_purchase` refusal.
 
 **The Round 6 movement, itemised.** 98 → 103 on regenerating `database.types.ts`
 (12 resolved, 17 revealed); 103 → 101 from the cascade-modal contract fix and one

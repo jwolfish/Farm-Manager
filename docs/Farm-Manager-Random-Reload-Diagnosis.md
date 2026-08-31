@@ -9,6 +9,11 @@ remains."*
 **Method:** static reading of the client, `@supabase/auth-js` 2.71.1 as installed, and the
 git history of prior fix attempts. **Nothing was changed.**
 
+**Update, 31 Aug 2026:** still true of R-1 … R-7 — none of them is implemented, re-verified
+against the code on 31 Aug. What *has* landed is the section 4 instrumentation, so the next
+step is reading a real session rather than guessing. See **§4a**. One claim in R-2 is
+corrected there.
+
 **Companion docs:** `Farm-Manager-Remediation-Status.md`, `Farm-Manager-Remediation-PRD.md`
 
 ---
@@ -226,6 +231,66 @@ console.log('[auth]', new Date().toISOString(), event, session?.user?.id ?? null
 
 1. Does it correlate with coming back to the tab after being away?
 2. Is the same account signed in on a phone or a second machine at the same time?
+
+## 4a. The instrumentation, as built — 31 Aug 2026
+
+**This is now in the code.** `src/lib/authDiagnostics.ts` plus three call sites. It is
+write-only observation: no auth behaviour changed, and the floor is unmoved (TypeScript 75,
+ESLint 109/28, 282 tests, build succeeds; the main chunk grows **1,762.90 kB** from
+1,760.80, which is +2.10 kB of temporary code to be given back when this is removed).
+
+**It writes to `localStorage`, not just the console.** The console is useless for the one
+case that matters most — a genuine reload clears it — and the owner is not going to be
+sitting with DevTools open at the moment it happens. The log survives reloads, and the
+buffer is a 300-entry ring so it cannot grow without bound.
+
+**To read it, after the fault happens:**
+
+```js
+authDiag.dump()
+```
+
+That prints a table. `authDiag.clear()` empties it. No build step, no bookmarklet.
+
+**What each entry answers:**
+
+| Entry | Tells you |
+|---|---|
+| `page-load` with `navigationType` | **The headline question.** `reload` means the browser genuinely reloaded and nothing in this document applies — look at the host (Bolt preview HMR, a container restart). A disruption that produces **no new `page-load` entry** was a React remount |
+| `provider-mount` / `provider-unmount` | A remount, directly. A mount with no `page-load` above it is the proof |
+| `event:TOKEN_REFRESHED` | T-1. Look at the spacing — roughly hourly, or clustered on tab focus |
+| `event:SIGNED_OUT` nobody asked for | T-3. Then check the Network tab for a `400` on `/auth/v1/token?grant_type=refresh_token` |
+| `decision` with `setUser: true` and `userChanged: false` | **The R-2 defect firing.** A new user object for the same person, which re-runs the four files in R-3 |
+| `seasons-load-failed` | T-4. The welcome screen is about to render as though the farm had no seasons |
+| `loading-timeout-fired` | The 5 s escape hatch in `AuthContext` flipped `loading` regardless of the session, which trips the R-1 gate |
+
+`expiresInSec` is on every session entry. A **negative** value is the shape that precedes a
+refresh failure and a T-3 sign-out.
+
+**Nothing sensitive is recorded.** User ids are truncated to 8 characters and the access
+token is reduced to its last 8 characters as a rotation fingerprint — enough to see that it
+changed, never enough to use. Verified by assertion, not by inspection.
+
+**One correction to R-2 that the instrumentation exists to settle.** R-2 quotes the
+`if (userChanged || tokenChanged) setUser(...)` block and says it "fires on every real token
+refresh." Reading the file again on 31 Aug: real refreshes take the `TOKEN_REFRESHED` branch
+*above* that block, and that branch already guards correctly — it calls `setUser` only when
+the user id actually changed. The quoted block is the **fallthrough** path, reached by
+`SIGNED_IN`, `SIGNED_OUT`, `USER_UPDATED` and friends. A `SIGNED_IN` emitted on tab focus
+with a rotated token would still publish a new user object, so R-2 may well be real — but by
+a different route than described, and possibly not at all. The `decision` entries measure it
+either way. **Do not implement R-2 until the log shows `setUser: true` with
+`userChanged: false` in a real session.**
+
+**Verified in a browser**, per the standing practice: a throwaway harness exercised the
+module at `localhost:5173` — 14/14 assertions, including that `navigationType` reads
+`navigate` on a fresh load and `reload` after an actual reload, that the buffer survives a
+full document navigation intact, that the ring caps at 300, and that the token never appears
+in full. The harness was deleted afterwards. The module has no Supabase import, which is
+what made this possible on a machine that has never had credentials.
+
+**Still not exercised:** the instrumentation has not run against a real signed-in session,
+because this machine has no Supabase credentials. The first real reading is the owner's.
 
 ## 5. Work items
 
