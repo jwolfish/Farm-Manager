@@ -24,9 +24,10 @@ making changes — they explain what is broken, what has already been fixed, and
 
 ## Fertilizer contract tracking (new feature, in progress)
 
-Seven steps, F-1 … F-6 plus F-4a. **F-1 … F-4 are merged on `main`; F-4a is on
-`f-4a-ticket-first-spot-buys`.** F-5 (shopping-list handoff) and F-6 (plan calculator)
-remain. The design records the reasoning behind decisions that look arbitrary otherwise —
+Seven steps, F-1 … F-6 plus F-4a. **F-1 … F-4a are merged and pushed; F-5 is on
+`f-5-shopping-list-handoff`.** Only F-6 (the plan calculator) remains, and it is
+deliberately last — everything through F-5 is a complete, usable tracker.
+The design records the reasoning behind decisions that look arbitrary otherwise —
 why a spot buy is modelled as a contract, why load lines carry no price, why the plan
 calculator's field selection is a note rather than a record.
 
@@ -36,9 +37,10 @@ Two rules this feature keeps re-learning the hard way:
   `fertilizer_contracts.unit_type` rather than constrain it, so any conversion between a
   load line's unit and a booking's happens in TypeScript. Do not move it into SQL — that
   is the third copy of the unit table guardrail 7 is about.
-- **`fertilizer_products.price_per_unit` has more than one writer.** The F-3 trigger owns
-  it wherever priced bookings exist; the Fertilizers form is the input only when there are
-  none. Anything that writes it must know which case it is in.
+- **`fertilizer_products.price_per_unit` has exactly one writer at a time.** The F-3
+  trigger owns it wherever priced bookings exist; the Fertilizers form is the input only
+  when there are none; the shopping list never writes it at all (F-5 —
+  `record_purchase` raises on a fertilizer line). Do not add a fourth path.
 
 @docs/Fertilizer-Contract-Tracking-Design.md
 
@@ -52,12 +54,14 @@ The status doc is the source of truth for what is done. Update it when a round l
   before the unused-symbol sweep brought it to 76. See the WI-19 section of the status
   doc for the full accounting; every movement is itemised there.
 - `npx eslint .` reports **109 errors, 28 warnings** (was 136/28 at review).
-- `npx vite build` succeeds and emits a **1,755.99 kB** main chunk (468.72 kB gz), plus a
-  lazy **35.21 kB** `FertilizerContractsTab` chunk (9.33 kB gz). It was
-  1,751.91 kB before fertilizer F-1, which added 2.38 kB for the density bridge, the
-  Liquid checkbox and its help text; F-4a added 0.95 kB to the main chunk and 6.50 kB to
-  the lazy one, which is where the new load-ticket modal lives.
-- `npm test` reports **249 passing** in 6 files.
+- `npx vite build` succeeds and emits a **1,760.57 kB** main chunk (470.17 kB gz), plus two
+  lazy fertilizer chunks: **22.50 kB** `FertilizerContractsTab` (6.30 gz) and **11.48 kB**
+  `BookingModal` (3.73 gz), the latter shared by the Contracts tab and the Shopping Lists
+  tab. It was 1,751.91 kB before fertilizer F-1, which added 2.38 kB for the density
+  bridge, the Liquid checkbox and its help text; F-4a added 0.95 kB to the main chunk and
+  6.50 kB to the lazy one; F-5 added 4.58 kB to the main chunk, which is the eager
+  Shopping Lists tab's share of the handoff.
+- `npm test` reports **255 passing** in 6 files.
 - There is **no CI**. Adding it is WI-21 in the PRD.
 - Tests arrived with Round 3: `npm test` (Vitest). Test files are excluded from
   `tsconfig.app.json` so they do not move the 103-error baseline.
