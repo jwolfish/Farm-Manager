@@ -85,7 +85,11 @@ export async function loadContractData(seasonId: string): Promise<ContractData> 
         fertilizer_load_lines ( id, fertilizer_product_id, contract_id, quantity, computed_quantity, unit_type, notes )
       `)
       .eq('season_id', seasonId)
-      .order('delivered_on', { ascending: false }),
+      // Newest ticket first. delivered_on is a date, so several loads share a day;
+      // created_at breaks the tie, putting the one just entered at the top of its day
+      // rather than wherever Postgres happened to return it.
+      .order('delivered_on', { ascending: false })
+      .order('created_at', { ascending: false, nullsFirst: false }),
     computeFertilizerNeedByProduct(seasonId),
   ]);
 
