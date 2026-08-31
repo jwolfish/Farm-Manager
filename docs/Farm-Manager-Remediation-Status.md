@@ -1111,6 +1111,46 @@ is now a three-tap repair in the app — edit the ticket, and the dropdown defau
 sole booking. Rewriting a production row on the owner's behalf is a bigger decision than
 the fix deserves.
 
+**F-4a confirmed working by the owner, 31 Aug.** A spot buy entered on the ticket, then a
+booking, then a draw from it, then an over-draw split onto a fresh spot buy — the whole
+F-4a sequence, exercised on Potash in the running app. The resulting blend was checked
+against the database independently of the trigger: 12 t @ $495 + 2 t @ $550 + 50 t @ $505
+= $32,290 over 64 t = **$504.53/ton**, which is what is stored, with every booking exactly
+drawn (12/12, 2/2, 4+46 = 50/50). TSP and Urea agree too. **This is the first end-to-end
+confirmation that the contract feature computes the right money from real user input.**
+
+### Fertilizer contract tracking — F-4b — branch `f-4b-per-product-summary`
+
+Reported by the owner in the same session: *"The four boxes just display a munged total of
+every ton currently booked. That's not useful."* Detail in §10d of the design doc.
+
+**It was a correctness defect, not a display preference.** The season strip summed
+`contracted`, `delivered` and `remaining` across products, and every rollup is expressed in
+**its own product's unit**. So it added tons to gallons. It looked merely unhelpful because
+every product on this farm is priced by the ton today — the first gallon-priced liquid
+would have made three headline numbers silently wrong. Worth noting how it survived review:
+the code reads perfectly sensibly, and only the *units* make it wrong.
+
+**As built:** tonnage per product in that product's unit, as a summary block above the
+cards; over-contract in red; unattributed tonnage and unconvertible lines flagged. The only
+cross-product figure left is money — new pure `sumContractCommitment`, which excludes
+unpriced bookings and counts them separately so the total presents as a floor. 7 tests, one
+deliberately mixing a ton product and a gallon product.
+
+**First browser verification in this project.** A throwaway Vite entry rendered the real
+component with fixtures at 1280 px and 375 px, then was deleted. It found a real defect
+immediately — *"Over contract"* wrapped on a phone and broke row alignment — which no
+amount of reading would have caught. `.claude/launch.json` is committed so the next check
+is one command; it hardcodes `node.exe`'s path because `npm` is not on the tool PATH here.
+
+**This is the standing gap closing.** Every fertilizer section above says "not opened in a
+browser". That is now demonstrably where the remaining defects are: F-4a's five faults were
+all found by using the screen, and F-4b's was too. Rendering is cheap now — prefer it.
+
+**Floor:** TypeScript 75 (identical set), ESLint 109/28, tests 249 → **256**, build succeeds
+with the **main chunk byte-identical** at 1,755.99 kB; the lazy Contracts chunk carries all
+of it, 35.21 → 37.97 kB. No migration.
+
 ## Open items and standing notes
 
 Genuinely open: the `set_active_season` type drift below (WI-30). Everything else in this

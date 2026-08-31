@@ -472,6 +472,7 @@ Five changes, each independently verifiable. The first ships alone and is useful
 | **F-3** | RPCs | `save_fertilizer_contract`, `delete_fertilizer_contract`, auto-cascade | **Done** — migration `20260830215258` |
 | **F-4** | UI | Fertilizer Contracts tab, cards, booking and load entry; the `<ResponsiveModal>` and `<NumberField>` primitives | **Done** — plus `save_fertilizer_load` (`20260830220139`) |
 | **F-4a** | Ticket-first spot buys + one price writer | See below | **Done** — plus `save_fertilizer_load` inline spot buys (`20260831010154`) |
+| **F-4b** | Per-product season summary | Replaces three cross-product totals that were adding tons to gallons | **Done** — no migration |
 | **F-5** | Handoff | Shopping list "Book this"; Mark as Purchased removed for fertilizer | Not started |
 | **F-6** | Plan calculator | Fields × program → computed load lines; `computed_quantity`; the auto-note; reachable from both the load and booking forms | Not started |
 
@@ -595,6 +596,54 @@ reads 24 t delivered *and* 24 t left to call. The fix makes new entries correct;
 not retro-attribute that row. It is now a three-tap repair in the app — edit the ticket and
 the dropdown defaults to the sole booking — and is deliberately left for the owner rather
 than patched in the database.
+
+## 10d. F-4b — the season summary was adding tons to gallons
+
+Found by the owner on the second real session with the tab: *"The four boxes just display a
+munged total of every ton currently booked. That's not useful."*
+
+**It was worse than not useful.** The strip did this:
+
+```jsx
+<Tile label="Contracted" value={num(cards.reduce((s, c) => s + c.rollup.contracted, 0))} />
+```
+
+Every rollup is expressed in **its own product's unit** — that is the rule §5 sets out and
+the reason F-3 dropped `fertilizer_contracts.unit_type`. Summing across products therefore
+added Potash in tons to a liquid in gallons. It read plausibly only because every product
+on this farm is priced by the ton today; the first gallon-priced liquid would have made
+three headline numbers silently wrong. A display complaint turned out to be a correctness
+defect.
+
+**As built.** Tonnage is now reported per product, in that product's unit, as a compact
+summary block above the cards — Plan, Contracted, Delivered, Left to call, with
+over-contract in red and unattributed tonnage or unconvertible load lines flagged beside
+the product name. Card-first, so it reflows to a stacked list on a phone rather than
+scrolling sideways.
+
+**Money is the one figure that may still cross products**, because a dollar is a dollar
+whatever the product is sold by. The header keeps the delivery-fee total and adds what the
+bookings commit, via a new pure `sumContractCommitment`. Unpriced bookings are excluded and
+counted separately — *"Committed $96,450.00 + 2 unpriced"* — on the same rule the blended
+price uses: a booking made before the price is settled must not be treated as costing
+nothing. 7 unit tests, one of which deliberately mixes a ton product and a gallon product
+to pin down that this total is the legitimate one.
+
+**This is the first thing in the whole feature that was verified in a browser.** A
+throwaway Vite entry mounted the real `FertilizerSeasonSummary` with fixtures covering a
+fully-drawn product, an over-contracted one, a gallon-priced one, an unattributed delivery
+and a product with no bookings, checked at 1280 px and 375 px, then deleted. It earned its
+keep immediately: *"Over contract"* wrapped to two lines on a phone and knocked that row
+out of alignment. The label is now always *"Left to call"* — a red negative already says
+it, and the card below spells it out in words.
+
+`.claude/launch.json` was added so the next visual check is one command rather than a
+setup exercise. It carries an absolute path to `node.exe`, because `npm` is not on the tool
+PATH on this machine.
+
+**Floor:** TypeScript 75 (identical set), ESLint 109/28, tests 249 → 256, build succeeds
+with the **main chunk byte-identical** at 1,755.99 kB — everything lands in the lazy
+Contracts chunk, 35.21 → 37.97 kB.
 
 ## 11. Verification
 

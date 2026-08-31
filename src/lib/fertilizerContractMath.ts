@@ -257,6 +257,46 @@ export interface SeasonTotals {
   loadCount: number;
 }
 
+export interface SeasonCommitment {
+  /** Sum of quantity x price over PRICED contracts, across every product. */
+  committed: number;
+  /** Bookings with no price yet, which is why `committed` is a floor. */
+  unpricedContracts: number;
+}
+
+/**
+ * What the season's fertilizer bookings commit, in money — F-4b.
+ *
+ * This is the ONE quantity that may legitimately be summed across products.
+ * Tonnage may not: each product's rollup is expressed in that product's own
+ * unit, so adding Potash in tons to a liquid in gallons produces a number that
+ * is not wrong so much as meaningless. The season strip used to do exactly that
+ * for contracted, delivered and remaining; it now reports per product instead,
+ * and this is what replaces the cross-product total.
+ *
+ * Dollars add up because a dollar is a dollar whatever the product is sold by.
+ *
+ * Unpriced bookings are excluded and counted separately, on the same rule the
+ * blended price uses: a booking made before the price is settled must not be
+ * treated as costing nothing. The caller is expected to present `committed` as
+ * a floor when `unpricedContracts > 0`.
+ */
+export function sumContractCommitment(
+  contracts: Array<{ contractedQuantity: number; pricePerUnit: number | null }>
+): SeasonCommitment {
+  let committed = 0;
+  let unpricedContracts = 0;
+  for (const c of contracts) {
+    if (c.pricePerUnit === null) {
+      unpricedContracts += 1;
+      continue;
+    }
+    const value = c.contractedQuantity * c.pricePerUnit;
+    if (Number.isFinite(value)) committed += value;
+  }
+  return { committed: round2(committed), unpricedContracts };
+}
+
 /**
  * Delivery fees are charged per truck and are totalled on their own. They are
  * deliberately NOT folded into field costs — the owner wants to know the number,
