@@ -252,6 +252,33 @@ export function planLineDraw(
   };
 }
 
+/**
+ * Resolve a shopping-list line back to the fertilizer product it was generated
+ * from — F-5.
+ *
+ * A shopping list snapshots the product NAME at generation time and carries no
+ * `master_product_id` for fertilizer, so a name is all there is to match on.
+ * This is the same fragility that made the old `record_purchase` fertilizer
+ * branch silently do nothing after a rename. The difference that matters is
+ * what happens on a miss: this returns `null` so the caller can say so, where
+ * the old branch reported a successful purchase that had changed no price.
+ *
+ * Exact match wins over a case-insensitive one, so two products differing only
+ * in case still resolve to the one actually named.
+ */
+export function matchFertilizerProductByName<T extends { product_name: string }>(
+  products: T[],
+  name: string
+): T | null {
+  const wanted = name.trim().toLowerCase();
+  if (wanted === '') return null;
+  return (
+    products.find((p) => p.product_name === name) ??
+    products.find((p) => p.product_name.trim().toLowerCase() === wanted) ??
+    null
+  );
+}
+
 export interface SeasonTotals {
   deliveryFees: number;
   loadCount: number;

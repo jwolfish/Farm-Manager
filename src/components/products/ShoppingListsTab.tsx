@@ -1,5 +1,5 @@
-import { useCallback, useEffect, useState } from 'react';
-import { ShoppingCart, RefreshCw, Check, CreditCard as Edit2, DollarSign, Package, AlertTriangle, FileDown } from 'lucide-react';
+import { Suspense, lazy, useCallback, useEffect, useState } from 'react';
+import { ShoppingCart, RefreshCw, Check, CreditCard as Edit2, DollarSign, Package, AlertTriangle, FileDown, Truck } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { createShoppingList, FlaggedShoppingLine } from '../../lib/shoppingListGeneration';
 import { useAuth } from '../../contexts/AuthContext';
@@ -7,6 +7,19 @@ import { useFarm } from '../../contexts/FarmContext';
 import { Pagination } from '../Pagination';
 import { MarkPurchasedModal } from './MarkPurchasedModal';
 import { exportShoppingListPDF } from '../../lib/exports/shoppingListPdfExport';
+import { convertProductUnits } from '../../lib/unitConversions';
+import { matchFertilizerProductByName } from '../../lib/fertilizerContractMath';
+import type { FertilizerProduct } from '../../lib/fertilizerContracts';
+
+/*
+ * Lazy, for the same reason the Contracts tab is (see Products.tsx): this tab
+ * is eager, and pulling the booking form plus the contracts data layer into the
+ * initial bundle would add weight to every first paint for a button most
+ * sessions never press. Both lazy boundaries share the resulting chunk.
+ */
+const BookingModal = lazy(() =>
+  import('./BookingModal').then((m) => ({ default: m.BookingModal }))
+);
 
 type Category = 'chemical' | 'fertilizer' | 'seed';
 
@@ -38,6 +51,8 @@ export interface ShoppingLine {
 interface Props {
   seasonId: string;
   readOnly?: boolean;
+  /** Called after a booking made from here re-blends a fertilizer price. */
+  onPricesChanged?: () => void;
 }
 
 const PAGE_SIZE = 20;
@@ -54,7 +69,7 @@ const STATUS_STYLES: Record<string, string> = {
   purchased: 'bg-green-100 text-green-700',
 };
 
-export function ShoppingListsTab({ seasonId, readOnly = false }: Props) {
+export function ShoppingListsTab({ seasonId, readOnly = false, onPricesChanged }: Props) {
   const { user } = useAuth();
   const { activeFarmId, effectiveUserId, activeFarm } = useFarm();
   const [category, setCategory] = useState<Category>('chemical');
@@ -70,6 +85,10 @@ export function ShoppingListsTab({ seasonId, readOnly = false }: Props) {
   const [purchaseTarget, setPurchaseTarget] = useState<ShoppingLine | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [seasonName, setSeasonName] = useState('');
+  /** The season's fertilizer products, loaded only for the fertilizer category. */
+  const [fertProducts, setFertProducts] = useState<FertilizerProduct[]>([]);
+  const [bookTarget, setBookTarget] = useState<{ product: FertilizerProduct; suggested: number | null } | null>(null);
+  const [bookError, setBookError] = useState<string | null>(null);
 
   const farmId = activeFarmId;
   const farmName = activeFarm?.farmName ?? undefined;
@@ -106,7 +125,45 @@ export function ShoppingListsTab({ seasonId, readOnly = false }: Props) {
     setSelectedListId(null);
     setLines([]);
     setCurrentPage(1);
+    setBookError(null);
   }, [category]);
+
+  /*
+   * F-5. Fertilizer lines hand off to a booking instead of being "purchased",
+   * so the tab needs the season's fertilizer products to resolve a line to the
+   * product the booking is written against.
+   */
+  useEffect(() => {
+    if (category !== 'fertilizer' || !seasonId) {
+      setFertProducts([]);
+      return;
+    }
+    let cancelled = false;
+    supabase
+      .from('fertilizer_products')
+      .select('id, product_name, unit_type, price_per_unit, density_lb_per_gal')
+      .eq('season_id', seasonId)
+      .order('product_name')
+      .then(({ data, error: err }) => {
+        if (cancelled) return;
+        if (err) {
+          // A failed read must not read as "no products" — that would produce
+          // the misleading "this product no longer exists" message below.
+          setBookError(`Could not read this season's fertilizer products: ${err.message}`);
+          return;
+        }
+        setFertProducts(
+          (data ?? []).map((p) => ({
+            id: p.id,
+            product_name: p.product_name,
+            unit_type: p.unit_type,
+            price_per_unit: Number(p.price_per_unit),
+            density_lb_per_gal: p.density_lb_per_gal === null ? null : Number(p.density_lb_per_gal),
+          }))
+        );
+      });
+    return () => { cancelled = true; };
+  }, [category, seasonId]);
 
   useEffect(() => { loadLists(); }, [loadLists]);
 
@@ -134,6 +191,45 @@ export function ShoppingListsTab({ seasonId, readOnly = false }: Props) {
       await loadLists();
     }
     setGenerating(false);
+  };
+
+  /**
+   * Open the booking form for a fertilizer line, prefilled with what the plan
+   * says is needed.
+   *
+   * A shopping list snapshots the product NAME at generation time and carries
+   * no `master_product_id` for fertilizer, so the line is resolved by name.
+   * That is the same fragility that made the old `record_purchase` fertilizer
+   * branch silently do nothing after a rename — with one decisive difference:
+   * failing here is visible and says what to do, rather than reporting a
+   * successful purchase that changed no price anywhere.
+   */
+  const startBooking = (line: ShoppingLine) => {
+    setBookError(null);
+
+    const product = matchFertilizerProductByName(fertProducts, line.product_name);
+
+    if (!product) {
+      setBookError(
+        `No fertilizer product named "${line.product_name}" in this season — it may have ` +
+          'been renamed or removed since this list was generated. Book it from the ' +
+          'Fertilizer Contracts tab instead.'
+      );
+      return;
+    }
+
+    // A booking is denominated in its product's own unit (F-3). The line is
+    // usually already in that unit, but converting rather than assuming is what
+    // stops a quantity in the wrong unit being suggested as a contract size.
+    const wantedQty = line.adjusted_quantity ?? line.needed_quantity;
+    const converted = convertProductUnits(
+      line.unit_type,
+      product.unit_type,
+      wantedQty,
+      product.density_lb_per_gal
+    );
+
+    setBookTarget({ product, suggested: converted.ok ? converted.value : null });
   };
 
   const startEdit = (line: ShoppingLine) => {
@@ -242,6 +338,30 @@ export function ShoppingListsTab({ seasonId, readOnly = false }: Props) {
         <div className="flex items-start gap-3 bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 mb-5 text-sm text-amber-800">
           <AlertTriangle className="w-4 h-4 mt-0.5 flex-shrink-0 text-amber-500" />
           <span>{error}</span>
+        </div>
+      )}
+
+      {category === 'fertilizer' && lines.length > 0 && !readOnly && (
+        <div className="flex items-start gap-3 bg-blue-50 border border-blue-200 rounded-lg px-4 py-3 mb-5 text-sm text-blue-900">
+          <Truck className="w-4 h-4 mt-0.5 flex-shrink-0 text-blue-500" />
+          <span>
+            Fertilizer is priced from its bookings, so these lines are booked rather than
+            marked purchased. <span className="font-medium">Book this</span> opens the
+            booking form with the needed tonnage filled in, and the blended cost flows into
+            your field costs from there.
+          </span>
+        </div>
+      )}
+
+      {bookError && (
+        <div className="flex items-start justify-between gap-3 bg-amber-50 border border-amber-200 rounded-lg px-4 py-3 mb-5 text-sm text-amber-800">
+          <div className="flex items-start gap-3">
+            <AlertTriangle className="w-4 h-4 mt-0.5 flex-shrink-0 text-amber-500" />
+            <span>{bookError}</span>
+          </div>
+          <button onClick={() => setBookError(null)} className="font-medium shrink-0">
+            Dismiss
+          </button>
         </div>
       )}
 
@@ -440,7 +560,21 @@ export function ShoppingListsTab({ seasonId, readOnly = false }: Props) {
                                 >
                                   <Edit2 className="w-3.5 h-3.5" />
                                 </button>
-                                {line.status !== 'purchased' ? (
+                                {/* F-5. Fertilizer is priced by its bookings, so
+                                    these lines hand off rather than being
+                                    "purchased" here. Otherwise two features
+                                    write fertilizer_products.price_per_unit and
+                                    each fires its own cascade, last write wins.
+                                    Chemical and seed are untouched. */}
+                                {line.product_category === 'fertilizer' ? (
+                                  <button
+                                    onClick={() => startBooking(line)}
+                                    className="inline-flex items-center gap-1 text-green-700 hover:text-green-800 text-xs font-medium"
+                                    title="Create a booking for this product"
+                                  >
+                                    <Truck className="w-3.5 h-3.5" /> Book this
+                                  </button>
+                                ) : line.status !== 'purchased' ? (
                                   <button
                                     onClick={() => setPurchaseTarget(line)}
                                     className="text-green-600 hover:text-green-700"
@@ -483,6 +617,25 @@ export function ShoppingListsTab({ seasonId, readOnly = false }: Props) {
           onClose={() => setPurchaseTarget(null)}
           onComplete={handlePurchaseComplete}
         />
+      )}
+
+      {bookTarget && user && (
+        <Suspense fallback={null}>
+          <BookingModal
+            open
+            onClose={() => setBookTarget(null)}
+            onSaved={() => {
+              setBookTarget(null);
+              // The booking re-blends the product price, so the Fertilizers
+              // tab's cached rows are now stale.
+              onPricesChanged?.();
+            }}
+            seasonId={seasonId}
+            userId={user.id}
+            product={bookTarget.product}
+            suggestedQuantity={bookTarget.suggested}
+          />
+        </Suspense>
       )}
     </div>
   );

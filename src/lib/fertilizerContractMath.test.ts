@@ -3,6 +3,7 @@ import {
   rollUpProduct,
   sumSeasonTotals,
   planLineDraw,
+  matchFertilizerProductByName,
   type ContractRow,
   type LoadLineRow,
 } from './fertilizerContractMath';
@@ -222,5 +223,47 @@ describe('planLineDraw — the partial-draw case', () => {
     // A converted quantity a hair over the remaining is not an over-draw.
     const p = planLineDraw(24 + 1e-12, 'ton', 'ton', 24);
     expect(p).toMatchObject({ ok: true, overDraws: false });
+  });
+});
+
+describe('matchFertilizerProductByName — the shopping-list handoff', () => {
+  const products = [
+    { id: 'p1', product_name: 'Urea' },
+    { id: 'p2', product_name: 'Potash' },
+    { id: 'p3', product_name: '6-24-6 Starter' },
+  ];
+
+  it('matches the obvious case', () => {
+    expect(matchFertilizerProductByName(products, 'Urea')?.id).toBe('p1');
+  });
+
+  it('tolerates case and surrounding whitespace', () => {
+    expect(matchFertilizerProductByName(products, '  urea ')?.id).toBe('p1');
+    expect(matchFertilizerProductByName(products, 'POTASH')?.id).toBe('p2');
+  });
+
+  it('prefers an exact match over a case-variant', () => {
+    // Two products differing only in case must still resolve to the one
+    // actually named, rather than to whichever happens to come first.
+    const tricky = [
+      { id: 'lower', product_name: 'urea' },
+      { id: 'proper', product_name: 'Urea' },
+    ];
+    expect(matchFertilizerProductByName(tricky, 'Urea')?.id).toBe('proper');
+    expect(matchFertilizerProductByName(tricky, 'urea')?.id).toBe('lower');
+  });
+
+  it('returns null rather than guessing when the product is gone', () => {
+    // The rename case. Null is what lets the caller say so out loud, instead of
+    // reporting a purchase that changed no price -- the old record_purchase bug.
+    expect(matchFertilizerProductByName(products, 'Urea 46-0-0')).toBeNull();
+  });
+
+  it('returns null for a blank name rather than matching anything', () => {
+    expect(matchFertilizerProductByName(products, '   ')).toBeNull();
+  });
+
+  it('handles an empty product list', () => {
+    expect(matchFertilizerProductByName([], 'Urea')).toBeNull();
   });
 });
