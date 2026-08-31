@@ -31,17 +31,34 @@ interface Props {
   onReload: () => void;
   showForm: boolean;
   onHideForm: () => void;
+  /**
+   * How many PRICED bookings each product has, keyed by product id.
+   *
+   * `price_per_unit` has three writers: this form, the F-3 contracts trigger,
+   * and `record_purchase`. Where priced bookings exist the trigger owns the
+   * number — so leaving the field editable made it a trap: a typed price saved,
+   * cascaded, moved every field cost, and was then silently reverted by the
+   * next contract change. With no bookings this form genuinely is the input, so
+   * it stays editable there. (F-5 removes the third writer.)
+   */
+  pricedBookings?: Record<string, number>;
 }
 
 const defaultForm = { product_name: '', price_per_unit: '', unit_type: 'gallon', application_rate: '', application_rate_unit: 'gallon', notes: '', is_liquid: false, density_lb_per_gal: '' };
 
-export function FertilizersTab({ fertilizers, seasonId, onReload, showForm, onHideForm }: Props) {
+export function FertilizersTab({
+  fertilizers, seasonId, onReload, showForm, onHideForm, pricedBookings,
+}: Props) {
   const { user } = useAuth();
   const { activeFarmId } = useFarm();
   const [editingId, setEditingId] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
   const [currentPage, setCurrentPage] = useState(1);
   const [formData, setFormData] = useState(defaultForm);
+
+  const bookingCount = (id: string | null) => (id ? pricedBookings?.[id] ?? 0 : 0);
+  const editingBookings = bookingCount(editingId);
+  const priceLocked = editingBookings > 0;
 
   const totalPages = Math.ceil(fertilizers.length / PAGE_SIZE);
   const paginatedFertilizers = fertilizers.slice((currentPage - 1) * PAGE_SIZE, currentPage * PAGE_SIZE);
@@ -65,8 +82,13 @@ export function FertilizersTab({ fertilizers, seasonId, onReload, showForm, onHi
     if (!user) return;
     setFormError(null);
 
+    // Not validated when the contracts trigger owns the price — the form is not
+    // going to write it, so an unparseable leftover in the field is irrelevant.
     const price = parseFloat(formData.price_per_unit);
-    if (!isFinite(price) || price <= 0) { setFormError('Price per unit must be a number greater than 0.'); return; }
+    if (!priceLocked && (!isFinite(price) || price <= 0)) {
+      setFormError('Price per unit must be a number greater than 0.');
+      return;
+    }
     const appRate = formData.application_rate ? parseFloat(formData.application_rate) : null;
     if (appRate !== null && (!isFinite(appRate) || appRate <= 0)) { setFormError('Application rate must be a number greater than 0.'); return; }
 
@@ -82,9 +104,8 @@ export function FertilizersTab({ fertilizers, seasonId, onReload, showForm, onHi
     }
 
     try {
-      const payload = {
+      const base = {
         product_name: formData.product_name,
-        price_per_unit: price,
         unit_type: formData.unit_type,
         application_rate: appRate,
         application_rate_unit: formData.application_rate_unit || null,
@@ -96,7 +117,13 @@ export function FertilizersTab({ fertilizers, seasonId, onReload, showForm, onHi
       const productId = editingId;
 
       if (editingId) {
-        const { error } = await supabase.from('fertilizer_products').update(payload).eq('id', editingId);
+        // The price is omitted entirely when bookings own it, rather than
+        // written back at its current value — a read-modify-write would clobber
+        // a re-blend that landed while this form was open.
+        const { error } = await supabase
+          .from('fertilizer_products')
+          .update(priceLocked ? base : { ...base, price_per_unit: price })
+          .eq('id', editingId);
         if (error) throw error;
       } else {
         let masterProductId: string | null = null;
@@ -121,7 +148,8 @@ export function FertilizersTab({ fertilizers, seasonId, onReload, showForm, onHi
           season_id: seasonId,
           user_id: user.id,
           master_product_id: masterProductId,
-          ...payload,
+          ...base,
+          price_per_unit: price,
         });
         if (error) throw error;
       }
@@ -183,9 +211,19 @@ export function FertilizersTab({ fertilizers, seasonId, onReload, showForm, onHi
                   type="number" step="0.01"
                   value={formData.price_per_unit}
                   onChange={(e) => setFormData({ ...formData, price_per_unit: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                  placeholder="0.00" required
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent disabled:bg-gray-100 disabled:text-gray-500"
+                  placeholder="0.00"
+                  required={!priceLocked}
+                  disabled={priceLocked}
+                  readOnly={priceLocked}
                 />
+                {priceLocked && (
+                  <p className="mt-2 text-xs text-gray-600">
+                    Blended from {editingBookings} priced booking{editingBookings === 1 ? '' : 's'} —
+                    edit it in <span className="font-medium">Fertilizer Contracts</span>. Anything
+                    typed here would be overwritten by the next contract change.
+                  </p>
+                )}
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">Price Unit</label>
@@ -309,7 +347,14 @@ export function FertilizersTab({ fertilizers, seasonId, onReload, showForm, onHi
               {paginatedFertilizers.map((fert) => (
                 <tr key={fert.id} className="hover:bg-gray-50 transition-colors">
                   <td className="px-6 py-4 text-sm font-medium text-gray-900">{fert.product_name}</td>
-                  <td className="px-6 py-4 text-sm text-gray-900">${fert.price_per_unit.toFixed(2)}/{fert.unit_type}</td>
+                  <td className="px-6 py-4 text-sm text-gray-900">
+                    ${fert.price_per_unit.toFixed(2)}/{fert.unit_type}
+                    {bookingCount(fert.id) > 0 && (
+                      <span className="block text-xs text-gray-500">
+                        blended from {bookingCount(fert.id)} booking{bookingCount(fert.id) === 1 ? '' : 's'}
+                      </span>
+                    )}
+                  </td>
                   <td className="px-6 py-4 text-sm text-gray-600">
                     {fert.application_rate ? `${fert.application_rate} ${fert.application_rate_unit || ''}/acre` : 'N/A'}
                   </td>

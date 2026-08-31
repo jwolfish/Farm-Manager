@@ -50,6 +50,12 @@ export function Products({ seasonId, readOnly = false }: ProductsProps) {
   const [seeds, setSeeds] = useState<SeedVariety[]>([]);
   const [fertilizers, setFertilizers] = useState<FertilizerProduct[]>([]);
   const [chemicals, setChemicals] = useState<IndividualChemical[]>([]);
+  /**
+   * Priced bookings per fertilizer product. Where there is at least one, the
+   * F-3 trigger owns that product's price and the Fertilizers form must not
+   * offer to type over it (F-4a fault 5).
+   */
+  const [pricedBookings, setPricedBookings] = useState<Record<string, number>>({});
 
   const loadedTabsRef = useRef<Set<ProductType>>(new Set());
   const loadedKeyRef = useRef<string | null>(null);
@@ -79,12 +85,27 @@ export function Products({ seasonId, readOnly = false }: ProductsProps) {
         })) as SeedVariety[];
         setSeeds(enriched);
       } else if (activeTab === 'fertilizers') {
-        const { data } = await supabase
-          .from('fertilizer_products')
-          .select('*')
-          .eq('season_id', seasonId)
-          .order('product_name');
-        setFertilizers(data || []);
+        const [productsRes, contractsRes] = await Promise.all([
+          supabase
+            .from('fertilizer_products')
+            .select('*')
+            .eq('season_id', seasonId)
+            .order('product_name'),
+          supabase
+            .from('fertilizer_contracts')
+            .select('fertilizer_product_id, price_per_unit')
+            .eq('season_id', seasonId),
+        ]);
+        setFertilizers(productsRes.data || []);
+
+        const counts: Record<string, number> = {};
+        for (const row of contractsRes.data || []) {
+          // Unpriced bookings count as tonnage but leave the price alone, so
+          // they must not lock the field.
+          if (row.price_per_unit === null) continue;
+          counts[row.fertilizer_product_id] = (counts[row.fertilizer_product_id] ?? 0) + 1;
+        }
+        setPricedBookings(counts);
       } else if (activeTab === 'chemicals') {
         const { data } = await supabase
           .from('individual_chemicals')
@@ -119,6 +140,20 @@ export function Products({ seasonId, readOnly = false }: ProductsProps) {
     loadedTabsRef.current = new Set();
     loadProducts({ force: true });
   }, [loadProducts]);
+
+  /*
+   * The Contracts tab changes `fertilizer_products.price_per_unit` through the
+   * F-3 trigger, and the Fertilizers tab is not mounted at the time, so it has
+   * no way to know its cached rows are now wrong. Dropping it from the cache
+   * makes the next visit re-read — which is what `reloadAllTabs` already does
+   * for the cross-farm copy, only narrower.
+   *
+   * Found live: Urea reading $550 on the Fertilizers tab against $590 in the
+   * database, written the moment a spot buy was saved.
+   */
+  const invalidateFertilizers = useCallback(() => {
+    loadedTabsRef.current.delete('fertilizers');
+  }, []);
 
   const tabs = [
     { id: 'seeds' as ProductType, name: 'Seed Varieties', icon: Package },
@@ -191,7 +226,7 @@ export function Products({ seasonId, readOnly = false }: ProductsProps) {
         <SeedsTab seeds={seeds} seasonId={seasonId} onReload={reloadActiveTab} showForm={showForm} onHideForm={() => setShowForm(false)} readOnly={readOnly} />
       )}
       {activeTab === 'fertilizers' && (
-        <FertilizersTab fertilizers={fertilizers} seasonId={seasonId} onReload={reloadActiveTab} showForm={showForm} onHideForm={() => setShowForm(false)} />
+        <FertilizersTab fertilizers={fertilizers} seasonId={seasonId} onReload={reloadActiveTab} showForm={showForm} onHideForm={() => setShowForm(false)} pricedBookings={pricedBookings} />
       )}
       {activeTab === 'chemicals' && (
         <ChemicalsTab chemicals={chemicals} seasonId={seasonId} onReload={reloadActiveTab} showForm={showForm} onHideForm={() => setShowForm(false)} readOnly={readOnly} />
@@ -226,7 +261,7 @@ export function Products({ seasonId, readOnly = false }: ProductsProps) {
 
       {activeTab === 'contracts' && (
         <Suspense fallback={<div className="py-12 text-center text-gray-500">Loading…</div>}>
-          <FertilizerContractsTab seasonId={seasonId} readOnly={readOnly} />
+          <FertilizerContractsTab seasonId={seasonId} readOnly={readOnly} onPricesChanged={invalidateFertilizers} />
         </Suspense>
       )}
 

@@ -138,21 +138,28 @@ export async function loadContractData(seasonId: string): Promise<ContractData> 
  * The cascade is queued only after the write has committed, and a failure to
  * queue it never reports the write as failed — the money is already saved.
  */
-async function queueIfNeeded(cascade: CascadeTarget | null, userId: string): Promise<boolean> {
-  if (!cascade) return false;
-  try {
-    await queueCascadeTask(
-      userId,
-      cascade.season_id,
-      cascade.task_type,
-      cascade.entity_id,
-      cascade.entity_type
-    );
-    return true;
-  } catch (err) {
-    console.error('Contract saved, but queueing the cost cascade failed:', err);
-    return false;
+async function queueIfNeeded(
+  cascades: CascadeTarget | CascadeTarget[] | null,
+  userId: string
+): Promise<boolean> {
+  const list = cascades === null ? [] : Array.isArray(cascades) ? cascades : [cascades];
+  if (list.length === 0) return false;
+  let queued = false;
+  for (const cascade of list) {
+    try {
+      await queueCascadeTask(
+        userId,
+        cascade.season_id,
+        cascade.task_type,
+        cascade.entity_id,
+        cascade.entity_type
+      );
+      queued = true;
+    } catch (err) {
+      console.error('Saved, but queueing the cost cascade failed:', err);
+    }
   }
+  return queued;
 }
 
 export interface ContractInput {
@@ -206,12 +213,29 @@ export async function deleteContract(id: string, userId: string): Promise<WriteR
   return { ok: true, cascadeQueued: await queueIfNeeded(cascade, userId) };
 }
 
+/**
+ * A spot buy created from the ticket itself — F-4a.
+ *
+ * `contractedQuantity` is in the PRODUCT's unit, not the line's: a contract is
+ * denominated in its product's own unit (F-3), so the caller converts before
+ * handing it over. The conversion stays here in TypeScript rather than moving
+ * into SQL, which is the whole reason F-3 dropped `fertilizer_contracts.
+ * unit_type` in the first place.
+ */
+export interface NewContractInput {
+  label: string;
+  pricePerUnit: number | null;
+  contractedQuantity: number;
+}
+
 export interface LoadLineInput {
   fertilizerProductId: string;
   contractId: string | null;
   quantity: number;
   unitType: string;
   computedQuantity: number | null;
+  /** Honoured only when `contractId` is null — an explicit booking always wins. */
+  newContract?: NewContractInput | null;
 }
 
 export interface LoadInput {
@@ -226,8 +250,17 @@ export interface LoadInput {
   lines: LoadLineInput[];
 }
 
-export async function saveLoad(input: LoadInput): Promise<WriteResult> {
-  const { error } = await supabase.rpc('save_fertilizer_load', {
+/**
+ * A ticket is a header plus lines plus, since F-4a, any spot buys entered on it
+ * — all in one RPC, one transaction. Two calls would leave a spot buy that had
+ * already moved the product price and fired a cascade if the load then failed,
+ * and a retry would book the same tons twice.
+ *
+ * A delivery on its own still moves no money. A spot buy does, so the RPC
+ * returns one cascade target per product whose blended price actually changed.
+ */
+export async function saveLoad(input: LoadInput, userId: string): Promise<WriteResult> {
+  const { data, error } = await supabase.rpc('save_fertilizer_load', {
     p_payload: {
       id: input.id ?? null,
       season_id: input.seasonId,
@@ -243,12 +276,21 @@ export async function saveLoad(input: LoadInput): Promise<WriteResult> {
         quantity: l.quantity,
         unit_type: l.unitType,
         computed_quantity: l.computedQuantity,
+        new_contract: l.newContract
+          ? {
+              label: l.newContract.label,
+              price_per_unit: l.newContract.pricePerUnit,
+              contracted_quantity: l.newContract.contractedQuantity,
+            }
+          : null,
       })),
     },
   });
 
   if (error) return { ok: false, message: error.message || 'Could not save the load.' };
-  return { ok: true, cascadeQueued: false };
+
+  const cascades = (data as { cascades?: CascadeTarget[] } | null)?.cascades ?? [];
+  return { ok: true, cascadeQueued: await queueIfNeeded(cascades, userId) };
 }
 
 export async function deleteLoad(id: string): Promise<WriteResult> {

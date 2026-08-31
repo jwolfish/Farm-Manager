@@ -10,7 +10,11 @@ import {
   type FertilizerProduct,
   type Load,
 } from '../../lib/fertilizerContracts';
-import { rollUpProduct, sumSeasonTotals } from '../../lib/fertilizerContractMath';
+import {
+  rollUpProduct,
+  sumSeasonTotals,
+  type LoadLineRow,
+} from '../../lib/fertilizerContractMath';
 import { BookingModal } from './BookingModal';
 import { LoadTicketModal } from './LoadTicketModal';
 
@@ -28,12 +32,40 @@ const num = (n: number, dp = 2) =>
 const money = (n: number) =>
   n.toLocaleString('en-US', { style: 'currency', currency: 'USD' });
 
+/**
+ * Load lines grouped by product, optionally ignoring one ticket.
+ *
+ * The exclusion matters when a ticket is being EDITED: its own delivery is
+ * already in the totals, so counting it would report far less room left on the
+ * booking than there really is, and the modal would offer to split a load that
+ * fits perfectly well.
+ */
+function groupLoadLines(loads: Load[], excludeLoadId: string | null): Map<string, LoadLineRow[]> {
+  const map = new Map<string, LoadLineRow[]>();
+  for (const load of loads) {
+    if (load.id === excludeLoadId) continue;
+    for (const line of load.lines) {
+      const list = map.get(line.productId) ?? [];
+      list.push({ contractId: line.contractId, quantity: line.quantity, unitType: line.unitType });
+      map.set(line.productId, list);
+    }
+  }
+  return map;
+}
+
 interface Props {
   seasonId: string;
   readOnly?: boolean;
+  /**
+   * Called after any write that can move `fertilizer_products.price_per_unit`
+   * through the F-3 trigger. The Products page caches each tab's rows, so
+   * without this the Fertilizers tab keeps showing the pre-contract price —
+   * F-4a fault 4, seen live as $550 on screen against $590 in the database.
+   */
+  onPricesChanged?: () => void;
 }
 
-export function FertilizerContractsTab({ seasonId, readOnly }: Props) {
+export function FertilizerContractsTab({ seasonId, readOnly, onPricesChanged }: Props) {
   const { user } = useAuth();
   const [data, setData] = useState<ContractData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -65,14 +97,7 @@ export function FertilizerContractsTab({ seasonId, readOnly }: Props) {
 
   const cards = useMemo(() => {
     if (!data) return [];
-    const linesByProduct = new Map<string, ReturnType<typeof rollUpProduct>['contracts'] extends never ? never : { contractId: string | null; quantity: number; unitType: string }[]>();
-    for (const load of data.loads) {
-      for (const line of load.lines) {
-        const list = linesByProduct.get(line.productId) ?? [];
-        list.push({ contractId: line.contractId, quantity: line.quantity, unitType: line.unitType });
-        linesByProduct.set(line.productId, list);
-      }
-    }
+    const linesByProduct = groupLoadLines(data.loads, null);
 
     const needByProduct = new Map(data.needs.map((n) => [n.productId, n]));
 
@@ -97,6 +122,28 @@ export function FertilizerContractsTab({ seasonId, readOnly }: Props) {
       });
   }, [data]);
 
+  /**
+   * Tons still to call on each booking, in that product's unit, with the ticket
+   * currently open for editing left out of the sums.
+   */
+  const remainingByContract = useMemo(() => {
+    const out: Record<string, number> = {};
+    if (!data) return out;
+    const linesByProduct = groupLoadLines(data.loads, ticket?.existing?.id ?? null);
+    for (const product of data.products) {
+      const forProduct = data.contracts.filter((c) => c.productId === product.id);
+      if (forProduct.length === 0) continue;
+      const rollup = rollUpProduct(
+        forProduct,
+        linesByProduct.get(product.id) ?? [],
+        product.unit_type,
+        product.density_lb_per_gal
+      );
+      for (const c of rollup.contracts) out[c.id] = c.remaining;
+    }
+    return out;
+  }, [data, ticket]);
+
   const handleDeleteContract = async (contract: Contract) => {
     if (!user) return;
     setActionError(null);
@@ -107,6 +154,9 @@ export function FertilizerContractsTab({ seasonId, readOnly }: Props) {
       setActionError(result.message);
       return;
     }
+    // Removing a priced booking re-blends the average, so the Fertilizers tab's
+    // cached price is now stale.
+    onPricesChanged?.();
     await reload();
   };
 
@@ -356,7 +406,7 @@ export function FertilizerContractsTab({ seasonId, readOnly }: Props) {
         <BookingModal
           open
           onClose={() => setBooking(null)}
-          onSaved={() => { setBooking(null); void reload(); }}
+          onSaved={() => { setBooking(null); onPricesChanged?.(); void reload(); }}
           seasonId={seasonId}
           userId={user.id}
           product={booking.product}
@@ -365,14 +415,22 @@ export function FertilizerContractsTab({ seasonId, readOnly }: Props) {
         />
       )}
 
-      {ticket && data && (
+      {ticket && data && user && (
         <LoadTicketModal
           open
           onClose={() => setTicket(null)}
-          onSaved={() => { setTicket(null); void reload(); }}
+          onSaved={({ pricesChanged }) => {
+            setTicket(null);
+            // A delivery on its own moves no money; a priced spot buy entered on
+            // the ticket does.
+            if (pricesChanged) onPricesChanged?.();
+            void reload();
+          }}
           seasonId={seasonId}
+          userId={user.id}
           products={data.products}
           contracts={data.contracts}
+          remainingByContract={remainingByContract}
           existing={ticket.existing}
           defaultProductId={ticket.productId}
         />

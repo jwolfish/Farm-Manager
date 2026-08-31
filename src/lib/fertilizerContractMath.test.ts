@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest';
 import {
   rollUpProduct,
   sumSeasonTotals,
+  planLineDraw,
   type ContractRow,
   type LoadLineRow,
 } from './fertilizerContractMath';
@@ -137,5 +138,89 @@ describe('sumSeasonTotals', () => {
     const r = sumSeasonTotals([{ deliveryFee: 125 }, { deliveryFee: NaN }]);
     expect(r.deliveryFees).toBe(125);
     expect(r.loadCount).toBe(2);
+  });
+});
+
+describe('planLineDraw — the partial-draw case', () => {
+  // The owner's own example: a 24-ton semi against a booking with 20.35 t left.
+  it('splits a semi across a booking and a spot buy', () => {
+    const p = planLineDraw(24, 'ton', 'ton', 20.35);
+    expect(p.ok).toBe(true);
+    if (!p.ok) return;
+    expect(p.overDraws).toBe(true);
+    expect(p.split).toEqual({
+      onContractInLineUnit: 20.35,
+      onSpotInLineUnit: 3.65,
+      onSpotInProductUnit: 3.65,
+    });
+  });
+
+  it('the two halves add back to exactly what was typed', () => {
+    const p = planLineDraw(24, 'ton', 'ton', 20.35);
+    if (!p.ok || !p.split) throw new Error('expected a split');
+    expect(p.split.onContractInLineUnit + p.split.onSpotInLineUnit).toBe(24);
+  });
+
+  it('does not fire when the load exactly fills the booking', () => {
+    const p = planLineDraw(20, 'ton', 'ton', 20);
+    expect(p).toMatchObject({ ok: true, overDraws: false, split: null });
+  });
+
+  it('does not fire when the load is under the booking', () => {
+    const p = planLineDraw(10, 'ton', 'ton', 20);
+    expect(p).toMatchObject({ ok: true, overDraws: false, split: null });
+  });
+
+  it('reports no over-draw when no booking is chosen', () => {
+    const p = planLineDraw(24, 'ton', 'ton', null);
+    expect(p).toMatchObject({ ok: true, quantityInProductUnit: 24, remaining: null, overDraws: false, split: null });
+  });
+
+  it('over-draws with nothing to keep on a fully-taken booking, and offers no split', () => {
+    // remaining 0: the whole line is a spot buy. A "split" of 0 and 24 would be
+    // a worse thing to show than "book all of it".
+    const p = planLineDraw(24, 'ton', 'ton', 0);
+    expect(p).toMatchObject({ ok: true, overDraws: true, split: null });
+  });
+
+  it('splits a line entered in another unit, in that unit', () => {
+    // 4000 lb against a per-ton booking with 1 ton left.
+    const p = planLineDraw(4000, 'lbs', 'ton', 1);
+    expect(p.ok).toBe(true);
+    if (!p.ok) return;
+    expect(p.quantityInProductUnit).toBe(2);
+    expect(p.split).toEqual({
+      onContractInLineUnit: 2000,
+      onSpotInLineUnit: 2000,
+      onSpotInProductUnit: 1,
+    });
+  });
+
+  it('bridges gallons to tons through a density', () => {
+    // 11.1 lb/gal: 100 gal = 1110 lb = 0.555 ton.
+    const p = planLineDraw(100, 'gallon', 'ton', 0.5, 11.1);
+    expect(p.ok).toBe(true);
+    if (!p.ok) return;
+    expect(p.quantityInProductUnit).toBeCloseTo(0.555, 10);
+    expect(p.overDraws).toBe(true);
+    expect(p.split?.onSpotInProductUnit).toBeCloseTo(0.055, 10);
+  });
+
+  it('refuses rather than guessing when a liquid has no density', () => {
+    const p = planLineDraw(100, 'gallon', 'ton', 50, null);
+    expect(p.ok).toBe(false);
+    if (p.ok) return;
+    expect(p.message).toMatch(/density/i);
+  });
+
+  it('refuses an unrecognised unit', () => {
+    const p = planLineDraw(10, 'jugs', 'ton', 5);
+    expect(p.ok).toBe(false);
+  });
+
+  it('does not offer a split for float dust', () => {
+    // A converted quantity a hair over the remaining is not an over-draw.
+    const p = planLineDraw(24 + 1e-12, 'ton', 'ton', 24);
+    expect(p).toMatchObject({ ok: true, overDraws: false });
   });
 });
