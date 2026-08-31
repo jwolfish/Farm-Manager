@@ -1,7 +1,7 @@
 import { supabase } from '../supabase';
 import { TransactionResult, logCascadeWarning } from '../transactionUtils';
 import { getFieldsUsingTemplate } from './templateCrud';
-import { calculateFieldTotalCost } from './templateCalculations';
+import { applyFieldCostOverrides, calculateFieldTotalCost } from './templateCalculations';
 import { recalculateFertilizerProgramCost, recalculateChemicalProgramCost } from './programCosts';
 import { Database } from '../database.types';
 
@@ -52,12 +52,19 @@ export async function cascadeTemplateUpdate(
     throw new Error(`Cascade aborted: could not load field costs (${fieldCostsResult.error.message})`);
   }
 
-  const overridesByField = new Map<string, Map<string, boolean>>();
+  /*
+   * The VALUE is kept, not just the presence of a row.
+   *
+   * This map was previously `Map<string, boolean>` — enough to decide which columns to
+   * skip writing, but not enough to total the field correctly, because an override does
+   * not live in the field_costs column it names. See applyFieldCostOverrides.
+   */
+  const overridesByField = new Map<string, Map<string, unknown>>();
   for (const override of overridesResult.data || []) {
     if (!overridesByField.has(override.field_id)) {
       overridesByField.set(override.field_id, new Map());
     }
-    overridesByField.get(override.field_id)!.set(override.cost_item_name, true);
+    overridesByField.get(override.field_id)!.set(override.cost_item_name, override.override_value);
   }
 
   const fieldCostsByField = new Map<string, Record<string, unknown>>();
@@ -91,7 +98,7 @@ export async function cascadeTemplateUpdate(
   for (const fieldData of fieldsUsingTemplate) {
     try {
       const fieldId = fieldData.field_id;
-      const overrideMap = overridesByField.get(fieldId) || new Map<string, boolean>();
+      const overrideMap = overridesByField.get(fieldId) || new Map<string, unknown>();
       const currentFieldCost = fieldCostsByField.get(fieldId);
 
       if (overrideMap.size > 0) {
@@ -115,7 +122,18 @@ export async function cascadeTemplateUpdate(
       }
 
       if (currentFieldCost) {
-        updates.total_cost_per_acre = calculateFieldTotalCost({ ...currentFieldCost, ...updates });
+        /*
+         * The total must be computed from the RESOLVED costs — the template values with
+         * the user's overrides laid over them — not from the raw columns.
+         *
+         * Without applyFieldCostOverrides this line reverted the total to the pure
+         * template figure while every line item on screen still showed the override,
+         * and no error was raised anywhere. It is the same rule recalculateFieldTotal
+         * in fieldCostOverrides.ts already follows; the cascade simply never did.
+         */
+        updates.total_cost_per_acre = calculateFieldTotalCost(
+          applyFieldCostOverrides({ ...currentFieldCost, ...updates }, overrideMap)
+        );
       }
 
       updatePromises.push(
