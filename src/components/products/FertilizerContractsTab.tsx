@@ -13,10 +13,12 @@ import {
 import {
   rollUpProduct,
   sumSeasonTotals,
+  sumContractCommitment,
   type LoadLineRow,
 } from '../../lib/fertilizerContractMath';
 import { BookingModal } from './BookingModal';
 import { LoadTicketModal } from './LoadTicketModal';
+import { FertilizerSeasonSummary, type SummaryRow } from './FertilizerSeasonSummary';
 
 /**
  * Fertilizer Contracts — F-4.
@@ -95,6 +97,13 @@ export function FertilizerContractsTab({ seasonId, readOnly, onPricesChanged }: 
 
   const season = useMemo(() => sumSeasonTotals(data?.loads ?? []), [data]);
 
+  // Money is the only figure that may be summed across products; see the note
+  // on the season summary below.
+  const commitment = useMemo(
+    () => sumContractCommitment(data?.contracts ?? []),
+    [data]
+  );
+
   const cards = useMemo(() => {
     if (!data) return [];
     const linesByProduct = groupLoadLines(data.loads, null);
@@ -121,6 +130,23 @@ export function FertilizerContractsTab({ seasonId, readOnly, onPricesChanged }: 
         return { product, rollup, need: needByProduct.get(product.id) ?? null };
       });
   }, [data]);
+
+  /** The same rollups the cards use, flattened for the summary at the top. */
+  const summaryRows = useMemo<SummaryRow[]>(
+    () =>
+      cards.map(({ product, rollup, need }) => ({
+        productId: product.id,
+        productName: product.product_name,
+        unit: product.unit_type,
+        plan: need ? need.total : null,
+        contracted: rollup.contracted,
+        delivered: rollup.delivered,
+        remaining: rollup.remaining,
+        unattributedDelivered: rollup.unattributedDelivered,
+        issueCount: rollup.issues.length,
+      })),
+    [cards]
+  );
 
   /**
    * Tons still to call on each booking, in that product's unit, with the ticket
@@ -198,13 +224,9 @@ export function FertilizerContractsTab({ seasonId, readOnly, onPricesChanged }: 
         </div>
       )}
 
-      {/* Season strip: tonnage counts down while delivery fees count up. */}
-      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-        <Tile label="Contracted" value={`${num(cards.reduce((s, c) => s + c.rollup.contracted, 0))}`} />
-        <Tile label="Delivered" value={`${num(cards.reduce((s, c) => s + c.rollup.delivered, 0))}`} />
-        <Tile label="Left to call" value={`${num(cards.reduce((s, c) => s + c.rollup.remaining, 0))}`} />
-        <Tile label={`Delivery fees · ${season.loadCount} loads`} value={money(season.deliveryFees)} />
-      </div>
+      {/* Per product, in that product's own unit — see FertilizerSeasonSummary
+          for why the cross-product tiles this replaced were wrong. */}
+      <FertilizerSeasonSummary rows={summaryRows} commitment={commitment} season={season} />
 
       {!readOnly && data && data.products.length > 0 && (
         <button
@@ -435,15 +457,6 @@ export function FertilizerContractsTab({ seasonId, readOnly, onPricesChanged }: 
           defaultProductId={ticket.productId}
         />
       )}
-    </div>
-  );
-}
-
-function Tile({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-xl border border-gray-200 bg-white p-3">
-      <p className="text-xs text-gray-500">{label}</p>
-      <p className="text-lg font-semibold text-gray-900 mt-0.5">{value}</p>
     </div>
   );
 }

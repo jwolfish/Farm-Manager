@@ -3,6 +3,7 @@ import {
   rollUpProduct,
   sumSeasonTotals,
   planLineDraw,
+  sumContractCommitment,
   type ContractRow,
   type LoadLineRow,
 } from './fertilizerContractMath';
@@ -222,5 +223,63 @@ describe('planLineDraw — the partial-draw case', () => {
     // A converted quantity a hair over the remaining is not an over-draw.
     const p = planLineDraw(24 + 1e-12, 'ton', 'ton', 24);
     expect(p).toMatchObject({ ok: true, overDraws: false });
+  });
+});
+
+describe('sumContractCommitment — the one total that may cross products', () => {
+  it('totals quantity x price in money', () => {
+    // The owner's live Potash: 12t@495 + 2t@550 + 50t@505
+    const r = sumContractCommitment([
+      { contractedQuantity: 12, pricePerUnit: 495 },
+      { contractedQuantity: 2, pricePerUnit: 550 },
+      { contractedQuantity: 50, pricePerUnit: 505 },
+    ]);
+    expect(r.committed).toBe(32290);
+    expect(r.unpricedContracts).toBe(0);
+  });
+
+  it('adds across products sold in different units, because dollars are dollars', () => {
+    // 20 ton of a dry product and 500 gallons of a liquid. Summing the
+    // QUANTITIES would be meaningless; summing the money is not.
+    const r = sumContractCommitment([
+      { contractedQuantity: 20, pricePerUnit: 500 },
+      { contractedQuantity: 500, pricePerUnit: 3.25 },
+    ]);
+    expect(r.committed).toBe(11625);
+  });
+
+  it('excludes an unpriced booking and counts it, so the total reads as a floor', () => {
+    const r = sumContractCommitment([
+      { contractedQuantity: 10, pricePerUnit: 100 },
+      { contractedQuantity: 40, pricePerUnit: null },
+    ]);
+    // Not 1000 + 0: an unpriced booking does not cost nothing, it is unknown.
+    expect(r.committed).toBe(1000);
+    expect(r.unpricedContracts).toBe(1);
+  });
+
+  it('is zero with no contracts, and reports nothing unpriced', () => {
+    expect(sumContractCommitment([])).toEqual({ committed: 0, unpricedContracts: 0 });
+  });
+
+  it('is zero when every booking is unpriced', () => {
+    const r = sumContractCommitment([
+      { contractedQuantity: 10, pricePerUnit: null },
+      { contractedQuantity: 20, pricePerUnit: null },
+    ]);
+    expect(r).toEqual({ committed: 0, unpricedContracts: 2 });
+  });
+
+  it('rounds to cents', () => {
+    const r = sumContractCommitment([{ contractedQuantity: 3, pricePerUnit: 10.005 }]);
+    expect(r.committed).toBe(30.02);
+  });
+
+  it('ignores a non-finite value rather than producing NaN', () => {
+    const r = sumContractCommitment([
+      { contractedQuantity: 10, pricePerUnit: 100 },
+      { contractedQuantity: Infinity, pricePerUnit: 5 },
+    ]);
+    expect(r.committed).toBe(1000);
   });
 });
