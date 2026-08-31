@@ -22,16 +22,18 @@ making changes — they explain what is broken, what has already been fixed, and
 @docs/Farm-Manager-Remediation-PRD.md
 @docs/Farm-Manager-Code-Review-Summary.md
 
-## Fertilizer contract tracking (new feature, in progress)
+## Fertilizer contract tracking (feature complete)
 
-Seven steps, F-1 … F-6 plus F-4a. **F-1 … F-4a are merged and pushed; F-5 is on
-`f-5-shopping-list-handoff`.** Only F-6 (the plan calculator) remains, and it is
-deliberately last — everything through F-5 is a complete, usable tracker.
-The design records the reasoning behind decisions that look arbitrary otherwise —
-why a spot buy is modelled as a contract, why load lines carry no price, why the plan
-calculator's field selection is a note rather than a record.
+Eight steps — F-1, F-2, F-3, F-4, F-4a, F-4b, F-5, F-6 — **all done**. The design records
+the reasoning behind decisions that look arbitrary otherwise: why a spot buy is modelled as
+a contract, why load lines carry no price, why the plan calculator's field selection is a
+note rather than a record.
 
-Two rules this feature keeps re-learning the hard way:
+Not yet exercised: a second user, the `viewer` role, and a browser look at the load ticket,
+the booking form and the shopping-list handoff. Rendering screens found real defects three
+rounds running, so start there if something misbehaves.
+
+Rules this feature keeps re-learning the hard way:
 
 - **A contract is denominated in its product's own unit.** F-3 dropped
   `fertilizer_contracts.unit_type` rather than constrain it, so any conversion between a
@@ -45,6 +47,10 @@ Two rules this feature keeps re-learning the hard way:
   trigger owns it wherever priced bookings exist; the Fertilizers form is the input only
   when there are none; the shopping list never writes it at all (F-5 —
   `record_purchase` raises on a fertilizer line). Do not add a fourth path.
+- **One accumulator for plan need.** `accumulateNeed` in `shoppingListMath.ts` is the only
+  place rates × acreage become a tonnage — the shopping list, the Contracts tab and the
+  F-6 plan calculator all go through it. They may differ in *scope*; they must never differ
+  in *arithmetic*. It reports each distinct failure once, not once per field.
 
 @docs/Fertilizer-Contract-Tracking-Design.md
 
@@ -58,15 +64,16 @@ The status doc is the source of truth for what is done. Update it when a round l
   before the unused-symbol sweep brought it to 76. See the WI-19 section of the status
   doc for the full accounting; every movement is itemised there.
 - `npx eslint .` reports **109 errors, 28 warnings** (was 136/28 at review).
-- `npx vite build` succeeds and emits a **1,760.78 kB** main chunk (470.23 kB gz), plus two
-  lazy fertilizer chunks: **25.06 kB** `FertilizerContractsTab` (6.87 gz) and **11.48 kB**
-  `BookingModal` (3.73 gz), the latter shared by the Contracts tab and the Shopping Lists
-  tab. It was 1,751.91 kB before fertilizer F-1, which added 2.38 kB for the density
-  bridge, the Liquid checkbox and its help text; F-4a added 0.95 kB to the main chunk and
-  6.50 kB to the lazy one; F-5 added the Shopping Lists tab's share of the handoff to the
-  main chunk and split `BookingModal` out; F-4b added the season summary to the lazy
-  Contracts chunk only.
-- `npm test` reports **262 passing** in 6 files.
+- `npx vite build` succeeds and emits a **1,760.80 kB** main chunk (470.24 kB gz), plus two
+  lazy fertilizer chunks: **25.96 kB** `FertilizerContractsTab` (7.10 gz) and **19.97 kB**
+  `BookingModal` (6.01 gz), the latter shared by the Contracts tab, the Shopping Lists tab
+  and the plan calculator. It was 1,751.91 kB before fertilizer F-1, which added 2.38 kB for
+  the density bridge, the Liquid checkbox and its help text; F-4a added 0.95 kB to the main
+  chunk and 6.50 kB to the lazy one; F-5 added the Shopping Lists tab's share of the handoff
+  to the main chunk and split `BookingModal` out; F-4b added the season summary to the lazy
+  Contracts chunk only; F-6 added the plan calculator to the lazy chunks and **0.02 kB** to
+  the main one.
+- `npm test` reports **282 passing** in 7 files.
 - There is **no CI**. Adding it is WI-21 in the PRD.
 - Tests arrived with Round 3: `npm test` (Vitest). Test files are excluded from
   `tsconfig.app.json` so they do not move the 103-error baseline.

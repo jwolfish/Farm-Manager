@@ -1212,23 +1212,63 @@ all found by using the screen, and F-4b's was too. Rendering is cheap now — pr
 branch, build succeeds with the **main chunk byte-identical** at 1,755.99 kB; the lazy
 Contracts chunk carries all of it, 35.21 → 37.97 kB. No migration.
 
+### Fertilizer contract tracking — F-6 — branch `f-6-plan-calculator`
+
+The plan calculator, and the last step of the feature. Detail in §10e of the design doc.
+
+**"These fields, this program — how many tons?"** Reachable at two scopes, which is the
+same question asked twice: from the load ticket, to fill a delivery from the plan; and from
+the booking form, scoped to that product, to answer "how much do I contract for these
+fields?". Both open the same component.
+
+**Selected fields × selected programs**, mirroring the Spray Planner, not each field's cost
+template. `computeFertilizerNeedByProduct` answers "what does the season plan say?"; this
+answers "what if I ran *this* program on *these* fields?". Both converge on
+`accumulateNeed`, so the two can differ in scope and never in arithmetic — which is exactly
+why F-4 extracted that accumulator in the first place.
+
+**`computed_quantity` is finally written.** In the schema since F-2, in the RPC payload
+since F-4, always null until now. On an over-draw split the kept line keeps it and the
+spill gets none, because the calculator produced one number for that product on that ticket.
+
+**Two defects found by rendering it**, neither findable by reading:
+
+1. **`accumulateNeed` reported the same failure once per field** — five fields of a liquid
+   with no density produced five identical sentences joined by semicolons. Fixed at the
+   source with a `Set`, which **also fixes the shopping list's flagged lines**; they had the
+   same repetition and it had never been noticed. Two tests pin it.
+2. The sheet's subtitle truncated on a phone.
+
+That is now three consecutive rounds where browser verification found something review did
+not. It is no longer a nice-to-have for this feature's screens.
+
+**Floor:** TypeScript 75 (identical set), ESLint 109/28, tests 262 → **282**, build
+succeeds, main chunk 1,760.78 → **1,760.80 kB** — effectively all of it in the lazy chunks.
+No migration.
+
 ### Where the fertilizer feature stands
 
-F-1 … F-5 plus F-4a and F-4b are merged on `main` and pushed. **Only F-6 remains** — the
-plan calculator (fields × program → computed load lines). It is deliberately last:
-everything before it is a complete, usable tracker, and F-6 only removes hand arithmetic
-from a screen that already works.
+**All seven steps are complete — F-1, F-2, F-3, F-4, F-4a, F-4b, F-5, F-6.** The feature is
+finished as designed.
 
 Measured on `main` after merging F-4b and F-5 together — not carried over from either
-branch, because neither branch's build figures survive the union:
+branch, because neither branch's build figures survive the union — then again after F-6:
 
-| | |
-|---|---|
-| Tests | **262 passing**, 6 files |
-| TypeScript | **75** — identical set, positions stripped |
-| ESLint | **109 errors, 28 warnings** |
-| Build | main **1,760.78 kB** (470.23 gz), lazy `FertilizerContractsTab` **25.06 kB** (6.87 gz) and `BookingModal` **11.48 kB** (3.73 gz) |
-| Migrations | **58** |
+| | After F-5/F-4b merge | After F-6 |
+|---|---|---|
+| Tests | 262 passing, 6 files | **282 passing, 7 files** |
+| TypeScript | 75 — identical set | **75** — identical set |
+| ESLint | 109 errors, 28 warnings | **109 / 28** |
+| Build — main | 1,760.78 kB (470.23 gz) | **1,760.80 kB** (470.24 gz) |
+| Build — lazy | `FertilizerContractsTab` 25.06, `BookingModal` 11.48 | **25.96** and **19.97 kB** |
+| Migrations | 58 | **58** — F-4b and F-6 needed none |
+
+**What is still not done, and is worth saying plainly.** Nothing in this feature has been
+exercised by a second user, the `viewer` role has never been tried on these screens, and
+only the Contracts tab's summary and the plan calculator have been rendered in a browser —
+the load ticket, the booking form and the shopping-list handoff have not. Given that
+looking at screens has now found defects three rounds running, those are the obvious next
+checks if anything here misbehaves.
 
 ## Open items and standing notes
 
