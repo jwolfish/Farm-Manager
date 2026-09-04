@@ -469,11 +469,37 @@ the unit tests and the SQL check could not:
 Six of seven products unchanged is the evidence the change is inert where nothing is
 booked — the same control the SQL check used, now through the real code path.
 
+### The chemical side, confirmed the same day — 4 Sep 18:56 UTC
+
+Ten lines, **six carrying a real on-hand deduction** — double what the August lists had,
+because inventory has moved since:
+
+| Product | Plan | On hand | To Buy |
+|---|---|---|---|
+| Ag Saver Glyphosate | 30.797 gal | 15 | 15.797 |
+| Sharp | 22.8125 gal | 6.5 | 16.3125 |
+| Enlist One | 18.25 gal | 7.5 | 10.75 |
+| 2,4D LV6 | 11.406 gal | 3.5 | 7.906 |
+| Predator | 1.711 gal | 1 | 0.711 |
+| **NanoPro** | **2.281 gal** | **3** | **0** — covered, and 0.72 gal long |
+
+**The over-coverage case arrived on its own, on the first chemical list.** This section
+previously said no product had ever been covered past its plan and the red *"n over"*
+line had been seen only against fixtures. NanoPro is that case, in production.
+
+It is also the clearest possible argument for the design decision in §3. For that row
+`plan − covered − needed` is **not** zero — it is −0.72, because the clamp fired. Every
+other row on both lists reconciles to exactly 0.000000. Had the gross been derived as
+`net + covered` instead of stored, NanoPro would read 3 gal of plan need that nobody
+planned, and the 0.72 gal of surplus would be invisible. The one row that breaks the
+subtraction is the row the column exists for.
+
 ### Still not done
 
-- **The chemical side has not been regenerated** since the change. Its arithmetic is
-  untouched — only `plan_quantity` was added to it — and the row renders correctly in
-  the harness, but no chemical list has been generated through the new insert.
-- **The over-coverage case has never occurred in production.** The red *"n ton over"*
-  line is covered by unit tests and was rendered against fixtures at both widths, but no
-  real product has been booked past its plan.
+- **The red over-coverage line has not been seen rendered against real data**, only
+  against fixtures — though NanoPro now makes that a ten-second look rather than a
+  contrivance.
+- **No fertilizer product has been booked past its plan.** The chemical path now covers
+  the over-coverage arithmetic; the fertilizer path reaches it through
+  `contracted_at_generation` rather than `on_hand_at_generation`, and that particular
+  combination has not occurred.

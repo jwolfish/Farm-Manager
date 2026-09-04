@@ -1529,10 +1529,21 @@ than only the one displayed, and that Order Qty defaults to the net, which is wh
 F-5's *Book this* double-booking. Six of the seven products are unchanged, which is the
 control.
 
-**Still unexercised:** no *chemical* list has been generated since the change (its
-arithmetic is untouched — only `plan_quantity` was added — but the insert has not run),
-and no product has ever been booked past its plan, so the red over-coverage line has
-been seen only against fixtures.
+**The chemical side confirmed too, 18:56 UTC.** Ten lines, six carrying a real on-hand
+deduction — double what the August lists had, because inventory has moved.
+
+**And the over-coverage case arrived on its own.** NanoPro: plan 2.281 gal against 3 gal
+on hand, so To Buy clamps to 0 and the row is 0.72 gal long. That is the one row where
+`plan − covered − needed` is **not** zero — every other line on both lists reconciles to
+exactly 0.000000 — and it is the clearest argument for storing the gross rather than
+deriving it. Derived as `net + covered`, NanoPro would report 3 gal of plan need nobody
+planned, and the surplus would be invisible. The row that breaks the subtraction is the
+row the column exists for.
+
+**Still unexercised:** the red *"n over"* line has not been seen rendered against real
+data, only fixtures — NanoPro now makes that a ten-second look. And no *fertilizer*
+product has been booked past its plan, so over-coverage via
+`contracted_at_generation` rather than `on_hand_at_generation` has not occurred.
 
 
 ## Open items and standing notes
