@@ -1540,10 +1540,16 @@ deriving it. Derived as `net + covered`, NanoPro would report 3 gal of plan need
 planned, and the surplus would be invisible. The row that breaks the subtraction is the
 row the column exists for.
 
-**Still unexercised:** the red *"n over"* line has not been seen rendered against real
-data, only fixtures — NanoPro now makes that a ten-second look. And no *fertilizer*
-product has been booked past its plan, so over-coverage via
-`contracted_at_generation` rather than `on_hand_at_generation` has not occurred.
+**The red line renders — confirmed by the owner minutes later.** NanoPro reads `0 gal`
+with `0.72 gal over` beneath it, against real data rather than fixtures. **Every element
+of this change has now been seen working in the running app**, which is a first for
+anything in the fertilizer area: F-4 through F-6 all shipped with "not opened in a
+browser" against them.
+
+**Still unexercised:** no *fertilizer* product has been booked past its plan, so
+over-coverage via `contracted_at_generation` rather than `on_hand_at_generation` has not
+occurred. `coverageView` adds the two and the row component does not distinguish them,
+so this is close to a formality.
 
 
 ## Open items and standing notes

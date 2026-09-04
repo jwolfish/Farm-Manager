@@ -494,12 +494,15 @@ other row on both lists reconciles to exactly 0.000000. Had the gross been deriv
 planned, and the 0.72 gal of surplus would be invisible. The one row that breaks the
 subtraction is the row the column exists for.
 
+**The red line renders, confirmed by the owner minutes later.** NanoPro reads `0 gal`
+with `0.72 gal over` beneath it, against real data rather than fixtures. Every element
+of this change has now been seen working in the running app.
+
 ### Still not done
 
-- **The red over-coverage line has not been seen rendered against real data**, only
-  against fixtures — though NanoPro now makes that a ten-second look rather than a
-  contrivance.
-- **No fertilizer product has been booked past its plan.** The chemical path now covers
-  the over-coverage arithmetic; the fertilizer path reaches it through
-  `contracted_at_generation` rather than `on_hand_at_generation`, and that particular
-  combination has not occurred.
+- **No fertilizer product has been booked past its plan.** The chemical path has now
+  exercised the over-coverage arithmetic *and* its rendering; the fertilizer path
+  reaches the same place through `contracted_at_generation` rather than
+  `on_hand_at_generation`. The row component does not distinguish them — `coverageView`
+  adds the two and neither branch knows which one is non-zero — so this is close to a
+  formality, but it has not happened.
