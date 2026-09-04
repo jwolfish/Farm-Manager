@@ -1,6 +1,7 @@
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import type { ShoppingLine } from '../../components/products/ShoppingListsTab';
+import { coverageView } from '../shoppingListMath';
 
 type RGB = [number, number, number];
 
@@ -8,6 +9,13 @@ const CATEGORY_LABELS: Record<string, string> = {
   chemical: 'Chemical',
   fertilizer: 'Fertilizer',
   seed: 'Seed',
+};
+
+/** Mirrors the tab: a shed balance and a booking at the plant are not the same thing. */
+const COVERAGE_LABELS: Record<string, string> = {
+  chemical: 'On Hand',
+  fertilizer: 'Booked',
+  seed: 'On Hand',
 };
 
 const CATEGORY_RGB: Record<string, RGB> = {
@@ -101,16 +109,39 @@ export function exportShoppingListPDF(
 
   cursorY += 56;
 
-  // Table
-  const tableHead = ['Product', 'Needed', 'Order Qty', 'Supplier', '$/Unit', 'Line Total', 'Status'];
+  /*
+   * The supplier is the audience for this page, so the three quantity columns
+   * are not equals: Plan Need and Already Have are context, and "To Buy" is the
+   * number being quoted. It is the bold one, and the only one repeated in the
+   * footer.
+   */
+  const tableHead = [
+    'Product',
+    'Plan Need',
+    COVERAGE_LABELS[category] ?? 'On Hand',
+    'To Buy',
+    'Order Qty',
+    'Supplier',
+    '$/Unit',
+    'Line Total',
+    'Status',
+  ];
 
   const tableBody = lines.map((l) => {
     const qty = l.adjusted_quantity ?? l.needed_quantity;
     const price = l.purchased_price_per_unit ?? l.quoted_price_per_unit;
     const lineTotal = price != null ? qty * price : null;
+    const cover = coverageView(l.plan_quantity, l.on_hand_at_generation, l.contracted_at_generation);
     return [
       l.product_name,
-      `${l.needed_quantity.toLocaleString('en-US', { maximumFractionDigits: 2 })} ${l.unit_type}`,
+      `${l.plan_quantity.toLocaleString('en-US', { maximumFractionDigits: 2 })} ${l.unit_type}`,
+      cover.covered > 0
+        ? `${cover.covered.toLocaleString('en-US', { maximumFractionDigits: 2 })} ${l.unit_type}`
+        : '—',
+      `${l.needed_quantity.toLocaleString('en-US', { maximumFractionDigits: 2 })} ${l.unit_type}` +
+        (cover.overBy > 0
+          ? `\n(${cover.overBy.toLocaleString('en-US', { maximumFractionDigits: 2 })} over)`
+          : ''),
       `${qty.toLocaleString('en-US', { maximumFractionDigits: 2 })} ${l.unit_type}`,
       l.supplier ?? '',
       price != null ? `$${price.toFixed(2)}` : '',
@@ -132,7 +163,7 @@ export function exportShoppingListPDF(
     head: [tableHead],
     body: tableBody,
     foot: lines.length > 1
-      ? [['Total', '', '', '', '', `$${grandTotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, '']]
+      ? [['Total', '', '', '', '', '', '', `$${grandTotal.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`, '']]
       : undefined,
     headStyles: {
       fillColor: catRgb,
@@ -154,17 +185,28 @@ export function exportShoppingListPDF(
       cellPadding: { top: 6, bottom: 6, left: 5, right: 5 },
     },
     alternateRowStyles: { fillColor: [249, 250, 251] as RGB },
+    /*
+     * Nine columns on letter portrait. Plan Need and the coverage column are
+     * context and take the narrowest widths; To Buy is bold because it is the
+     * quantity the supplier is being asked to price.
+     */
     columnStyles: {
       0: { halign: 'left', cellWidth: 'auto' },
-      1: { halign: 'right', cellWidth: 72 },
-      2: { halign: 'right', cellWidth: 72 },
-      3: { halign: 'left', cellWidth: 80 },
-      4: { halign: 'right', cellWidth: 52 },
-      5: { halign: 'right', cellWidth: 62, fontStyle: 'bold' },
-      6: { halign: 'center', cellWidth: 56 },
+      1: { halign: 'right', cellWidth: 56 },
+      2: { halign: 'right', cellWidth: 56 },
+      3: { halign: 'right', cellWidth: 60, fontStyle: 'bold' },
+      4: { halign: 'right', cellWidth: 56 },
+      5: { halign: 'left', cellWidth: 66 },
+      6: { halign: 'right', cellWidth: 46 },
+      7: { halign: 'right', cellWidth: 58, fontStyle: 'bold' },
+      8: { halign: 'center', cellWidth: 50 },
     },
     didParseCell: (data) => {
-      if (data.section === 'body' && data.column.index === 6) {
+      // The coverage column reads as context, not as a figure to act on.
+      if (data.section === 'body' && data.column.index === 2) {
+        data.cell.styles.textColor = [107, 114, 128];
+      }
+      if (data.section === 'body' && data.column.index === 8) {
         const raw = String(data.cell.raw);
         if (raw === 'Purchased') {
           data.cell.styles.textColor = [21, 128, 61];

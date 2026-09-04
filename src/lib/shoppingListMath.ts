@@ -95,3 +95,30 @@ export function accumulateNeed(
 export function neededAfterOnHand(total: number, onHand: number): number {
   return Math.max(0, total - onHand);
 }
+
+export interface CoverageView {
+  /** Already covered, however it was covered. */
+  covered: number;
+  /** How far coverage exceeds the plan. Zero unless over-bought. */
+  overBy: number;
+}
+
+/**
+ * What a shopping-list line's two coverage columns add up to, for display.
+ *
+ * A line carries `on_hand_at_generation` (chemical and seed: a shed balance) or
+ * `contracted_at_generation` (fertilizer: bought at the plant), never both, so
+ * adding them needs no knowledge of the category — the header supplies the word.
+ *
+ * `overBy` exists because the net clamps at zero. Book 40 t against a 33 t plan
+ * and "To buy 0" alone would hide a real over-commitment; this is what lets the
+ * row say "7 ton over" instead of nothing.
+ */
+export function coverageView(
+  planQuantity: number,
+  onHandAtGeneration: number,
+  contractedAtGeneration: number
+): CoverageView {
+  const covered = onHandAtGeneration + contractedAtGeneration;
+  return { covered, overBy: Math.max(0, covered - planQuantity) };
+}

@@ -1,10 +1,13 @@
 # Farm Manager Remediation — Status
 
-**Last updated:** 31 Aug 2026 — Rounds 1–6 (steps 1–3) complete, fertilizer F-1 … F-6
-complete, random-reload diagnosis written and **not yet acted on**.
-**Repo:** `jwolfish/Farm-Manager` — everything below is merged on `main` **and pushed to
-origin** (`83bf040`). Working tree clean; **no branch is waiting to be merged.** The four
-`f-4a` / `f-4b` / `f-5` / `f-6` branches still exist locally but are 0 commits ahead.
+**Last updated:** 4 Sep 2026 — Rounds 1–6 (steps 1–3) complete, fertilizer F-1 … F-6
+complete, **shopping-list coverage built** (4 Sep), random-reload diagnosis written and
+**not yet acted on**.
+**Repo:** `jwolfish/Farm-Manager` — everything through F-6 is merged on `main` and pushed
+to origin (`83bf040`). **Shopping-list coverage sits on `field-fertilizer-rates-design`
+and is not yet merged**; its migration `20260904183110` **is** applied to the live
+database. The four `f-4a` / `f-4b` / `f-5` / `f-6` branches still exist locally but are
+0 commits ahead.
 **Edge function:** `process-cascade-task` **version 14** — deployed 31 Aug 18:44 UTC,
 carries WI-15, SEC-3, the F-1 density bridge and the override-total fix. **Verified
 byte-for-byte against the repository copy** by `supabase functions download` plus a
@@ -28,13 +31,13 @@ Code fixed in both copies, 13 tests added, nine production rows repaired, edge f
 deployed as **v14** and verified byte-for-byte. The one thing left is a 5-minute check in
 the running app — *How to prove the fix*, at the end of that section.
 
-| Measured 31 Aug 2026 | |
+| Measured 4 Sep 2026 | |
 |---|---|
-| Tests | **295 passing**, 7 files (282 before the override fix added 13) |
+| Tests | **308 passing**, 7 files (295 before shopping-list coverage added 13) |
 | TypeScript | **75 errors** (103 at review, 98 before WI-19) |
 | ESLint | **109 errors, 28 warnings** (from 136/28) |
-| Build | succeeds — **1,760.80 kB** (470.25 kB gz), plus lazy `FertilizerContractsTab` 25.96 kB and `BookingModal` 20.02 kB |
-| Migrations | **58 files**, matching the database one-for-one (diffed, not counted) |
+| Build | succeeds — **1,767.66 kB** (472.37 kB gz), plus lazy `FertilizerContractsTab` 25.96 kB and `BookingModal` 20.07 kB |
+| Migrations | **59 files**, matching the database one-for-one (diffed, not counted) |
 | Edge function | **version 13**, deployed source confirmed identical to the repo |
 | Security advisors | 12 WARN — 11 are the by-design `authenticated_security_definer_function_executable` lint that fires on every RPC, 1 is `auth_leaked_password_protection` (WI-6). No new class of finding |
 | Cascade tasks | 53 total, **0 failed** |
@@ -1432,6 +1435,95 @@ checks if anything here misbehaves.
 | Load lines with no `contract_id` | **1** — the unattributed 24 t Urea delivery from F-4a, still not repaired. It is a three-tap fix in the app: edit the ticket, and the dropdown now defaults to the sole booking |
 | `fertilizer_products` with no density | 28 — all dry, expected |
 | Farms / accepted team members / viewers | 2 / 1 / **0** |
+
+### Shopping-list coverage — 4 Sep 2026 — branch `field-fertilizer-rates-design`
+
+**The shopping list was asking a supplier to quote fertilizer that was already bought.**
+Reported by the owner as "I don't think it looks at current inventory or current
+contracts". Half right, and the half that was wrong is the instructive half. Full detail
+in `Shopping-List-Coverage-Design.md`.
+
+| Category | Coverage subtracted before this? |
+|---|---|
+| Chemical | **Yes**, `master_products.on_hand_quantity`, and it worked |
+| Seed | **Yes**, the same, in whole bags |
+| Fertilizer | **No** — contracts were ignored entirely |
+
+**Chemicals were already netted; the deduction was simply invisible.** The gross plan
+need was computed, subtracted from, and thrown away — never stored, never shown. A
+column headed *Needed* reading 40 gal, with the 70-gal plan and the 30 gal in the shed
+nowhere on screen, is indistinguishable from a plan that wanted 40. That is why a
+working feature read as a missing one.
+
+**Fertilizer was genuinely missing, and it was live.** The Sep 4 list for the 2027
+season asked for **63.20 t of Urea against 30 t already booked**. That list would have
+gone to a supplier for a second quote on tonnage already contracted.
+
+**What "already bought" means, and why it is not "remaining to call".** Tonnage
+delivered against a booking still does not need shopping for. The figure is
+`max(contracted, delivered)`, exported as `coveredByContracts` beside `rollUpProduct`,
+which is the single owner of contract rollups. The four cases are the argument for
+`max`: booked-not-called, booked-part-called, over-drawn, and delivered-unattributed.
+A sum double-counts the first two; `contracted` alone under-counts the last two.
+
+**The gross is stored, not derived.** `neededAfterOnHand` clamps at zero, so
+`plan − covered` cannot be recovered from an over-booked line — 40 t booked against a
+33 t plan reads identically to 33 against 33. Migration `20260904183110` adds
+`plan_quantity` and `contracted_at_generation`. **Two columns, not one:** a single
+`covered_quantity` meaning a shed balance on one row and a plant commitment on the next
+is the shape SEC-4's denormalized `farm_id` and F-3's `fertilizer_contracts.unit_type`
+were both removed for. `on_hand_at_generation` is untouched.
+
+**Rehearsed before applying — 9 assertions, 0 failures**, rollback confirmed, then
+applied. The rehearsal caught a wrong *assertion*, not a wrong migration: it expected
+three backfilled rows and got six, because three lines carried on-hand on *each* of the
+two August chemical lists. It now measures the expected count rather than hard-coding
+one read off a single list.
+
+**A new module rather than a new home for old code.** `fertilizerCoverage.ts` reads
+contracts and load lines and groups them by product id. It could not live in
+`fertilizerContracts.ts`, which already imports `computeFertilizerNeedByProduct` from
+`shoppingListGeneration.ts` — the shopping list is what needs coverage, so that would
+be a cycle. Every read throws rather than returning empty: a swallowed contract read
+would silently restore the old behaviour and shop for the Urea twice.
+
+**Rendering found a defect for the fourth round running.** With nine columns at 375 px
+the table scrolls, and the column that fell off the right edge was **To Buy** — the one
+the change exists to surface. Fixed by hiding the coverage column below `sm:` and
+folding its value under the product name there, so a phone shows Product / Plan Need /
+To Buy with *"Booked 30 ton"* beneath the name. Padding tweaks were tried first and
+abandoned as fiddling.
+
+**That check needed `ShoppingListLineRow` split out of the tab**, which imports the
+Supabase client at module load and throws with no credentials — the same cut F-6 made
+between `PlanCalculator` and `PlanCalculatorModal`, and the reason every fertilizer
+section before F-4b said "not opened in a browser". 157 lines of inline JSX became a
+17-line call site.
+
+**Verified against live data**, independently of the TypeScript: the coverage figures
+were recomputed in SQL for the 2027 season and compared line for line. Urea 63.2025 →
+33.2025; the other six products unchanged, which is the evidence the change is inert
+where nothing is booked.
+
+**The F-5 "Book this" prefill is now correct for free.** It reads `needed_quantity`, so
+booking from a covered line suggests 33.20 t rather than 63.20 t. Before this it would
+have double-booked.
+
+**Floor:**
+
+| | Before | After |
+|---|---|---|
+| Tests | 295 passing, 7 files | **308 passing, 7 files** |
+| TypeScript | 75 | **75** — identical set, positions stripped |
+| ESLint | 109 errors, 28 warnings | **109 / 28** |
+| Build — main | 1,763.95 kB (471.50 gz) | **1,767.66 kB (472.37 gz)** |
+| Migrations | 58 | **59** |
+
+**Not exercised in the running app.** No credentials on this machine, so no list has
+been regenerated through the real write path. Generating a fresh 2027 fertilizer list
+and seeing Urea read Plan 63.20 / Booked 30 / To Buy 33.20 is the five-minute
+confirmation.
+
 
 ## Open items and standing notes
 

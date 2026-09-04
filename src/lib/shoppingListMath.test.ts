@@ -114,6 +114,23 @@ describe('neededAfterOnHand', () => {
   it('returns the full amount when nothing is on hand', () => {
     expect(neededAfterOnHand(10, 0)).toBe(10);
   });
+
+  /*
+   * Fertilizer coverage goes through this same clamp rather than a second
+   * Math.max written in generateFertilizerLines. The two categories differ in
+   * where coverage comes from -- a shed balance for chemicals, a contract for
+   * fertilizer -- and must not differ in arithmetic.
+   */
+  it('subtracts contracted fertilizer the same way it subtracts stock', () => {
+    // The live 2027 Urea line: 63.2025 t planned, 30 t already booked.
+    expect(neededAfterOnHand(63.2025, 30)).toBeCloseTo(33.2025, 10);
+  });
+
+  it('clamps an over-booked product to zero, which is why the gross is stored', () => {
+    // 40 t booked against a 33 t plan. The net is 0 and `plan - covered` cannot
+    // be recovered from it, so plan_quantity is a column rather than a subtraction.
+    expect(neededAfterOnHand(33, 40)).toBe(0);
+  });
 });
 
 describe('accumulateNeed — liquid fertilizer density (F-1)', () => {

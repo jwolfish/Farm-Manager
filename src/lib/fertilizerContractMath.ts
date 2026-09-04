@@ -147,6 +147,36 @@ export function rollUpProduct(
   };
 }
 
+/**
+ * How much of this product has already been bought — booked, delivered, or both.
+ *
+ * This is what the shopping list must subtract before asking a supplier to quote.
+ * It is deliberately NOT "remaining to call for": tonnage already delivered
+ * against a booking still does not need shopping for. Remaining is the Contracts
+ * tab's number and answers a different question.
+ *
+ * `max` rather than a sum, and the four cases are the argument for it:
+ *
+ *   booked 30, called 0     → 30   contracted leads
+ *   booked 30, called 10    → 30   contracted still leads
+ *   booked 24, called 30    → 30   over-drawn; delivered leads
+ *   booked 0,  called 24    → 24   unattributed delivery, still bought
+ *
+ * A sum would double-count the first two and `contracted` alone would under-count
+ * the last two. Where an unattributed delivery sits beside a live booking — the
+ * F-4a data-entry gap — `max` credits the booking once rather than crediting both,
+ * which shops for slightly more rather than slightly less. That is the safe
+ * direction for a number that turns into a purchase order.
+ *
+ * Both inputs come out of `rollUpProduct` already converted into the product's
+ * own unit, with unconvertible load lines excluded and named in `issues`. Those
+ * issues belong on the shopping line too: an excluded load line means coverage is
+ * an undercount and therefore the buy quantity is an overcount.
+ */
+export function coveredByContracts(rollup: ProductRollup): number {
+  return Math.max(rollup.contracted, rollup.delivered);
+}
+
 /** Quantities to 4dp, so a split does not read back as 3.6500000000000004. */
 function roundQty(value: number): number {
   return Math.round(value * 10000) / 10000;

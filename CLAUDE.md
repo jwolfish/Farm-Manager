@@ -51,6 +51,14 @@ Rules this feature keeps re-learning the hard way:
   place rates × acreage become a tonnage — the shopping list, the Contracts tab and the
   F-6 plan calculator all go through it. They may differ in *scope*; they must never differ
   in *arithmetic*. It reports each distinct failure once, not once per field.
+- **A shopping-list line stores a gross, a coverage and a net, and the gross is a column.**
+  `plan_quantity` − coverage = `needed_quantity`, clamped at zero by `neededAfterOnHand`.
+  Because of that clamp the gross cannot be recovered by subtraction from an over-covered
+  line, so it is stored rather than derived. Coverage is `on_hand_at_generation` for
+  chemical and seed (a shed balance) or `contracted_at_generation` for fertilizer
+  (`coveredByContracts` = `max(contracted, delivered)`, *not* "remaining to call"). A line
+  never carries both, and they are deliberately separate columns — one column meaning two
+  things is what SEC-4 and F-3 were about.
 
 @docs/Fertilizer-Contract-Tracking-Design.md
 
@@ -64,16 +72,16 @@ The status doc is the source of truth for what is done. Update it when a round l
   before the unused-symbol sweep brought it to 76. See the WI-19 section of the status
   doc for the full accounting; every movement is itemised there.
 - `npx eslint .` reports **109 errors, 28 warnings** (was 136/28 at review).
-- `npx vite build` succeeds and emits a **1,760.80 kB** main chunk (470.24 kB gz), plus two
-  lazy fertilizer chunks: **25.96 kB** `FertilizerContractsTab` (7.10 gz) and **19.97 kB**
-  `BookingModal` (6.01 gz), the latter shared by the Contracts tab, the Shopping Lists tab
+- `npx vite build` succeeds and emits a **1,767.66 kB** main chunk (472.37 kB gz), plus two
+  lazy fertilizer chunks: **25.96 kB** `FertilizerContractsTab` (7.10 gz) and **20.07 kB**
+  `BookingModal` (6.03 gz), the latter shared by the Contracts tab, the Shopping Lists tab
   and the plan calculator. It was 1,751.91 kB before fertilizer F-1, which added 2.38 kB for
   the density bridge, the Liquid checkbox and its help text; F-4a added 0.95 kB to the main
   chunk and 6.50 kB to the lazy one; F-5 added the Shopping Lists tab's share of the handoff
   to the main chunk and split `BookingModal` out; F-4b added the season summary to the lazy
   Contracts chunk only; F-6 added the plan calculator to the lazy chunks and **0.02 kB** to
-  the main one.
-- `npm test` reports **295 passing** in 7 files (282 before the override fix added 13).
+  the main one; shopping-list coverage added **3.71 kB** to the main chunk, which is eager.
+- `npm test` reports **308 passing** in 7 files (295 before shopping-list coverage added 13).
 - There is **no CI**. Adding it is WI-21 in the PRD.
 - Tests arrived with Round 3: `npm test` (Vitest). Test files are excluded from
   `tsconfig.app.json` so they do not move the 103-error baseline.

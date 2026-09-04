@@ -1,12 +1,27 @@
 import { supabase } from './supabase';
 import { accumulateNeed, neededAfterOnHand, NeedContribution } from './shoppingListMath';
+import { loadFertilizerCoverage } from './fertilizerCoverage';
 
 export interface ShoppingLineInput {
   masterProductId: string | null;
   productName: string;
   productCategory: 'chemical' | 'fertilizer' | 'seed';
+  /**
+   * Gross plan need, before any deduction. Stored rather than derived: the net
+   * clamps at zero, so `plan - covered` cannot be recovered from a line whose
+   * coverage exceeded its need.
+   */
+  planQuantity: number;
+  /** Plan need minus whatever is already covered, never below zero. */
   neededQuantity: number;
+  /** Stock in the shed — chemical and seed only. */
   onHandAtGeneration: number;
+  /**
+   * Fertilizer already bought — booked, delivered, or both. Zero for chemical
+   * and seed, which are covered by `onHandAtGeneration` instead. A line never
+   * carries both, and the two are kept apart so neither name has to lie.
+   */
+  contractedAtGeneration: number;
   unitType: string;
   /**
    * Non-empty when some contribution to this line could not be converted into
@@ -169,8 +184,10 @@ export async function generateChemicalLines(
       masterProductId: meta.masterProductId,
       productName: meta.name,
       productCategory: 'chemical',
+      planQuantity: accumulated.total,
       neededQuantity: neededAfterOnHand(accumulated.total, onHand),
       onHandAtGeneration: onHand,
+      contractedAtGeneration: 0,
       unitType: accumulated.unit,
       issues: accumulated.issues,
     });
@@ -328,23 +345,48 @@ export async function computeFertilizerNeedByProduct(
   return needs;
 }
 
+/**
+ * Fertilizer still has no on-hand tracking, by design — it goes on the ground
+ * rather than into the shed, so there is no shed balance to subtract.
+ *
+ * What it does have, since F-2 … F-6, is a commitment at the plant. A contract is
+ * fertilizer already bought, and until this change nothing told the shopping list:
+ * the 2027 list asked a supplier to quote 63.20 t of Urea against 30 t already
+ * booked. So the deduction is not on-hand; it is coverage, and it comes from the
+ * contracts.
+ *
+ * The clamp is `neededAfterOnHand` rather than a second `Math.max(0, …)` written
+ * here. The two categories may differ in where coverage comes from; they must not
+ * differ in arithmetic.
+ */
 export async function generateFertilizerLines(
   seasonId: string,
   _farmId: string
 ): Promise<ShoppingLineInput[]> {
-  const needs = await computeFertilizerNeedByProduct(seasonId);
+  const [needs, coverage] = await Promise.all([
+    computeFertilizerNeedByProduct(seasonId),
+    loadFertilizerCoverage(seasonId),
+  ]);
 
-  // Fertilizer has no on-hand tracking, by design — it goes on the ground
-  // rather than into the shed, so there is no balance to subtract.
-  return needs.map((need) => ({
-    masterProductId: null,
-    productName: need.productName,
-    productCategory: 'fertilizer',
-    neededQuantity: need.total,
-    onHandAtGeneration: 0,
-    unitType: need.unit,
-    issues: need.issues,
-  }));
+  return needs.map((need) => {
+    const cover = coverage.get(need.productId);
+    const covered = cover?.covered ?? 0;
+
+    return {
+      masterProductId: null,
+      productName: need.productName,
+      productCategory: 'fertilizer' as const,
+      planQuantity: need.total,
+      neededQuantity: neededAfterOnHand(need.total, covered),
+      onHandAtGeneration: 0,
+      contractedAtGeneration: covered,
+      unitType: need.unit,
+      // A load line excluded for an unconvertible unit makes coverage an
+      // undercount and therefore this line's buy quantity an overcount. Safe
+      // direction, but it still has to be said.
+      issues: [...need.issues, ...(cover?.issues ?? [])],
+    };
+  });
 }
 
 export async function generateSeedLines(
@@ -429,8 +471,10 @@ export async function generateSeedLines(
       masterProductId: acc.masterProductId,
       productName: acc.name,
       productCategory: 'seed',
+      planQuantity: acc.totalBags,
       neededQuantity: neededAfterOnHand(acc.totalBags, onHand),
       onHandAtGeneration: onHand,
+      contractedAtGeneration: 0,
       unitType: acc.unitType,
       issues: [],
     });
@@ -494,8 +538,10 @@ export async function createShoppingList(
     master_product_id: l.masterProductId,
     product_name: l.productName,
     product_category: l.productCategory,
+    plan_quantity: l.planQuantity,
     needed_quantity: l.neededQuantity,
     on_hand_at_generation: l.onHandAtGeneration,
+    contracted_at_generation: l.contractedAtGeneration,
     adjusted_quantity: l.neededQuantity,
     unit_type: l.unitType,
     status: 'needed',

@@ -5,6 +5,7 @@ import {
   planLineDraw,
   sumContractCommitment,
   matchFertilizerProductByName,
+  coveredByContracts,
   type ContractRow,
   type LoadLineRow,
 } from './fertilizerContractMath';
@@ -324,5 +325,99 @@ describe('matchFertilizerProductByName — the shopping-list handoff', () => {
 
   it('handles an empty product list', () => {
     expect(matchFertilizerProductByName([], 'Urea')).toBeNull();
+  });
+});
+
+describe('coveredByContracts — what the shopping list must not quote for again', () => {
+  const booked = (qty: number): ContractRow => ({
+    id: 'c1',
+    kind: 'contract',
+    label: 'Fall',
+    contractedQuantity: qty,
+    pricePerUnit: 550,
+  });
+
+  it('counts a booking nothing has been called against', () => {
+    // The live 2027 case: 30 t of Urea booked, no truck yet. The plan wants
+    // 63.2025 t, so the supplier should be quoting 33.2025 -- not 63.2025.
+    const r = rollUpProduct([booked(30)], [], 'ton');
+    expect(coveredByContracts(r)).toBe(30);
+    expect(r.contracted - coveredByContracts(r)).toBe(0);
+  });
+
+  it('does not double-count a partly delivered booking', () => {
+    const lines: LoadLineRow[] = [{ contractId: 'c1', quantity: 10, unitType: 'ton' }];
+    const r = rollUpProduct([booked(30)], lines, 'ton');
+    // 30 + 10 would be the naive sum, and would under-shop by ten tons.
+    expect(coveredByContracts(r)).toBe(30);
+  });
+
+  it('does not double-count a fully drawn booking', () => {
+    const lines: LoadLineRow[] = [{ contractId: 'c1', quantity: 30, unitType: 'ton' }];
+    expect(coveredByContracts(rollUpProduct([booked(30)], lines, 'ton'))).toBe(30);
+  });
+
+  it('follows the delivery when a booking was over-drawn', () => {
+    // 30 t taken against a 24 t booking. `contracted` alone would say 24 and
+    // shop for six tons already sitting on the farm.
+    const lines: LoadLineRow[] = [{ contractId: 'c1', quantity: 30, unitType: 'ton' }];
+    expect(coveredByContracts(rollUpProduct([booked(24)], lines, 'ton'))).toBe(30);
+  });
+
+  it('counts a delivery attributed to no booking at all', () => {
+    // The F-4a data-entry gap, still live in production: 24 t arrived against
+    // nothing. It is bought either way.
+    const lines: LoadLineRow[] = [{ contractId: null, quantity: 24, unitType: 'ton' }];
+    const r = rollUpProduct([], lines, 'ton');
+    expect(r.unattributedDelivered).toBe(24);
+    expect(coveredByContracts(r)).toBe(24);
+  });
+
+  it('credits a booking once when an unattributed load sits beside it', () => {
+    // 30 booked, 10 delivered against it, 10 more not attributed to anything.
+    // Almost certainly the same booking, recorded twice as loosely -- so 40
+    // would over-credit. 30 shops for slightly more, which is the safe way to
+    // be wrong about a purchase order.
+    const lines: LoadLineRow[] = [
+      { contractId: 'c1', quantity: 10, unitType: 'ton' },
+      { contractId: null, quantity: 10, unitType: 'ton' },
+    ];
+    expect(coveredByContracts(rollUpProduct([booked(30)], lines, 'ton'))).toBe(30);
+  });
+
+  it('is zero for a product with no bookings and no deliveries', () => {
+    expect(coveredByContracts(rollUpProduct([], [], 'ton'))).toBe(0);
+  });
+
+  it('sums several bookings for the same product', () => {
+    expect(coveredByContracts(rollUpProduct([FALL, JAN, SPOT], [], 'ton'))).toBe(88);
+  });
+
+  it('counts an unpriced booking — it is bought, whatever it cost', () => {
+    const unpriced: ContractRow = {
+      id: 'c9', kind: 'contract', label: 'Priced later', contractedQuantity: 12, pricePerUnit: null,
+    };
+    const r = rollUpProduct([unpriced], [], 'ton');
+    expect(r.blendedPrice).toBeNull();
+    expect(coveredByContracts(r)).toBe(12);
+  });
+
+  it('converts a delivery that arrived in another unit', () => {
+    // 4000 lb picked up in the spreader against a per-ton booking.
+    const lines: LoadLineRow[] = [{ contractId: 'c1', quantity: 4000, unitType: 'lb' }];
+    expect(coveredByContracts(rollUpProduct([booked(30)], lines, 'ton'))).toBe(30);
+    // and the same delivery with nothing booked is two tons of coverage
+    expect(coveredByContracts(rollUpProduct([], lines, 'ton'))).toBe(2);
+  });
+
+  it('excludes an unconvertible delivery and says why, rather than counting it', () => {
+    // A liquid with no density: gallons will not become tons. Excluding it
+    // makes coverage an undercount, so the buy quantity is an overcount --
+    // the safe direction, and `issues` is what carries it to the line.
+    const lines: LoadLineRow[] = [{ contractId: null, quantity: 500, unitType: 'gallon' }];
+    const r = rollUpProduct([], lines, 'ton', null);
+    expect(coveredByContracts(r)).toBe(0);
+    expect(r.issues).toHaveLength(1);
+    expect(r.issues[0]).toContain('500 gallon');
   });
 });

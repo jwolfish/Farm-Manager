@@ -1,7 +1,8 @@
 import { Suspense, lazy, useCallback, useEffect, useState } from 'react';
-import { ShoppingCart, RefreshCw, Check, CreditCard as Edit2, DollarSign, Package, AlertTriangle, FileDown, Truck } from 'lucide-react';
+import { ShoppingCart, RefreshCw, Package, AlertTriangle, FileDown, Truck } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { createShoppingList, FlaggedShoppingLine } from '../../lib/shoppingListGeneration';
+import { ShoppingListLineRow } from './ShoppingListLineRow';
 import { useAuth } from '../../contexts/AuthContext';
 import { useFarm } from '../../contexts/FarmContext';
 import { Pagination } from '../Pagination';
@@ -36,8 +37,12 @@ export interface ShoppingLine {
   master_product_id: string | null;
   product_name: string;
   product_category: Category;
+  /** Gross plan need, before coverage. Backfilled for lists generated earlier. */
+  plan_quantity: number;
   needed_quantity: number;
   on_hand_at_generation: number;
+  /** Fertilizer already booked or delivered. Zero on chemical and seed lines. */
+  contracted_at_generation: number;
   adjusted_quantity: number | null;
   supplier: string | null;
   quoted_price_per_unit: number | null;
@@ -61,6 +66,19 @@ const CATEGORY_LABELS: Record<Category, string> = {
   chemical: 'Chemical',
   fertilizer: 'Fertilizer',
   seed: 'Seed',
+};
+
+/**
+ * What the "already covered" column is called, per list.
+ *
+ * The word differs because the thing differs: a chemical is a balance in the
+ * shed, a fertilizer booking is a commitment at the plant. Naming it per list
+ * means no row has to explain itself.
+ */
+const COVERAGE_LABELS: Record<Category, string> = {
+  chemical: 'On Hand',
+  fertilizer: 'Booked',
+  seed: 'On Hand',
 };
 
 const STATUS_STYLES: Record<string, string> = {
@@ -492,7 +510,9 @@ export function ShoppingListsTab({ seasonId, readOnly = false, onPricesChanged }
               <thead className="bg-gray-50 border-b border-gray-200">
                 <tr>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Product</th>
-                  <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Needed</th>
+                  <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Plan Need</th>
+                  <th className="hidden sm:table-cell px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">{COVERAGE_LABELS[category]}</th>
+                  <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">To Buy</th>
                   <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Order Qty</th>
                   <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase">Supplier</th>
                   <th className="px-4 py-3 text-right text-xs font-medium text-gray-500 uppercase">Quoted $/Unit</th>
@@ -503,145 +523,23 @@ export function ShoppingListsTab({ seasonId, readOnly = false, onPricesChanged }
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
-                {paginatedLines.map((line) => {
-                  const isEditing = editingLineId === line.id;
-                  return (
-                    <tr key={line.id} className="hover:bg-gray-50 transition-colors">
-                      <td className="px-4 py-3">
-                        <div className="font-medium text-gray-900">{line.product_name}</div>
-                        {line.on_hand_at_generation > 0 && (
-                          <div className="text-xs text-gray-400 mt-0.5">
-                            On hand at gen: {line.on_hand_at_generation.toLocaleString()} {line.unit_type}
-                          </div>
-                        )}
-                      </td>
-                      <td className="px-4 py-3 text-right text-gray-600">
-                        {line.needed_quantity.toLocaleString('en-US', { maximumFractionDigits: 2 })} {line.unit_type}
-                      </td>
-                      <td className="px-4 py-3 text-right">
-                        {isEditing ? (
-                          <input
-                            type="number"
-                            step="0.01"
-                            value={editValues.adjusted_quantity}
-                            onChange={(e) => setEditValues({ ...editValues, adjusted_quantity: e.target.value })}
-                            className="w-24 px-2 py-1 border border-gray-300 rounded text-right text-sm focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                          />
-                        ) : (
-                          <span className="font-medium text-gray-900">
-                            {(line.adjusted_quantity ?? line.needed_quantity).toLocaleString('en-US', { maximumFractionDigits: 2 })}
-                          </span>
-                        )}
-                      </td>
-                      <td className="px-4 py-3">
-                        {isEditing ? (
-                          <input
-                            type="text"
-                            value={editValues.supplier}
-                            onChange={(e) => setEditValues({ ...editValues, supplier: e.target.value })}
-                            placeholder="Supplier name"
-                            className="w-32 px-2 py-1 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                          />
-                        ) : (
-                          <span className="text-gray-700">{line.supplier || <span className="text-gray-300">--</span>}</span>
-                        )}
-                      </td>
-                      <td className="px-4 py-3 text-right">
-                        {isEditing ? (
-                          <input
-                            type="number"
-                            step="0.01"
-                            value={editValues.quoted_price_per_unit}
-                            onChange={(e) => setEditValues({ ...editValues, quoted_price_per_unit: e.target.value })}
-                            placeholder="0.00"
-                            className="w-24 px-2 py-1 border border-gray-300 rounded text-right text-sm focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                          />
-                        ) : line.purchased_price_per_unit != null ? (
-                          <span className="font-medium text-green-700">
-                            ${line.purchased_price_per_unit.toFixed(2)}
-                          </span>
-                        ) : line.quoted_price_per_unit != null ? (
-                          <span className="text-gray-900">${line.quoted_price_per_unit.toFixed(2)}</span>
-                        ) : (
-                          <span className="text-gray-300">--</span>
-                        )}
-                      </td>
-                      <td className="px-4 py-3 text-center">
-                        <span className={`inline-block px-2.5 py-1 rounded-full text-xs font-medium capitalize ${STATUS_STYLES[line.status]}`}>
-                          {line.status}
-                        </span>
-                        {line.purchased_at && (
-                          <div className="text-[10px] text-gray-400 mt-0.5">
-                            {new Date(line.purchased_at).toLocaleDateString()}
-                          </div>
-                        )}
-                      </td>
-                      {!readOnly && (
-                        <td className="px-4 py-3 text-right">
-                          <div className="flex items-center justify-end gap-2">
-                            {isEditing ? (
-                              <>
-                                <button
-                                  onClick={() => saveEdit(line.id)}
-                                  className="text-green-600 hover:text-green-700 text-xs font-medium"
-                                >
-                                  Save
-                                </button>
-                                <button
-                                  onClick={() => setEditingLineId(null)}
-                                  className="text-gray-500 hover:text-gray-700 text-xs font-medium"
-                                >
-                                  Cancel
-                                </button>
-                              </>
-                            ) : (
-                              <>
-                                <button
-                                  onClick={() => startEdit(line)}
-                                  className="inline-flex items-center gap-1 text-blue-600 hover:text-blue-700 text-xs font-medium"
-                                  title="Edit quantity, supplier and quoted price"
-                                >
-                                  <Edit2 className="w-3.5 h-3.5" /> Edit quote
-                                </button>
-                                {/* F-5. Fertilizer is priced by its bookings, so
-                                    these lines hand off rather than being
-                                    "purchased" here. Otherwise two features
-                                    write fertilizer_products.price_per_unit and
-                                    each fires its own cascade, last write wins.
-                                    Chemical and seed are untouched. */}
-                                {line.product_category === 'fertilizer' ? (
-                                  <button
-                                    onClick={() => startBooking(line)}
-                                    className="inline-flex items-center gap-1 text-green-700 hover:text-green-800 text-xs font-medium"
-                                    title="Create a booking for this product"
-                                  >
-                                    <Truck className="w-3.5 h-3.5" /> Book this
-                                  </button>
-                                ) : line.status !== 'purchased' ? (
-                                  <button
-                                    onClick={() => setPurchaseTarget(line)}
-                                    className="text-green-600 hover:text-green-700"
-                                    title="Mark purchased"
-                                  >
-                                    <DollarSign className="w-3.5 h-3.5" />
-                                  </button>
-                                ) : (
-                                  <button
-                                    onClick={() => setPurchaseTarget(line)}
-                                    className="text-gray-500 hover:text-gray-700"
-                                    title="Edit purchase"
-                                  >
-                                    <Check className="w-3.5 h-3.5" />
-                                  </button>
-                                )}
-                              </>
-                            )}
-                          </div>
-                        </td>
-                      )}
-                    </tr>
-                  );
-                })}
+                {paginatedLines.map((line) => (
+                  <ShoppingListLineRow
+                    key={line.id}
+                    line={line}
+                    coverageLabel={COVERAGE_LABELS[category]}
+                    isEditing={editingLineId === line.id}
+                    editValues={editValues}
+                    readOnly={readOnly}
+                    onEditValuesChange={setEditValues}
+                    onSave={saveEdit}
+                    onCancel={() => setEditingLineId(null)}
+                    onStartEdit={startEdit}
+                    onBook={startBooking}
+                    onPurchase={setPurchaseTarget}
+                    statusStyles={STATUS_STYLES}
+                  />
+                ))}
               </tbody>
             </table>
           </div>
