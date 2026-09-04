@@ -1519,10 +1519,20 @@ have double-booked.
 | Build — main | 1,763.95 kB (471.50 gz) | **1,767.66 kB (472.37 gz)** |
 | Migrations | 58 | **59** |
 
-**Not exercised in the running app.** No credentials on this machine, so no list has
-been regenerated through the real write path. Generating a fresh 2027 fertilizer list
-and seeing Urea read Plan 63.20 / Booked 30 / To Buy 33.20 is the five-minute
-confirmation.
+**CONFIRMED end to end by the owner, 4 Sep 18:52 UTC.** A fertilizer list generated in
+the running app reads **Urea 33.2 ton**. The stored row proves more than the screen:
+`plan_quantity` 63.2025, `contracted_at_generation` 30, `needed_quantity` 33.2025,
+`adjusted_quantity` 33.2025, and `plan − covered − needed = 0` on every line. That
+establishes what neither the unit tests nor the SQL check could — that coverage resolves
+to the right product by id against real data, that all three columns are written rather
+than only the one displayed, and that Order Qty defaults to the net, which is what stops
+F-5's *Book this* double-booking. Six of the seven products are unchanged, which is the
+control.
+
+**Still unexercised:** no *chemical* list has been generated since the change (its
+arithmetic is untouched — only `plan_quantity` was added — but the insert has not run),
+and no product has ever been booked past its plan, so the red over-coverage line has
+been seen only against fixtures.
 
 
 ## Open items and standing notes

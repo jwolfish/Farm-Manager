@@ -444,13 +444,36 @@ extracted row and the two PDF columns all land there. The lazy fertilizer chunks
 byte-identical, which is the expected result and would have meant something was wrong
 otherwise.
 
+### Confirmed end to end by the owner — 4 Sep 2026, 18:52 UTC
+
+**A fertilizer list generated in the running app reads Urea 33.2 ton.** This section
+previously said the write path had never been exercised; it now has been, and the stored
+row proves more than the screen does:
+
+| Product | `plan_quantity` | `contracted_at_generation` | `needed_quantity` | `adjusted_quantity` |
+|---|---|---|---|---|
+| **Urea** | 63.2025 | **30** | **33.2025** | 33.2025 |
+| 6-24-6, AMS, Potash, Provant Stability, ProveN 40, Rhizosorb P | = needed | 0 | unchanged | unchanged |
+
+`plan − covered − needed = 0.000000` on every row. Three things this establishes that
+the unit tests and the SQL check could not:
+
+1. **`loadFertilizerCoverage` resolves the product by id against real data** — 30 t
+   landed on Urea and nowhere else.
+2. **All three columns are written**, not just the one on screen. A version that
+   displayed correctly while storing only the net would have looked identical.
+3. **Order Qty defaults to the net**, which is what makes the F-5 *Book this* prefill
+   suggest 33.20 t rather than 63.20 t. That was the double-booking this change existed
+   to prevent, and it now demonstrably does not happen.
+
+Six of seven products unchanged is the evidence the change is inert where nothing is
+booked — the same control the SQL check used, now through the real code path.
+
 ### Still not done
 
-- **Not exercised end to end in the app.** No credentials on this machine, so no list
-  has been regenerated through the real code path. The arithmetic is proven by unit
-  tests and by the independent SQL check; the write path is the one thing a real
-  generation would add. Generating a fresh 2027 fertilizer list is the five-minute
-  confirmation.
-- **The F-5 "Book this" prefill now suggests the uncovered tonnage**, because it reads
-  `needed_quantity`. That is the behaviour this change exists to produce and it arrives
-  without a code change — but it has not been watched happen.
+- **The chemical side has not been regenerated** since the change. Its arithmetic is
+  untouched — only `plan_quantity` was added to it — and the row renders correctly in
+  the harness, but no chemical list has been generated through the new insert.
+- **The over-coverage case has never occurred in production.** The red *"n ton over"*
+  line is covered by unit tests and was rendered against fixtures at both widths, but no
+  real product has been booked past its plan.
