@@ -87,7 +87,7 @@ export function ShoppingListsTab({ seasonId, readOnly = false, onPricesChanged }
   const [seasonName, setSeasonName] = useState('');
   /** The season's fertilizer products, loaded only for the fertilizer category. */
   const [fertProducts, setFertProducts] = useState<FertilizerProduct[]>([]);
-  const [bookTarget, setBookTarget] = useState<{ product: FertilizerProduct; suggested: number | null } | null>(null);
+  const [bookTarget, setBookTarget] = useState<{ line: ShoppingLine; product: FertilizerProduct; suggested: number | null } | null>(null);
   const [bookError, setBookError] = useState<string | null>(null);
 
   const farmId = activeFarmId;
@@ -229,7 +229,7 @@ export function ShoppingListsTab({ seasonId, readOnly = false, onPricesChanged }
       product.density_lb_per_gal
     );
 
-    setBookTarget({ product, suggested: converted.ok ? converted.value : null });
+    setBookTarget({ line, product, suggested: converted.ok ? converted.value : null });
   };
 
   const startEdit = (line: ShoppingLine) => {
@@ -262,6 +262,49 @@ export function ShoppingListsTab({ seasonId, readOnly = false, onPricesChanged }
       setEditingLineId(null);
       await loadLines();
     }
+  };
+
+  /**
+   * A booking IS the fertilizer purchase, so the line it came from is marked
+   * purchased here rather than left at 'quoted' forever. This writes only the
+   * shopping-list line: fertilizer prices belong to the F-3 contracts trigger,
+   * and nothing here touches fertilizer_products.price_per_unit (F-5).
+   *
+   * The booking is denominated in the PRODUCT's unit, so the quantity is
+   * converted back into the line's unit before it is stamped. If it will not
+   * convert the status still lands — the commitment is real either way — and
+   * the quantity is left alone rather than recorded in the wrong unit.
+   */
+  const markLineBooked = async (
+    line: ShoppingLine,
+    product: FertilizerProduct,
+    booked: { quantity: number; pricePerUnit: number | null; supplier: string | null }
+  ) => {
+    const back = convertProductUnits(
+      product.unit_type,
+      line.unit_type,
+      booked.quantity,
+      product.density_lb_per_gal
+    );
+
+    const { error: err } = await supabase
+      .from('shopping_list_lines')
+      .update({
+        status: 'purchased',
+        purchased_at: new Date().toISOString(),
+        ...(back.ok ? { purchased_quantity: back.value } : {}),
+        ...(booked.pricePerUnit != null ? { purchased_price_per_unit: booked.pricePerUnit } : {}),
+        ...(booked.supplier ? { supplier: booked.supplier } : {}),
+      })
+      .eq('id', line.id);
+
+    if (err) {
+      setBookError(
+        `The booking was saved, but this line could not be marked purchased: ${err.message}`
+      );
+      return;
+    }
+    await loadLines();
   };
 
   const handlePurchaseComplete = async () => {
@@ -555,10 +598,10 @@ export function ShoppingListsTab({ seasonId, readOnly = false, onPricesChanged }
                               <>
                                 <button
                                   onClick={() => startEdit(line)}
-                                  className="text-blue-600 hover:text-blue-700"
-                                  title="Edit quote"
+                                  className="inline-flex items-center gap-1 text-blue-600 hover:text-blue-700 text-xs font-medium"
+                                  title="Edit quantity, supplier and quoted price"
                                 >
-                                  <Edit2 className="w-3.5 h-3.5" />
+                                  <Edit2 className="w-3.5 h-3.5" /> Edit quote
                                 </button>
                                 {/* F-5. Fertilizer is priced by its bookings, so
                                     these lines hand off rather than being
@@ -624,11 +667,13 @@ export function ShoppingListsTab({ seasonId, readOnly = false, onPricesChanged }
           <BookingModal
             open
             onClose={() => setBookTarget(null)}
-            onSaved={() => {
+            onSaved={(booked) => {
+              const target = bookTarget;
               setBookTarget(null);
               // The booking re-blends the product price, so the Fertilizers
               // tab's cached rows are now stale.
               onPricesChanged?.();
+              void markLineBooked(target.line, target.product, booked);
             }}
             seasonId={seasonId}
             userId={user.id}

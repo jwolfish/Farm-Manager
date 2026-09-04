@@ -9,7 +9,13 @@ import { PlanCalculatorModal, type PlanResult } from './PlanCalculatorModal';
 interface Props {
   open: boolean;
   onClose: () => void;
-  onSaved: () => void;
+  /**
+   * The booking landed. The summary is what a caller needs to reconcile its own
+   * record against the commitment — the shopping list stamps its line from it.
+   * Quantity is in the PRODUCT's unit, the only unit a contract may be
+   * denominated in (F-3).
+   */
+  onSaved: (booked: { quantity: number; pricePerUnit: number | null; supplier: string | null }) => void;
   seasonId: string;
   userId: string;
   product: FertilizerProduct;
@@ -96,7 +102,11 @@ export function BookingModal({
       setError(result.message);
       return;
     }
-    onSaved();
+    onSaved({
+      quantity: qty,
+      pricePerUnit: parsedPrice,
+      supplier: supplier.trim() || null,
+    });
   };
 
   return (

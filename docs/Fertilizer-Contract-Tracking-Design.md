@@ -656,6 +656,31 @@ retired), and stranger and `anon` both refused.
 
 **Not opened in a browser**, same as F-4 and F-4a.
 
+### F-5 follow-up, 3 Sep 2026 — the booked line stayed `quoted`
+
+Reported by the owner on the 2027 fertilizer list: quote a price, press **Book this**,
+save the booking — and the line still reads *quoted*. The price was right, so it was only
+a status, but it was a status that would never change: removing *Mark as Purchased*
+removed the only thing that had ever written `purchased` on a fertilizer line.
+
+A booking **is** the fertilizer purchase, so the tab now stamps the line when the modal
+reports a save — status, `purchased_at`, and the quantity, price and supplier that were
+actually booked. `BookingModal.onSaved` carries that summary instead of taking no
+arguments; the Contracts tab ignores it.
+
+Two things it deliberately does not do. It writes **only** the shopping-list line —
+`fertilizer_products.price_per_unit` still belongs to the F-3 trigger, so F-5's one-writer
+rule is untouched. And the booked quantity is converted from the product's unit back into
+the line's before it is stamped; if that will not convert, the status still lands and the
+quantity is left alone rather than recorded in the wrong unit.
+
+Also cosmetic, from the same report: the pencil beside *Book this* read as a mystery icon.
+It now says **Edit quote**.
+
+**Floor:** TypeScript 75 (identical set), ESLint 109/28, tests 295 passing, build succeeds,
+main chunk 1,763.32 → **1,763.95 kB**. Not opened in a browser — this tab still imports the
+Supabase client at module load, which throws on a machine with no credentials.
+
 ## 10d. F-4b — the season summary was adding tons to gallons
 
 Found by the owner on the second real session with the tab: *"The four boxes just display a
