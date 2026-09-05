@@ -56,6 +56,7 @@ DECLARE
   v_f1 uuid; v_f2 uuid; v_s1 uuid; v_s2 uuid; v_mp2 uuid;
   v_fld1 uuid; v_fld2 uuid; v_fc1 uuid; v_fc2 uuid; v_prog uuid; v_n int;
   v_fp1 uuid; v_fp2 uuid; v_ct1 uuid; v_ct2 uuid; v_ld1 uuid; v_ld2 uuid;
+  v_fprog1 uuid; v_fprog2 uuid; v_fpb1 uuid; v_fpb2 uuid;
 BEGIN
   ------------------------------------------------------------------ fixtures
   INSERT INTO auth.users (id,instance_id,aud,role,email,encrypted_password,
@@ -97,6 +98,28 @@ BEGIN
   VALUES (v_s2,'2098-10-01',v_a,'ZZ-2',125) RETURNING id INTO v_ld2;
   INSERT INTO fertilizer_load_lines (load_id,fertilizer_product_id,contract_id,quantity,unit_type)
   VALUES (v_ld1,v_fp1,v_ct1,24,'ton'),(v_ld2,v_fp2,v_ct2,24,'ton');
+
+  -- V-1 per-field fertilizer rates: a fertilizer program and a SPARE product
+  -- under each farm, plus one rate row per farm so the boundary can be proved
+  -- on both reads and writes.
+  --
+  -- The spare product exists because field_fertilizer_rates is UNIQUE on
+  -- (field, program, product). A write probe aimed at the fixture row's own
+  -- triple would collide with it and report a permissions failure that is
+  -- really a unique violation — the same class of false negative the header
+  -- warns about for probe rows inflating read counts.
+  INSERT INTO fertilizer_programs (season_id,user_id,program_name)
+  VALUES (v_s1,v_a,'ZZ Fert Prog') RETURNING id INTO v_fprog1;
+  INSERT INTO fertilizer_programs (season_id,user_id,program_name)
+  VALUES (v_s2,v_a,'ZZ Fert Prog') RETURNING id INTO v_fprog2;
+  INSERT INTO fertilizer_products (season_id,user_id,product_name,price_per_unit,unit_type)
+  VALUES (v_s1,v_a,'ZZ Potash',450,'ton') RETURNING id INTO v_fpb1;
+  INSERT INTO fertilizer_products (season_id,user_id,product_name,price_per_unit,unit_type)
+  VALUES (v_s2,v_a,'ZZ Potash',450,'ton') RETURNING id INTO v_fpb2;
+  INSERT INTO field_fertilizer_rates (field_id,program_id,fertilizer_product_id,
+                                      application_rate,application_rate_unit,user_id)
+  VALUES (v_fld1,v_fprog1,v_fp1,191.08,'lbs',v_a),
+         (v_fld2,v_fprog2,v_fp2,191.08,'lbs',v_a);
 
   -- B and C are invited to FARM ONE ONLY.
   INSERT INTO team_members (user_id,invited_user_id,farm_id,email,role,status,accepted_at)
@@ -149,6 +172,14 @@ BEGIN
       SELECT count(*) INTO v_n FROM fertilizer_load_lines WHERE load_id=v_ld2 AND quantity<>99;
       IF v_n=e_r2 THEN v_pass:=v_pass+1; ELSE v_fail:=v_fail+1; v_out:=v_out||format('%s F2 load line read  FAIL got %s want %s%s',label,v_n,e_r2,E'\n'); END IF;
 
+      -- ---- V-1 per-field fertilizer rates, reads -----------------------
+      SELECT count(*) INTO v_n FROM field_fertilizer_rates
+       WHERE field_id=v_fld1 AND application_rate_unit<>'ZZ probe';
+      IF v_n=e_r1 THEN v_pass:=v_pass+1; ELSE v_fail:=v_fail+1; v_out:=v_out||format('%s F1 rate read       FAIL got %s want %s%s',label,v_n,e_r1,E'\n'); END IF;
+      SELECT count(*) INTO v_n FROM field_fertilizer_rates
+       WHERE field_id=v_fld2 AND application_rate_unit<>'ZZ probe';
+      IF v_n=e_r2 THEN v_pass:=v_pass+1; ELSE v_fail:=v_fail+1; v_out:=v_out||format('%s F2 rate read       FAIL got %s want %s%s',label,v_n,e_r2,E'\n'); END IF;
+
       -- ---- writes ----------------------------------------------------
       BEGIN INSERT INTO fields (season_id,user_id,name,crop_type,acreage) VALUES (v_s1,v_a,'ZZ probe','corn',1); got:=true; EXCEPTION WHEN OTHERS THEN got:=false; END;
       IF got=e_w1 THEN v_pass:=v_pass+1; ELSE v_fail:=v_fail+1; v_out:=v_out||format('%s F1 field write     FAIL got %s want %s%s',label,got,e_w1,E'\n'); END IF;
@@ -182,6 +213,26 @@ BEGIN
             VALUES (v_ld2,v_fp2,99,'ton'); got:=true; EXCEPTION WHEN OTHERS THEN got:=false; END;
       IF got=e_w2 THEN v_pass:=v_pass+1; ELSE v_fail:=v_fail+1; v_out:=v_out||format('%s F2 load line write FAIL got %s want %s%s',label,got,e_w2,E'\n'); END IF;
 
+      -- ---- V-1 per-field fertilizer rates, writes ----------------------
+      -- The probe row is deleted immediately. Leaving it would make the next
+      -- actor's identical probe a unique violation rather than a permissions
+      -- result. Anyone whose INSERT succeeded can also DELETE, since both
+      -- policies are can_edit_farm, so the cleanup cannot itself fail.
+      BEGIN
+        INSERT INTO field_fertilizer_rates (field_id,program_id,fertilizer_product_id,
+                                            application_rate,application_rate_unit,user_id)
+        VALUES (v_fld1,v_fprog1,v_fpb1,99,'ZZ probe',actor); got:=true;
+        DELETE FROM field_fertilizer_rates WHERE field_id=v_fld1 AND fertilizer_product_id=v_fpb1;
+      EXCEPTION WHEN OTHERS THEN got:=false; END;
+      IF got=e_w1 THEN v_pass:=v_pass+1; ELSE v_fail:=v_fail+1; v_out:=v_out||format('%s F1 rate write      FAIL got %s want %s%s',label,got,e_w1,E'\n'); END IF;
+      BEGIN
+        INSERT INTO field_fertilizer_rates (field_id,program_id,fertilizer_product_id,
+                                            application_rate,application_rate_unit,user_id)
+        VALUES (v_fld2,v_fprog2,v_fpb2,99,'ZZ probe',actor); got:=true;
+        DELETE FROM field_fertilizer_rates WHERE field_id=v_fld2 AND fertilizer_product_id=v_fpb2;
+      EXCEPTION WHEN OTHERS THEN got:=false; END;
+      IF got=e_w2 THEN v_pass:=v_pass+1; ELSE v_fail:=v_fail+1; v_out:=v_out||format('%s F2 rate write      FAIL got %s want %s%s',label,got,e_w2,E'\n'); END IF;
+
       RESET ROLE;
     END LOOP;
   END;
@@ -213,6 +264,23 @@ BEGIN
 
     BEGIN DELETE FROM fertilizer_contracts WHERE id=v_ct1; got:=true; EXCEPTION WHEN OTHERS THEN got:=false; END;
     IF got=false THEN v_pass:=v_pass+1; ELSE v_fail:=v_fail+1; v_out:=v_out||'RESTRICT: deleted a contract that still has loads - FAIL'||E'\n'; END IF;
+
+    -- V-1 field_fertilizer_rate_consistency_check
+    BEGIN INSERT INTO field_fertilizer_rates (field_id,program_id,fertilizer_product_id,
+            application_rate,application_rate_unit,user_id)
+          VALUES (v_fld1,v_fprog2,v_fpb1,1,'lbs',v_a); got:=true; EXCEPTION WHEN OTHERS THEN got:=false; END;
+    IF got=false THEN v_pass:=v_pass+1; ELSE v_fail:=v_fail+1; v_out:=v_out||'trigger: rate naming another season''s program ALLOWED - FAIL'||E'\n'; END IF;
+
+    BEGIN INSERT INTO field_fertilizer_rates (field_id,program_id,fertilizer_product_id,
+            application_rate,application_rate_unit,user_id)
+          VALUES (v_fld1,v_fprog1,v_fp2,1,'lbs',v_a); got:=true; EXCEPTION WHEN OTHERS THEN got:=false; END;
+    IF got=false THEN v_pass:=v_pass+1; ELSE v_fail:=v_fail+1; v_out:=v_out||'trigger: rate naming another season''s product ALLOWED - FAIL'||E'\n'; END IF;
+
+    -- The control, without which a trigger that refuses everything would pass.
+    BEGIN INSERT INTO field_fertilizer_rates (field_id,program_id,fertilizer_product_id,
+            application_rate,application_rate_unit,user_id)
+          VALUES (v_fld1,v_fprog1,v_fpb1,1,'lbs',v_a); got:=true; EXCEPTION WHEN OTHERS THEN got:=false; END;
+    IF got=true THEN v_pass:=v_pass+1; ELSE v_fail:=v_fail+1; v_out:=v_out||'trigger: a legitimate rate was REFUSED - FAIL'||E'\n'; END IF;
   END;
   RESET ROLE;
 

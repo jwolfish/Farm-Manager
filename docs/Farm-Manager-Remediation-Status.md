@@ -41,7 +41,7 @@ the running app — *How to prove the fix*, at the end of that section.
 | Edge function | **version 13**, deployed source confirmed identical to the repo |
 | Security advisors | 12 WARN — 11 are the by-design `authenticated_security_definer_function_executable` lint that fires on every RPC, 1 is `auth_leaked_password_protection` (WI-6). No new class of finding |
 | Cascade tasks | 53 total, **0 failed** |
-| SEC-5 policy matrix | **101 assertions, 0 failures** (last run at F-3, against the live post-F-3 schema) |
+| SEC-5 policy matrix | **120 assertions, 0 failures** (extended at V-1 and re-run against the live schema; was 101 at F-3) |
 
 **Closed:** SEC-1, SEC-2, SEC-3, SEC-4, SEC-5, SEC-7 · WI-9, WI-10, WI-11, WI-12, WI-13,
 WI-14, WI-15, WI-16 · LOG-1, LOG-2, LOG-3, LOG-4, LOG-5, LOG-7, LOG-8, LOG-10 · plus four
@@ -1617,6 +1617,49 @@ override, because none exists to run against. **The edge function is changed but
 so the two copies differ until V-3 deploys and byte-verifies it. That is deliberate and is what
 V-3 is for.
 
+
+### Field-level fertilizer rates — V-1 — 4 Sep 2026
+
+`field_fertilizer_rates` applied to the live database as **`20260905040540`**. One sparse
+table: a field on the flat template rate stores nothing, and the template path is untouched.
+Full detail in §5.1 and §7 of `Field-Level-Fertilizer-Rates-Design.md`; the migration header
+carries the reasoning for each column.
+
+**Rehearsed before applying — 12 assertions, 0 failures**, rollback confirmed (no table, no
+function, no policies), then applied for real. The assertion that earns its keep is the
+precision one, because §7.1 turns on it: **8.2 ton over 43 ac stores 381.3953488372093023
+lb/ac and reads back as exactly 8.2000 ton.** `application_rate` is an unconstrained
+`numeric`, matching `fertilizer_program_items`; the `numeric(10,2)` used for money and
+acreage would not have round-tripped, and entry is by total tons.
+
+**SEC-5 matrix extended and re-run: 101 → 120 assertions, 0 failures. MATRIX GREEN.**
+16 in the actor loop (four actors × read/write × own farm/other farm) plus 3 for the
+consistency trigger — a rate naming another season's program refused, another season's
+product refused, and the control proving a legitimate rate still inserts. Fixtures rolled
+back and confirmed gone.
+
+One wrinkle worth recording for whoever extends the matrix next: `field_fertilizer_rates` is
+UNIQUE on (field, program, product), so a write probe aimed at the fixture row's own triple
+collides with it and reports a *unique violation* as a permissions failure. The matrix
+therefore probes against a spare product and deletes the probe immediately — anyone whose
+INSERT succeeded can also DELETE, since both policies are `can_edit_farm`, so the cleanup
+cannot itself fail. That is the same class of false negative the harness header already
+warns about for probe rows inflating read counts.
+
+**Post-apply:** table present, RLS on, 4 policies, 4 indexes, 0 rows, `application_rate`
+reports `numeric` with no precision, and no table anywhere in `public` lacks RLS. Security
+advisor: **12 WARN, the documented baseline** — 11 by-design
+`authenticated_security_definer_function_executable` and WI-6. No new class of finding.
+
+`database.types.ts` regenerated and spliced with the hand-maintained tail block: **61
+insertions, 0 deletions**, purely the new table, which re-confirms no other drift. Floor
+unchanged — TypeScript 75 identical set, ESLint 109/28, tests 320, build byte-identical at
+1,768.55 kB. Migrations **59 → 60**.
+
+**Deliberately NOT done:** dropping the dead `field_fertilizer_applications` and
+`field_chemical_applications` tables, which §6 of the design doc recommends. They are empty
+and referenced by nothing, but dropping a table is irreversible and they are not in this
+feature's way. Left for an explicit decision.
 
 ## Open items and standing notes
 

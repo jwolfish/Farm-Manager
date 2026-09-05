@@ -328,9 +328,14 @@ which has no `field_costs` row at all — so no seed, no chemicals and no costs 
 not merely no fertilizer. There is a `Wheat Template` and a `Wheat Spring Urea` program in
 2026, both used by no field.
 
-Separately, and not a fertilizer question: 2027 currently costs **382 of its 777 acres**,
-because the 12 soybean fields have no cost row either. Reasonable in early September for a
-2027 crop, but worth knowing before any 2027 total is read as complete.
+Separately, and not a fertilizer question: 2027 does not yet cost all of itself, because the
+soybean fields have no cost row either. Reasonable in early September for a 2027 crop, but
+worth knowing before any 2027 total is read as complete.
+
+*Re-measured 4 Sep, later the same day: 2027 has grown to **32 fields / 872 acres**, of
+which **22 fields / 550 acres** carry a cost row — Prairie Stream 1 and 2 were added during
+this session. The shape of the point is unchanged; the numbers move whenever fields are
+added, which is the argument for measuring them rather than quoting this paragraph.*
 
 ---
 
