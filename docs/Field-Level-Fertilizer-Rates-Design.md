@@ -207,6 +207,33 @@ stomp it.
 The rate table is the source of truth; the override is a derived cache with exactly one
 writer.
 
+### 5.2a The save RPC cannot compute the cost itself — found building V-2
+
+V-4's RPC is specified as "delete, insert, recompute override, recompute total, one
+transaction". The middle step cannot happen in SQL.
+
+Recomputing the override means turning rates into a `$/ac`, which needs
+`rate × acreage → the product's unit → price` — a **unit conversion**, including the
+density bridge for a liquid. Putting that in the RPC would be the third copy of the unit
+table, in a third language, computing the number that drives every field cost. That is
+exactly what F-3 refused when it dropped `fertilizer_contracts.unit_type`, and guardrail 7
+records that the existing two copies have needed hand-syncing three times.
+
+**So the client computes the cost and passes it in.** `costResolvedItems` (V-2) produces
+it; the RPC's job is to write the rate rows, the program-shaped override and the field
+total **atomically**, not to derive any of them. Payload shape:
+
+```
+{ field_id, program_id, program_cost_per_acre, rates: [{product_id, rate, unit, sort}] }
+```
+
+The RPC still validates — `can_edit_farm`, the season match, and that
+`program_cost_per_acre` is a finite non-negative number — because a client-supplied figure
+that lands in money must not be taken on trust. It simply does not *recalculate* it.
+
+This is the same division F-4a settled for `save_fertilizer_load`, where a contract's
+quantity is converted client-side into the product's unit before the RPC ever sees it.
+
 ### 5.3 Entry
 
 Two ways in, one data shape:
@@ -346,10 +373,10 @@ Each step independently verifiable, per the standing practice.
 | # | Step | Verified by |
 |---|---|---|
 | **V-0** | **DONE 4 Sep 2026.** Defects 1–3 fixed; defect 4 is a V-5 guard and cannot be built before rates exist. No migration, no behaviour change for any existing row | 12 new tests (308 → 320); the old overlay reproduced beside the new one so a revert fails; tsc set byte-identical at 75; lint 109/28; the 9 numeric overrides re-checked in production and unchanged. Edge function mirrored but **not deployed** — that is V-3 |
-| **V-1** | Migration: `field_fertilizer_rates`, triggers, RLS; drop the two dead application tables | Rehearsed in a rolled-back transaction, SEC-5 matrix extended, then applied, then rollback confirmed |
-| **V-2** | `resolveFieldFertilizerItems` + per-field cost math, pure and unit-tested | Worked example checked by hand; identical output to today for a field with no custom rows |
-| **V-3** | Cascade refresh of program-shaped overrides, **both copies**, edge function deployed | `sha256` of the downloaded function against the repo copy; a real price change observed leaving a custom-rated field correct |
-| **V-4** | `save_field_fertilizer_rates` RPC — delete, insert, recompute override, recompute total, one transaction | Rehearsed; a bad line leaves no partial rate set; stranger and `anon` refused |
+| **V-1** | **DONE 4 Sep 2026** — migration `20260905040540` applied. The two dead application tables were **not** dropped; see §6 | Rehearsed 12/0 then rolled back, applied, rollback confirmed. SEC-5 matrix extended 101 → **120 assertions, 0 failures**. Advisor at the documented 12 WARN baseline |
+| **V-2** | **DONE 4 Sep 2026** — `src/lib/fieldFertilizerRates.ts`: the resolver, the cost math, and the §7.1 rate/total round trip. Not yet wired to anything | 20 tests (320 → **340**), including the control that a farm with no custom rates accumulates identically to the program-only path. Build byte-identical, which confirms nothing imports it yet |
+| **V-3** | Cascade refresh of program-shaped overrides, **both copies**, edge function deployed. *Code landed in V-0; only the deploy remains* | `sha256` of the downloaded function against the repo copy; a real price change observed leaving a custom-rated field correct |
+| **V-4** | `save_field_fertilizer_rates` RPC — write rates, override and total in one transaction. **It does not compute the cost; see §5.2a** | Rehearsed; a bad line leaves no partial rate set; stranger and `anon` refused |
 | **V-5** | Field-level entry UI: which programs run (§7.2), then rates, entered as totals (§7.1) | Rendered in a browser at 1280 px and 375 px before it is called done; a test that editing rates preserves the program list and vice versa |
 | **V-6** | Bulk grid — fields down, products across, one program at a time. **Also the import review surface** (§10) | Same. Must stand on its own, because V-7 depends on it |
 | **V-7** | **Optional** CSV import of the FieldAlytics per-field export into that grid (§10) | Parsed against the real exported file; a `--Multiple--` row refused by name, not approximated; the imported total round-trips through the shopping list exactly; nothing written until the review is committed |
@@ -358,6 +385,13 @@ Each step independently verifiable, per the standing practice.
 **V-3 must land before V-5.** Until it does, a custom-rated field is protected from being
 stomped by a template cascade but goes stale on a price change — and a fertilizer booking
 changes prices, which is the whole reason this feature exists.
+
+**V-3's deploy was deliberately left for the owner, 4 Sep.** The edge-function code landed
+with V-0 and bundles clean, but Deno is not installed on this machine so it cannot be
+typechecked here, and the cascade is the single function that computes every field cost.
+Deploying it unattended would leave the running money math unverified-by-use until someone
+watched a cascade — which is V-3's own acceptance criterion anyway. Until it is deployed the
+two copies differ, by choice; that is the known cost of waiting.
 
 **Browser verification is not optional here.** Rendering screens found real defects three
 rounds running on the fertilizer feature; V-5 and V-6 are the two steps most exposed to it.
