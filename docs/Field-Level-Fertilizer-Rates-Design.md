@@ -340,7 +340,7 @@ Each step independently verifiable, per the standing practice.
 
 | # | Step | Verified by |
 |---|---|---|
-| **V-0** | Fix the four latent override defects (§3). No migration, no new feature | Unit tests pinning the array shape end to end; the 9 existing numeric overrides unchanged |
+| **V-0** | **DONE 4 Sep 2026.** Defects 1–3 fixed; defect 4 is a V-5 guard and cannot be built before rates exist. No migration, no behaviour change for any existing row | 12 new tests (308 → 320); the old overlay reproduced beside the new one so a revert fails; tsc set byte-identical at 75; lint 109/28; the 9 numeric overrides re-checked in production and unchanged. Edge function mirrored but **not deployed** — that is V-3 |
 | **V-1** | Migration: `field_fertilizer_rates`, triggers, RLS; drop the two dead application tables | Rehearsed in a rolled-back transaction, SEC-5 matrix extended, then applied, then rollback confirmed |
 | **V-2** | `resolveFieldFertilizerItems` + per-field cost math, pure and unit-tested | Worked example checked by hand; identical output to today for a field with no custom rows |
 | **V-3** | Cascade refresh of program-shaped overrides, **both copies**, edge function deployed | `sha256` of the downloaded function against the repo copy; a real price change observed leaving a custom-rated field correct |

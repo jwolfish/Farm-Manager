@@ -93,6 +93,49 @@ export function applyFieldCostOverrides(
   return resolved;
 }
 
+/*
+ * Lay a freshly recalculated program cost into a program-shaped override array — V-0,
+ * defect 2.
+ *
+ * `field_cost_overrides.override_value` under 'fertilizer_programs' / 'chemical_programs'
+ * is a ProgramReference[] with a cost baked into each entry. Those costs were written once
+ * and never revisited: `cascadeProgramUpdateInSeason` refreshed `cost_templates` and
+ * nothing else, so a price change moved every template-driven field and left every
+ * overridden one holding a stale number — silently, and in money.
+ *
+ * Pure, so the decision can be tested without a database. Both cascade copies call it
+ * (the edge function carries its own mirror — guardrail 7).
+ *
+ * Returns null when there is nothing to do: not an array, or this program is not in it.
+ */
+export function refreshProgramCostInRefs(
+  refs: unknown,
+  programId: string,
+  newCost: number
+): { changed: boolean; refs: ProgramReference[] } | null {
+  if (!Array.isArray(refs)) return null;
+  // A non-finite new cost is a failed recalculation. Writing it would replace a stale
+  // number with a meaningless one, which is strictly worse.
+  if (!Number.isFinite(newCost)) return null;
+
+  const list = refs as ProgramReference[];
+  const current = list.find((r) => r?.program_id === programId);
+  if (!current) return null;
+
+  const currentCost = Number(current.cost_per_acre ?? 0);
+
+  // Compared to the cent, the same rule the F-3 blended-price trigger uses: float noise
+  // must never cause a write, because a write here queues real work downstream.
+  if (Number.isFinite(currentCost) && Math.abs(currentCost - newCost) < 0.005) {
+    return { changed: false, refs: list };
+  }
+
+  return {
+    changed: true,
+    refs: list.map((r) => (r?.program_id === programId ? { ...r, cost_per_acre: newCost } : r)),
+  };
+}
+
 export function calculateFieldTotalCost(fieldCost: Record<string, unknown>): number {
   return (
     Number(fieldCost.seed_cost_per_acre || 0) +

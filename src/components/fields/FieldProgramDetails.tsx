@@ -56,6 +56,8 @@ export function FieldProgramDetails({
   const [seedingRate, setSeedingRate] = useState<number | null>(null);
   const [fertilizerPrograms, setFertilizerPrograms] = useState<FertilizerProgramInfo[]>([]);
   const [chemicalPrograms, setChemicalPrograms] = useState<ChemicalProgramInfo[]>([]);
+  const [fertilizerIsCustom, setFertilizerIsCustom] = useState(false);
+  const [chemicalIsCustom, setChemicalIsCustom] = useState(false);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -90,7 +92,33 @@ export function FieldProgramDetails({
         }
       }
 
-      // Load template programs
+      /*
+       * The field's OWN program list wins over its template's — V-0, defect 3.
+       *
+       * A field may carry its own programs in `field_cost_overrides` under
+       * 'fertilizer_programs' / 'chemical_programs'. This component read the template and
+       * nothing else, so such a field displayed its template's programs while its costs
+       * came from the override: the screen was confidently wrong about the one thing it
+       * exists to show. Zero rows of that shape exist today, so it has never been seen.
+       *
+       * A field with an override and no template is now rendered too. It used to fall
+       * through the `if (template_id)` guard and show nothing at all.
+       */
+      const { data: overrideRows, error: overrideError } = await supabase
+        .from('field_cost_overrides')
+        .select('cost_item_name, override_value')
+        .eq('field_id', fieldId)
+        .in('cost_item_name', ['fertilizer_programs', 'chemical_programs']);
+
+      if (overrideError) throw overrideError;
+
+      const overrideMap = new Map<string, unknown>(
+        (overrideRows ?? []).map((o) => [o.cost_item_name, o.override_value])
+      );
+
+      let templateFertilizer: unknown = null;
+      let templateChemical: unknown = null;
+
       if (fieldCosts.template_id) {
         const { data: template } = await supabase
           .from('cost_templates')
@@ -99,12 +127,24 @@ export function FieldProgramDetails({
           .maybeSingle();
 
         if (template) {
-          await Promise.all([
-            loadFertilizerPrograms(template.fertilizer_programs),
-            loadChemicalPrograms(template.chemical_programs),
-          ]);
+          templateFertilizer = template.fertilizer_programs;
+          templateChemical = template.chemical_programs;
         }
       }
+
+      const fertilizerCustom = overrideMap.has('fertilizer_programs');
+      const chemicalCustom = overrideMap.has('chemical_programs');
+      setFertilizerIsCustom(fertilizerCustom);
+      setChemicalIsCustom(chemicalCustom);
+
+      await Promise.all([
+        loadFertilizerPrograms(
+          fertilizerCustom ? overrideMap.get('fertilizer_programs') : templateFertilizer
+        ),
+        loadChemicalPrograms(
+          chemicalCustom ? overrideMap.get('chemical_programs') : templateChemical
+        ),
+      ]);
     } catch (err) {
       console.error('Error loading program details:', err);
     } finally {
@@ -288,6 +328,14 @@ export function FieldProgramDetails({
             <div className="flex items-center gap-2">
               <FlaskConical className="w-5 h-5 text-amber-600" />
               <h2 className="text-lg font-semibold text-gray-900">Fertilizer Programs</h2>
+              {fertilizerIsCustom && (
+                <span
+                  className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-800"
+                  title="This field has its own fertilizer programs, not its template's"
+                >
+                  Custom for this field
+                </span>
+              )}
             </div>
             <span className="font-medium text-gray-900">${fertilizerCostPerAcre.toFixed(2)}/acre</span>
           </div>
@@ -351,6 +399,14 @@ export function FieldProgramDetails({
             <div className="flex items-center gap-2">
               <Beaker className="w-5 h-5 text-blue-600" />
               <h2 className="text-lg font-semibold text-gray-900">Chemical Programs</h2>
+              {chemicalIsCustom && (
+                <span
+                  className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-amber-100 text-amber-800"
+                  title="This field has its own chemical programs, not its template's"
+                >
+                  Custom for this field
+                </span>
+              )}
             </div>
             <span className="font-medium text-gray-900">${chemicalCostPerAcre.toFixed(2)}/acre</span>
           </div>

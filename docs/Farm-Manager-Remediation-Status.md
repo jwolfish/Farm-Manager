@@ -33,10 +33,10 @@ the running app — *How to prove the fix*, at the end of that section.
 
 | Measured 4 Sep 2026 | |
 |---|---|
-| Tests | **308 passing**, 7 files (295 before shopping-list coverage added 13) |
+| Tests | **320 passing**, 7 files (308 before field-rates V-0 added 12) |
 | TypeScript | **75 errors** (103 at review, 98 before WI-19) |
 | ESLint | **109 errors, 28 warnings** (from 136/28) |
-| Build | succeeds — **1,767.66 kB** (472.37 kB gz), plus lazy `FertilizerContractsTab` 25.96 kB and `BookingModal` 20.07 kB |
+| Build | succeeds — **1,768.55 kB** (472.56 kB gz), plus lazy `FertilizerContractsTab` 25.96 kB and `BookingModal` 20.07 kB |
 | Migrations | **59 files**, matching the database one-for-one (diffed, not counted) |
 | Edge function | **version 13**, deployed source confirmed identical to the repo |
 | Security advisors | 12 WARN — 11 are the by-design `authenticated_security_definer_function_executable` lint that fires on every RPC, 1 is `auth_leaked_password_protection` (WI-6). No new class of finding |
@@ -1550,6 +1550,72 @@ browser" against them.
 over-coverage via `contracted_at_generation` rather than `on_hand_at_generation` has not
 occurred. `coverageView` adds the two and the row component does not distinguish them,
 so this is close to a formality.
+
+
+### Field-level fertilizer rates — V-0 — 4 Sep 2026 — on `main`
+
+The first step of `Field-Level-Fertilizer-Rates-Design.md`: fix the latent defects in the
+**program-shaped override** before anything writes one. No migration, no new feature, no
+behaviour change for any row that exists today.
+
+**Why this had to come first.** `field_cost_overrides.override_value` has two shapes — a
+number keyed by its own column, or a `ProgramReference[]` keyed `fertilizer_programs` /
+`chemical_programs`. Production holds **9 rows, all numeric, zero arrays**, and the array
+shape has no UI writer. It has therefore never run, and it was broken in three places.
+Per-field fertilizer rates write one for every custom-rated field.
+
+| # | Defect | Fix |
+|---|---|---|
+| 1 | `getResolvedFieldCosts` overlaid each override onto the key it names, so an array landed under `fertilizer_programs` — which `calculateFieldTotalCost` never reads — leaving `fertilizer_cost_per_acre` on the template figure. `recalculateFieldTotal` then stored the **template** total | Resolves through `applyFieldCostOverrides`, which already handled both shapes. The same defect fixed in the cascade on 31 Aug, in the one place that fix did not reach |
+| 2 | `cascadeProgramUpdateInSeason` walked `cost_templates` only, so the `cost_per_acre` inside an override array was a snapshot frozen when it was written. A price change moved every template field and left every overridden one stale | New `refreshProgramOverridesInSeason`, called **before** the template loop so the template cascade re-totals against fresh values. Mirrored in the edge function (guardrail 7) |
+| 3 | `FieldProgramDetails` read `template_id → cost_templates` and nothing else, so a field with its own programs displayed its template's | Reads the override first, falls back to the template. A field with an override and **no** template now renders at all — it previously fell through the `if (template_id)` guard and showed nothing |
+| 4 | A numeric `fertilizer_cost_per_acre` override and per-field rates would both claim the field's money | **Not fixed here, and cannot be.** Per-field rates do not exist until V-1. This is a V-5 guard on `FieldDetail`, as §5.4 of the design doc says |
+
+Defect 4 is listed in §3 as one of four, so **V-0 closes three of them**. Saying "four
+fixed" would be the same kind of count this remediation keeps deleting.
+
+**The decision is a pure function.** `refreshProgramCostInRefs` in
+`templateCalculations.ts` — the same extraction pattern as `accumulateNeed` and
+`planLineDraw` — so the arithmetic is testable without a database, and the edge function
+carries a marked duplicate rather than a second idea. It refuses a non-finite new cost
+(a failed recalculation must not replace a stale number with a meaningless one), compares
+to the cent so float noise cannot queue a cascade, honours a legitimate drop to zero, and
+repairs an entry whose stored cost is junk.
+
+**Two deliberate choices worth recording:**
+
+- **The override refresh is NOT added to `fieldsUpdated`.** An overridden field is normally
+  also a template field and would be counted twice. WI-15 deleted a count that reported
+  work never done; inflating one is the same lie in the other direction. The refreshes are
+  recorded as task warnings instead.
+- **Two queries, not one embedded PostgREST select.** Scoping overrides to a season could
+  be `field_cost_overrides` embedding `fields!inner`, but a mis-resolved embed is exactly
+  what broke `fetchSharedFarms` for months. Two explicit queries per program cascade is the
+  cheaper mistake.
+
+**Verification.**
+
+- **12 new tests, 308 → 320**, all green. They pin the refresh decision and — the one that
+  matters — reproduce the *old* overlay beside the new one and assert the totals differ,
+  so the test fails if the fix is reverted. Plus a control asserting the fix is inert for a
+  numeric override, which is all nine production rows.
+- **TypeScript 75, error set byte-identical** to the pre-change set with line positions
+  stripped. **ESLint 109 / 28, unchanged.**
+- **Build succeeds**, main chunk 1,767.66 → **1,768.55 kB** (472.37 → 472.56 gz). The
+  +0.89 kB is the override read and the two "Custom for this field" badges in
+  `FieldProgramDetails`, which is eager.
+- **Edge function bundles clean** under esbuild with the Deno specifiers external. Deno is
+  still not installed here, so it is **not typechecked**.
+- **Live data re-checked and unchanged:** all 9 overrides are still `number`-shaped, and
+  every stored `total_cost_per_acre` still equals the sum of the columns with the override
+  laid over — Umek 663.72, Adkins 688.59, and the rest. Nothing ran against the database.
+
+**What is NOT verified, and should not be claimed.** Only the pure decision has tests. The
+functions that touch the database — `getResolvedFieldCosts`, `refreshProgramOverridesInSeason`
+and its edge-function twin — are proven by reading. No cascade has run against an array-shaped
+override, because none exists to run against. **The edge function is changed but NOT deployed**,
+so the two copies differ until V-3 deploys and byte-verifies it. That is deliberate and is what
+V-3 is for.
 
 
 ## Open items and standing notes

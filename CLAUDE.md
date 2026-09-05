@@ -72,7 +72,7 @@ The status doc is the source of truth for what is done. Update it when a round l
   before the unused-symbol sweep brought it to 76. See the WI-19 section of the status
   doc for the full accounting; every movement is itemised there.
 - `npx eslint .` reports **109 errors, 28 warnings** (was 136/28 at review).
-- `npx vite build` succeeds and emits a **1,767.66 kB** main chunk (472.37 kB gz), plus two
+- `npx vite build` succeeds and emits a **1,768.55 kB** main chunk (472.56 kB gz), plus two
   lazy fertilizer chunks: **25.96 kB** `FertilizerContractsTab` (7.10 gz) and **20.07 kB**
   `BookingModal` (6.03 gz), the latter shared by the Contracts tab, the Shopping Lists tab
   and the plan calculator. It was 1,751.91 kB before fertilizer F-1, which added 2.38 kB for
@@ -80,8 +80,11 @@ The status doc is the source of truth for what is done. Update it when a round l
   chunk and 6.50 kB to the lazy one; F-5 added the Shopping Lists tab's share of the handoff
   to the main chunk and split `BookingModal` out; F-4b added the season summary to the lazy
   Contracts chunk only; F-6 added the plan calculator to the lazy chunks and **0.02 kB** to
-  the main one; shopping-list coverage added **3.71 kB** to the main chunk, which is eager.
-- `npm test` reports **308 passing** in 7 files (295 before shopping-list coverage added 13).
+  the main one; shopping-list coverage added **3.71 kB** to the main chunk, which is eager;
+  field-rates V-0 added **0.89 kB**, the override read and two badges in
+  `FieldProgramDetails`.
+- `npm test` reports **320 passing** in 7 files (308 before field-rates V-0 added 12; 295
+  before shopping-list coverage added 13).
 - There is **no CI**. Adding it is WI-21 in the PRD.
 - Tests arrived with Round 3: `npm test` (Vitest). Test files are excluded from
   `tsconfig.app.json` so they do not move the 103-error baseline.

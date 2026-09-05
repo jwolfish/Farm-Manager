@@ -258,6 +258,43 @@ function applyFieldCostOverrides(
   return resolved;
 }
 
+/*
+ * Lay a freshly recalculated program cost into a program-shaped override array.
+ *
+ * DUPLICATE of refreshProgramCostInRefs in
+ * src/lib/templateLib/templateCalculations.ts -- guardrail 7. That copy is the one with
+ * unit tests; this one must not drift from it.
+ *
+ * Returns null when there is nothing to do: not an array, or this program is not in it.
+ */
+function refreshProgramCostInRefs(
+  refs: unknown,
+  programId: string,
+  newCost: number,
+): { changed: boolean; refs: Array<{ program_id: string; cost_per_acre?: number }> } | null {
+  if (!Array.isArray(refs)) return null;
+  // A non-finite new cost is a failed recalculation. Writing it would replace a stale
+  // number with a meaningless one, which is strictly worse.
+  if (!Number.isFinite(newCost)) return null;
+
+  const list = refs as Array<{ program_id: string; cost_per_acre?: number }>;
+  const current = list.find((r) => r?.program_id === programId);
+  if (!current) return null;
+
+  const currentCost = Number(current.cost_per_acre ?? 0);
+
+  // Compared to the cent, the same rule the F-3 blended-price trigger uses: float noise
+  // must never cause a write, because a write here queues real work downstream.
+  if (Number.isFinite(currentCost) && Math.abs(currentCost - newCost) < 0.005) {
+    return { changed: false, refs: list };
+  }
+
+  return {
+    changed: true,
+    refs: list.map((r) => (r?.program_id === programId ? { ...r, cost_per_acre: newCost } : r)),
+  };
+}
+
 function calculateFieldTotalCost(fc: Record<string, unknown>): number {
   return (
     Number(fc.seed_cost_per_acre || 0) +
@@ -560,6 +597,124 @@ async function cascadeTemplateUpdateInSeason(
   return { fieldsUpdated, failedFieldIds };
 }
 
+/*
+ * Re-total one field from its resolved costs.
+ *
+ * DUPLICATE of recalculateFieldTotal in src/lib/templateLib/fieldCostOverrides.ts --
+ * guardrail 7. Needed here because refreshProgramOverridesInSeason below can move a
+ * field's fertilizer or chemical cost without the template cascade running over it.
+ */
+async function recalculateFieldTotal(
+  supabase: ReturnType<typeof createClient>,
+  fieldId: string,
+): Promise<void> {
+  const fieldCost = must(
+    await supabase.from("field_costs").select("*").eq("field_id", fieldId).maybeSingle(),
+    `load field costs for field ${fieldId}`,
+  );
+  if (!fieldCost) return;
+
+  const overrideRows = must(
+    await supabase
+      .from("field_cost_overrides")
+      .select("cost_item_name, override_value")
+      .eq("field_id", fieldId),
+    `load overrides for field ${fieldId}`,
+  );
+
+  const overrideMap = new Map<string, unknown>(
+    (overrideRows || []).map((o: Record<string, unknown>) => [o.cost_item_name as string, o.override_value]),
+  );
+
+  const total = calculateFieldTotalCost(
+    applyFieldCostOverrides(fieldCost as Record<string, unknown>, overrideMap),
+  );
+
+  const { error } = await supabase
+    .from("field_costs")
+    .update({ total_cost_per_acre: total })
+    .eq("field_id", fieldId);
+
+  if (error) throw error;
+}
+
+/*
+ * Refresh the frozen cost_per_acre inside program-shaped field overrides -- V-0, defect 2.
+ *
+ * A field may carry its own program list in field_cost_overrides under
+ * 'fertilizer_programs' / 'chemical_programs', as an array with a cost baked into each
+ * entry. This function walked cost_templates and nothing else, so those costs were a
+ * snapshot taken when the override was written: a price change moved every
+ * template-driven field and left every overridden one stale, silently and in money.
+ *
+ * Zero rows of that shape exist in production today, so it has never fired. Per-field
+ * fertilizer rates write one for every custom-rated field, and a fertilizer booking
+ * changes prices -- which is exactly when this would have gone wrong.
+ *
+ * DUPLICATE of refreshProgramOverridesInSeason in
+ * src/lib/templateLib/cascadeUpdates.ts -- guardrail 7. Change both or neither.
+ */
+async function refreshProgramOverridesInSeason(
+  supabase: ReturnType<typeof createClient>,
+  programId: string,
+  programField: "fertilizer_programs" | "chemical_programs",
+  seasonId: string,
+  newCost: number,
+  warnings: WarningBuffer,
+): Promise<number> {
+  const fields = must(
+    await supabase.from("fields").select("id").eq("season_id", seasonId),
+    `load fields for season ${seasonId}`,
+  );
+
+  const fieldIds = (fields || []).map((f: Record<string, unknown>) => f.id as string);
+  if (fieldIds.length === 0) return 0;
+
+  const overrides = must(
+    await supabase
+      .from("field_cost_overrides")
+      .select("field_id, override_value")
+      .eq("cost_item_name", programField)
+      .in("field_id", fieldIds),
+    `load ${programField} overrides for season ${seasonId}`,
+  );
+
+  let fieldsUpdated = 0;
+
+  for (const o of overrides || []) {
+    const row = o as Record<string, unknown>;
+
+    const refresh = refreshProgramCostInRefs(row.override_value, programId, newCost);
+    if (!refresh || !refresh.changed) continue;
+
+    const refs = row.override_value as Array<{ program_id: string; cost_per_acre?: number }>;
+    const previous = refs.find((r) => r?.program_id === programId);
+    const updated = refresh.refs;
+
+    const fieldId = row.field_id as string;
+
+    const { error } = await supabase
+      .from("field_cost_overrides")
+      .update({ override_value: updated })
+      .eq("field_id", fieldId)
+      .eq("cost_item_name", programField);
+
+    if (error) throw error;
+
+    // The override moved, so the field's total must move with it. Done here rather than
+    // left to the template cascade, which covers only fields still linked to a template.
+    await recalculateFieldTotal(supabase, fieldId);
+    fieldsUpdated++;
+
+    warnings.add(
+      `Refreshed ${programField} override on field ${fieldId}: ` +
+        `${Number(previous?.cost_per_acre ?? 0).toFixed(2)} -> ${newCost.toFixed(2)}`,
+    );
+  }
+
+  return fieldsUpdated;
+}
+
 async function cascadeProgramUpdateInSeason(
   supabase: ReturnType<typeof createClient>,
   programId: string,
@@ -586,6 +741,24 @@ async function cascadeProgramUpdateInSeason(
     : await recalculateChemicalProgramCost(supabase, programId, warnings);
 
   if (!recalcResult) return { templatesUpdated: 0, fieldsUpdated: 0 };
+
+  /*
+   * Field overrides are refreshed BEFORE the template loop, so cascadeTemplateUpdateInSeason
+   * below re-totals each field against the new override value rather than the snapshot it
+   * is replacing.
+   *
+   * Its count is deliberately NOT added to fieldsUpdated: an overridden field is normally
+   * also a template field and would be counted twice. WI-15 removed a count that reported
+   * work never done; inflating one is the same lie in the other direction.
+   */
+  await refreshProgramOverridesInSeason(
+    supabase,
+    programId,
+    programField as "fertilizer_programs" | "chemical_programs",
+    seasonId,
+    recalcResult.newCost,
+    warnings,
+  );
 
   for (const template of templates) {
     const programs = template[programField] as Array<{ program_id: string; cost_per_acre?: number }> | null;

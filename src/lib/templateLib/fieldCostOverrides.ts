@@ -1,7 +1,7 @@
 import { supabase } from '../supabase';
 import { Database, Json } from '../database.types';
 import { ProgramReference } from './templateCrud';
-import { calculateFieldTotalCost } from './templateCalculations';
+import { applyFieldCostOverrides, calculateFieldTotalCost } from './templateCalculations';
 
 type FieldCostOverride = Database['public']['Tables']['field_cost_overrides']['Row'];
 
@@ -120,10 +120,24 @@ export async function getResolvedFieldCosts(fieldId: string): Promise<ResolvedFi
     overrides.map((o) => [o.cost_item_name, o.override_value as unknown as OverrideValue])
   );
 
-  const resolvedCosts = { ...fieldCost } as unknown as FieldCostValues;
-  for (const [itemName, value] of overrideMap.entries()) {
-    (resolvedCosts as Record<string, unknown>)[itemName] = value;
-  }
+  /*
+   * Resolved through applyFieldCostOverrides, NOT by assigning each override onto the
+   * key it names. The difference only shows for a ProgramReference[] override:
+   * `resolved['fertilizer_programs'] = [...]` puts the array under a key
+   * calculateFieldTotalCost never reads, so `fertilizer_cost_per_acre` kept the template
+   * figure and recalculateFieldTotal below stored the TEMPLATE total — the same defect
+   * fixed in the cascade on 31 Aug, in the one place that fix did not reach.
+   *
+   * The array shape has no UI writer yet and production holds zero rows of it, so this
+   * has never fired. Per-field fertilizer rates write one, which is why this is V-0.
+   *
+   * `overrides` still carries the raw values, so a caller that wants the program array
+   * itself reads it from there rather than from `costs`.
+   */
+  const resolvedCosts = applyFieldCostOverrides(
+    fieldCost as unknown as Record<string, unknown>,
+    overrideMap
+  ) as unknown as FieldCostValues;
 
   return {
     templateId: fieldCost.template_id,
@@ -137,7 +151,15 @@ export async function hasOverrides(fieldId: string): Promise<boolean> {
   return overrides.length > 0;
 }
 
-async function recalculateFieldTotal(fieldId: string): Promise<void> {
+/**
+ * Re-total one field from its resolved costs — the template values with the field's
+ * overrides laid over them.
+ *
+ * Exported since V-0 so the cascade can call it after refreshing a program-shaped
+ * override. It is the only correct way to write `total_cost_per_acre`, because an
+ * override does not live in the `field_costs` column it names.
+ */
+export async function recalculateFieldTotal(fieldId: string): Promise<void> {
   const resolvedCosts = await getResolvedFieldCosts(fieldId);
   if (!resolvedCosts) return;
 

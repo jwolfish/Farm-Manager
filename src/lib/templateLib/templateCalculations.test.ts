@@ -1,5 +1,10 @@
 import { describe, it, expect } from 'vitest';
-import { applyFieldCostOverrides, calculateTemplateCost, calculateFieldTotalCost } from './templateCalculations';
+import {
+  applyFieldCostOverrides,
+  calculateTemplateCost,
+  calculateFieldTotalCost,
+  refreshProgramCostInRefs,
+} from './templateCalculations';
 import type { Database } from '../database.types';
 
 type CostTemplate = Database['public']['Tables']['cost_templates']['Row'];
@@ -259,5 +264,147 @@ describe('cascade totalling — the nine-field regression', () => {
 
     // Chemical follows the template's new 92.10; hauling holds the user's 70.
     expect(total).toBeCloseTo(500 + 92.10 + 70, 2);
+  });
+});
+
+describe('refreshProgramCostInRefs — V-0, defect 2', () => {
+  /*
+   * The stale-override defect. `field_cost_overrides.override_value` under
+   * 'fertilizer_programs' holds a ProgramReference[] with a cost baked into each entry,
+   * and `cascadeProgramUpdateInSeason` refreshed `cost_templates` and nothing else — so
+   * a price change moved every template-driven field and left every overridden one
+   * holding the number it was written with.
+   */
+  const refs = [
+    { program_id: 'fall-pk', cost_per_acre: 118.25 },
+    { program_id: 'topdress', cost_per_acre: 64.4 },
+  ];
+
+  it('replaces the cost of the named program and leaves its siblings alone', () => {
+    const result = refreshProgramCostInRefs(refs, 'fall-pk', 130.5);
+
+    expect(result).not.toBeNull();
+    expect(result!.changed).toBe(true);
+    expect(result!.refs).toEqual([
+      { program_id: 'fall-pk', cost_per_acre: 130.5 },
+      { program_id: 'topdress', cost_per_acre: 64.4 },
+    ]);
+  });
+
+  it('does not mutate the array it is given', () => {
+    const original = [{ program_id: 'fall-pk', cost_per_acre: 118.25 }];
+    refreshProgramCostInRefs(original, 'fall-pk', 130.5);
+    expect(original[0].cost_per_acre).toBe(118.25);
+  });
+
+  it('reports no change when the cost already agrees to the cent', () => {
+    // A write here queues a cascade, so float noise must never cause one.
+    const result = refreshProgramCostInRefs(refs, 'fall-pk', 118.2512);
+    expect(result!.changed).toBe(false);
+  });
+
+  it('reports a change for a difference of a whole cent', () => {
+    const result = refreshProgramCostInRefs(refs, 'fall-pk', 118.26);
+    expect(result!.changed).toBe(true);
+  });
+
+  it('returns null when the program is not in the array', () => {
+    // Nothing to refresh: this override does not reference the changed program.
+    expect(refreshProgramCostInRefs(refs, 'starter', 40)).toBeNull();
+  });
+
+  it('returns null when the override is not an array', () => {
+    // A numeric override under a *_cost_per_acre key reaches nothing here.
+    expect(refreshProgramCostInRefs(70, 'fall-pk', 130.5)).toBeNull();
+    expect(refreshProgramCostInRefs(null, 'fall-pk', 130.5)).toBeNull();
+    expect(refreshProgramCostInRefs(undefined, 'fall-pk', 130.5)).toBeNull();
+  });
+
+  it('refuses a non-finite new cost rather than writing it', () => {
+    // A failed recalculation must not replace a stale number with a meaningless one.
+    expect(refreshProgramCostInRefs(refs, 'fall-pk', NaN)).toBeNull();
+    expect(refreshProgramCostInRefs(refs, 'fall-pk', Infinity)).toBeNull();
+  });
+
+  it('repairs an entry whose stored cost is junk', () => {
+    const junk = [{ program_id: 'fall-pk' }] as unknown;
+    const result = refreshProgramCostInRefs(junk, 'fall-pk', 130.5);
+    expect(result!.changed).toBe(true);
+    expect(result!.refs[0].cost_per_acre).toBe(130.5);
+  });
+
+  it('honours a legitimate drop to zero', () => {
+    const result = refreshProgramCostInRefs(refs, 'fall-pk', 0);
+    expect(result!.changed).toBe(true);
+    expect(result!.refs[0].cost_per_acre).toBe(0);
+  });
+
+  it('the refreshed array totals through applyFieldCostOverrides end to end', () => {
+    /*
+     * The whole point, in one assertion. Before the fix the override kept 118.25 while
+     * the template moved to 130.50, so the field's fertilizer cost — and its total —
+     * stayed on the old number with nothing on screen to say so.
+     */
+    const fieldCostRow = { fertilizer_cost_per_acre: 182.65, seed_cost_per_acre: 500 };
+    const stale = refreshProgramCostInRefs(refs, 'fall-pk', 130.5)!;
+
+    const before = calculateFieldTotalCost(
+      applyFieldCostOverrides(fieldCostRow, new Map<string, unknown>([['fertilizer_programs', refs]]))
+    );
+    const after = calculateFieldTotalCost(
+      applyFieldCostOverrides(
+        fieldCostRow,
+        new Map<string, unknown>([['fertilizer_programs', stale.refs]])
+      )
+    );
+
+    expect(before).toBeCloseTo(500 + 118.25 + 64.4, 2);
+    expect(after).toBeCloseTo(500 + 130.5 + 64.4, 2);
+    expect(after - before).toBeCloseTo(12.25, 2);
+  });
+});
+
+describe('getResolvedFieldCosts resolution — V-0, defect 1', () => {
+  /*
+   * `getResolvedFieldCosts` used to overlay each override onto the key it names:
+   *   resolved['fertilizer_programs'] = [...]
+   * which puts the array under a key `calculateFieldTotalCost` never reads, so
+   * `fertilizer_cost_per_acre` kept the template figure and `recalculateFieldTotal`
+   * stored the TEMPLATE total. It now resolves through applyFieldCostOverrides.
+   *
+   * These pin the two behaviours against each other without a database.
+   */
+  const fieldCostRow = {
+    seed_cost_per_acre: 500,
+    fertilizer_cost_per_acre: 182.65,
+    hauling_cost_per_acre: 80,
+  };
+
+  function theOldWay(row: Record<string, unknown>, overrides: Map<string, unknown>) {
+    const resolved = { ...row };
+    for (const [name, value] of overrides) resolved[name] = value;
+    return resolved;
+  }
+
+  it('a program-shaped override now moves the total; the old overlay did not', () => {
+    const overrides = new Map<string, unknown>([
+      ['fertilizer_programs', [{ program_id: 'fall-pk', cost_per_acre: 130.5 }]],
+    ]);
+
+    const oldTotal = calculateFieldTotalCost(theOldWay(fieldCostRow, overrides));
+    const newTotal = calculateFieldTotalCost(applyFieldCostOverrides(fieldCostRow, overrides));
+
+    // The old way silently kept the template's 182.65.
+    expect(oldTotal).toBeCloseTo(500 + 182.65 + 80, 2);
+    expect(newTotal).toBeCloseTo(500 + 130.5 + 80, 2);
+    expect(newTotal).not.toBeCloseTo(oldTotal, 2);
+  });
+
+  it('is inert for the nine numeric overrides that actually exist', () => {
+    // Every override in production today is a plain number. The fix must not move them.
+    const overrides = new Map<string, unknown>([['hauling_cost_per_acre', 60]]);
+
+    expect(calculateFieldTotalCost(applyFieldCostOverrides(fieldCostRow, overrides)))
+      .toBeCloseTo(calculateFieldTotalCost(theOldWay(fieldCostRow, overrides)), 2);
   });
 });
