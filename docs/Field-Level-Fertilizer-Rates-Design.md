@@ -218,6 +218,9 @@ Two ways in, one data shape:
 - **A grid.** Rows = fields, columns = products, one program at a time. Entering 17 fields
   one modal at a time is the thing that would make this feature go unused; a soil-test
   spreadsheet already looks like this grid.
+- **A CSV import** of the FieldAlytics summary, which populates that same grid for review
+  rather than writing anything directly. See §10 — it is what makes the annual entry burden
+  survivable, and it is the reason the grid has to be good.
 
 ### 5.4 What must change, by file
 
@@ -343,8 +346,9 @@ Each step independently verifiable, per the standing practice.
 | **V-3** | Cascade refresh of program-shaped overrides, **both copies**, edge function deployed | `sha256` of the downloaded function against the repo copy; a real price change observed leaving a custom-rated field correct |
 | **V-4** | `save_field_fertilizer_rates` RPC — delete, insert, recompute override, recompute total, one transaction | Rehearsed; a bad line leaves no partial rate set; stranger and `anon` refused |
 | **V-5** | Field-level entry UI: which programs run (§7.2), then rates, entered as totals (§7.1) | Rendered in a browser at 1280 px and 375 px before it is called done; a test that editing rates preserves the program list and vice versa |
-| **V-6** | Bulk grid | Same |
-| **V-7** | Shopping list and plan calculator honour per-field rates | One season's tonnage computed by hand against the app |
+| **V-6** | Bulk grid — fields down, products across, one program at a time. **Also the import review surface** (§10) | Same. Must stand on its own, because V-7 depends on it |
+| **V-7** | **Optional** CSV import of the FieldAlytics per-field export into that grid (§10) | Parsed against the real exported file; a `--Multiple--` row refused by name, not approximated; the imported total round-trips through the shopping list exactly; nothing written until the review is committed |
+| **V-8** | Shopping list and plan calculator honour per-field rates | One season's tonnage computed by hand against the app |
 
 **V-3 must land before V-5.** Until it does, a custom-rated field is protected from being
 stomped by a template cascade but goes stale on a price change — and a fertilizer booking
@@ -364,11 +368,151 @@ rounds running on the fertilizer feature; V-5 and V-6 are the two steps most exp
   project one six-month money defect already. This puts every VR field through it. V-0 is
   not optional throat-clearing; it is what makes the rest safe.
 - **Entry burden, now annual.** 17 fields × 3 programs × 2–3 products is ~100 numbers, and
-  nothing carries forward (§7), so it is ~100 numbers *every* season. If V-6's grid is not
-  good, the feature will not get used and the averages will come back. This is the single
-  largest risk to the feature being worth building.
+  nothing carries forward (§7), so it is ~100 numbers *every* season. This was the single
+  largest risk to the feature being worth building. **§10's CSV import is the answer to it**
+  — but that turns it into a dependency rather than removing it: if the import proves
+  fragile, the manual path is all that is left. So the grid must be good enough to use on
+  its own, and must not be allowed to coast on the import that has not been built yet.
 - **The override row now carries a user decision as well as a derived one** (§7.2). Every
   code path that recomputes the costs must preserve the program list, and vice versa.
 - **Two sources of tonnage truth in the owner's head.** Once some fields are custom and some
   are template, "what does the plan say" needs the screen to make the split visible — which
   fields deviate, and by how much.
+
+---
+
+## 10. Importing VR prescriptions — added 4 Sep 2026
+
+Proposed by the owner against §9's entry-burden risk. Typing ~100 numbers a season is what
+would kill this feature; the numbers already exist in a file. Written against a real
+FieldAlytics export, not an imagined format.
+
+**The import is optional.** The grid (V-6) is the primary surface and must work without it.
+
+### 10.1 The CSV summary, not the shapefile and not the PDF
+
+Three formats arrive with every script: a shapefile triple (`.shp` / `.shx` / `.dbf`, rates
+in the `.dbf`), a human-readable PDF with maps and a tonnage block, and a summary CSV
+exported from FieldAlytics.
+
+**The CSV, and the reason is better than convenience.** The `.dbf` holds *zone* rates —
+sub-field, which §1 excludes. Turning those into a field figure means area-weighting each
+zone, which needs the polygon geometry from the `.shp`, so a shapefile parser and a
+planimetry step, all to reproduce a number FieldAlytics has already computed. And if the two
+ever disagreed, the vendor's figure is the one the applicator actually spreads. The PDF is
+worse: layout-dependent, and it breaks silently on a template change.
+
+The shapefile stays the fallback if the summary ever proves untrustworthy. It is not the
+first cut.
+
+### 10.2 The export must be split by field
+
+FieldAlytics can group the report or break it out per field. **Count on the per-field
+export** — the owner can split it before running the report.
+
+This matters because the first sample arrived *grouped*: `Field Name` read `--Multiple--`,
+with one row per product carrying a combined total across every field the Rx covered. That
+file cannot produce per-field rates. It says 8.78 ton of Potash went somewhere across
+97.82 acres, and nothing in it says how much landed on each field.
+
+Splitting such a total across picked fields by acreage was considered and **rejected by the
+owner.** It would keep the tonnage exact — 8.78 ton is 8.78 ton however it is divided — but
+it manufactures per-field rates that *look* measured and are not, and six months later
+nothing would distinguish them from real ones. That is precisely the defect class this
+remediation has spent six rounds removing.
+
+So a `--Multiple--` row is **refused by name**, with the fix stated: re-run the report split
+by field. Not silently skipped, not approximated.
+
+### 10.3 A script is a pass, so an import is scoped to one program
+
+The rate table is keyed `(field, program, product)`, and the export names a field and a
+product but never says *which pass*. Rather than infer it, the import is scoped: "import
+this script as **Corn Fall Fertilizer T&L**." That matches how scripts are produced — one
+script is one application — and removes the only genuinely ambiguous column.
+
+One import = one program × the fields the file names.
+
+### 10.4 The columns, from the real file
+
+Header row as exported, 4 Sep 2026:
+
+```
+Status, Farm Name, Field Name, Rx Name, Date Entered, Product, Applied Acres,
+Field Acres, Product Total, Units, Avg Rate, Units, Total Product Cost,
+Cost/Applied Acre, Cost/Acre
+```
+
+| Column | What the import does |
+|---|---|
+| `Product Total` + `Units` | **The number this import exists for.** `tons` normalises to `ton`; that alias already exists in `unitConversions` |
+| `Field Name` | Matched to a field (§10.6). `--Multiple--` is refused (§10.2) |
+| `Product` | Matched to a `fertilizer_products` row, confirmed rather than guessed (§10.6) |
+| `Rx Name` | Prefills the import's note — `26 Rec` |
+| `Farm Name` | Sanity check only. `T&L Farm` against `T & L Doolittle Farms LLC`; never used to route a write |
+| `Applied Acres`, `Field Acres` | **Ignored.** The owner's instruction, and the correct call — see §10.5 |
+| `Avg Rate` + `Units` | **Ignored.** It is per *applied* acre — see the warning in §10.5 |
+| `Total Product Cost`, `Cost/Applied Acre`, `Cost/Acre` | **Ignored.** Fertilizer prices belong to the F-3 contracts trigger. An import must never touch money |
+| `Status`, `Date Entered` | Ignored. Dates are unconstrained anyway (§7) |
+
+Nine of the fifteen columns are deliberately unused. Worth saying, so the next reader does
+not assume they were forgotten.
+
+### 10.5 What gets stored — the total drives the rate
+
+The file gives a total; §7.1 stores a rate. So the import divides:
+
+```
+stored rate = Product Total ÷ the app's acreage for that field
+```
+
+converted into the rate's unit.
+
+**Divided by the app's acreage, deliberately.** The tonnage is what must round-trip: the
+shopping list recomputes `rate × acreage`, so dividing by the same acreage it will later
+multiply by returns exactly the imported total. Dividing by the file's `Field Acres` or
+`Applied Acres` would make the shopping list disagree with the prescription — the one thing
+this import exists to prevent. `fields.acreage` itself is never written.
+
+> **The stored rate will not equal the file's `Avg Rate`, and that is correct.**
+> `Avg Rate` is per *applied* acre. In the sample, Potash is 191.08 lb/ac over 91.87
+> **applied** acres of a 97.82-acre Rx, because the script zeroes some zones — and
+> 191.08 × 91.87 ÷ 2000 = 8.78 ton, which confirms the reading. The app has no
+> applied-versus-field distinction, so its rate is a field average and is necessarily
+> lower. Anyone later "fixing" the import to carry `Avg Rate` through verbatim will
+> silently inflate every tonnage by the ratio of field acres to applied acres.
+
+### 10.6 Matching, and the picker
+
+| What must match | Handling |
+|---|---|
+| **Field name** | Exact → automatic. Differs only by case or whitespace → automatic, noted. Otherwise → **a picker**, the owner's call and the simple one: choose the field, or skip the row |
+| **Product name** | The same ladder, but **never** auto-matched on a fuzzy hit. `8-39-0 RhizoSorb` really is the 2027 `Rhizosorb P` (ton, $1,399) — a match no matcher should make on its own, since `RhizoSorb` is common to both and `8-39-0` and `P` are not. Confirmed once per import |
+| **Product absent from the season** | The row is skipped and named. Creating products from an import is out of scope |
+| **Unit** | Through `convertProductUnits`, which returns `needs-density` for a liquid. A failure names the product, per the F-5 rule |
+
+**No alias table in the first cut.** Persisting `name → product_id` per farm is the obvious
+next thought and it is premature: a handful of products confirmed once or twice a season is
+a dozen dropdowns a year, against a new table, new RLS, and a new thing that can go stale.
+Revisit if it grates.
+
+Precedent to copy rather than reinvent: `matchFertilizerProductByName` exists from F-5, with
+tests including that an exact match beats a case-variant. Its governing lesson is the one
+that matters here — **a miss must say which name it could not place, and where to fix it.**
+The bug F-5 deleted reported success on a miss.
+
+### 10.7 Review is the grid; nothing is written until it is committed
+
+The import gets no screen of its own. It parses, matches, and **populates the V-6 grid**,
+where the numbers sit next to each other and can be edited before anything lands. One
+surface, built once, doing both jobs — which is also why the grid is load bearing twice
+over.
+
+- **Nothing is written until the review is committed.** All-or-nothing, the rule
+  `applyWorkOrder` and the cascade already follow: a half-applied import leaves plausible
+  wrong rates, which is worse than no import.
+- **Re-import replaces, it does not append** — §4 Option E's replace-wholly rule applied to
+  the file. A corrected script over the same (program, fields) replaces those fields' rows.
+- **Fields the file does not name are left alone.** An import speaks only for the fields it
+  mentions; it must not silently zero the rest.
+- **Nothing about acreage, price or cost is ever written** (§10.4).
