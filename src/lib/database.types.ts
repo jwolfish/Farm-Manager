@@ -994,6 +994,67 @@ export type Database = {
           },
         ]
       }
+      field_fertilizer_rates: {
+        Row: {
+          application_rate: number
+          application_rate_unit: string
+          created_at: string | null
+          fertilizer_product_id: string
+          field_id: string
+          id: string
+          program_id: string
+          sort_order: number | null
+          updated_at: string | null
+          user_id: string
+        }
+        Insert: {
+          application_rate: number
+          application_rate_unit: string
+          created_at?: string | null
+          fertilizer_product_id: string
+          field_id: string
+          id?: string
+          program_id: string
+          sort_order?: number | null
+          updated_at?: string | null
+          user_id: string
+        }
+        Update: {
+          application_rate?: number
+          application_rate_unit?: string
+          created_at?: string | null
+          fertilizer_product_id?: string
+          field_id?: string
+          id?: string
+          program_id?: string
+          sort_order?: number | null
+          updated_at?: string | null
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "field_fertilizer_rates_fertilizer_product_id_fkey"
+            columns: ["fertilizer_product_id"]
+            isOneToOne: false
+            referencedRelation: "fertilizer_products"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "field_fertilizer_rates_field_id_fkey"
+            columns: ["field_id"]
+            isOneToOne: false
+            referencedRelation: "fields"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "field_fertilizer_rates_program_id_fkey"
+            columns: ["program_id"]
+            isOneToOne: false
+            referencedRelation: "fertilizer_programs"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       field_yields: {
         Row: {
           created_at: string | null
