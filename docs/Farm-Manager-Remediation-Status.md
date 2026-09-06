@@ -2715,10 +2715,23 @@ here to be wrong than in a rate grid.
 | **The phone** | Back was driven with `history.back()`, not with a phone's back gesture. They are the same API, but nobody has held the device |
 | **Sidebar links** | Nav items are still `<button onClick>`, not `<Link>`, so middle-click and open-in-new-tab do not work. Deliberate for this round: converting them means touching `DashboardLayout`, and keeping its diff at zero is what makes this one reviewable |
 
-**The owner's check, and it is thirty seconds.** Open the app, click Fields, click a
-field, then press the browser's back button — twice. **Pass:** you land on Fields, then on
-wherever you were before it, and the address bar reads `#/fields/…` while a field is open.
-**Fail:** the browser leaves the app, or the field screen shows the wrong field.
+**CONFIRMED IN THE RUNNING APP by the owner, 6 Sep 2026.** Fields → a field → back → back
+lands on the Dashboard, which is the pass condition: back once returns to Fields, back
+again to wherever the session started. **The back button works, and the app is no longer
+exited by it.** That closes the check this section shipped without, and with it the last
+thing WI-29a could only claim by reading.
+
+Two things it establishes that the harness could not. The routing works against **real
+data through `App.tsx`**, which cannot be booted on the machine this was written on — so
+`useMatch`, the field-detail route and the `Fields`/`FieldDetail` handoff are exercised for
+the first time. And the R-4 sign-out effect, the R-1 gates and the R-6 boundaries all still
+compose with the router, because none of them fired wrongly on the way through.
+
+*(The check as originally written is kept below for the next reader.)* Open the app, click
+Fields, click a field, then press the browser's back button — twice. **Pass:** you land on
+Fields, then on wherever you were before it, and the address bar reads `#/fields/…` while a
+field is open. **Fail:** the browser leaves the app, or the field screen shows the wrong
+field.
 
 **Floor:** TypeScript **69**, error set byte-identical with positions stripped · ESLint
 **107 / 28**, unchanged · tests 422 → **435** · build succeeds, 40 chunks unchanged, the

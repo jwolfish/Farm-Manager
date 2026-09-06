@@ -125,6 +125,20 @@ until this is split.
 
 ## 4. The decision to settle first: `<DataList>` — ANSWERED 6 Sep 2026
 
+> **THE OWNER OPENED THE APP ON A PHONE, 6 Sep 2026: *"the website as it is on the phone is
+> a mess and scrolls poorly … it's unusable."*** That is the single most important line in
+> this document, and it is worth more than every measurement below it.
+>
+> It reframes what follows. §4.3's finding — the identity column scrolling out of view on
+> the report tables — is real and still the argument for the primitive, but it is now
+> clearly **one instance of a general problem, not the problem**. The verdict is not "the
+> report tables are awkward"; it is that the app cannot be used on a phone at all. Nothing
+> in this section should be read as a claim that fixing the twelve report tables makes the
+> app mobile-ready.
+>
+> It also means the mobile effort is no longer speculative work against a measurement.
+> There is a user, on a device, who cannot use it.
+
 **Answer: build one primitive, adopt it 12–16 times, and leave the rest alone.** Not 31.
 The 31 raw tables are not one population, and the framing this section used to carry —
 "retrofit 31 screens by hand or build one primitive and adopt it 31 times" — was a false
@@ -242,7 +256,11 @@ smaller and far better understood number than 31.
   from element geometry rather than from looking. Geometry is the stronger evidence for
   "44 % is hidden" and "the identity cell is outside the container", but it is not the same
   as having seen it, and this document has been careful about that distinction since F-4b.
-  **A glance on a real phone is the cheap confirmation.**
+  ~~A glance on a real phone is the cheap confirmation.~~ **That glance has been taken —
+  see the box at the top of this section — and it was worse than the geometry predicted.**
+  The geometry described a specific defect on twelve specific tables; the phone says the
+  whole app is unusable. Where the two disagree, **the phone is right**, and this is the
+  clearest example yet of why this project renders things rather than reasoning about them.
 - **The fixtures are representative, not real.** Field names and acreages are this farm's;
   the dollar figures are plausible rather than queried.
 
