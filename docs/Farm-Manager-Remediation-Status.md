@@ -2574,15 +2574,28 @@ build config that demonstrably does not move the number is how config becomes fo
 The remaining split worth considering later is the eleven report sub-pages, which currently
 share one 561 kB chunk — a second increment inside `Reports.tsx`, not this one.
 
-**NOT verified: the app running.** `App.tsx` reaches the Supabase client at module load, so
-nothing here can be exercised at runtime on this machine. The chunk graph is proven by
-reading the built output, tests are green and the build succeeds — but **no page has been
-observed lazily loading, and no Suspense fallback has been seen on screen.** The owner's
-check is the cheapest possible one: open the app, click through the pages, confirm each
-appears without a visible stall and that the sidebar never blanks.
+**CONFIRMED IN THE RUNNING APP by the owner, 6 Sep 2026** — clicked through the pages, **no
+visible stalls and no blanks.** That closes the check this round shipped without, and it
+establishes two things the built output could not:
+
+- **The chunk graph resolves at runtime**, not merely on disk. Twelve `import()` calls
+  landing correctly is the difference between a well-formed build and a working one.
+- **The Suspense placement is right.** "No blanks" is the specific evidence that the
+  fallback renders inside `DashboardLayout` rather than above it — the R-1 interaction
+  flagged above as load bearing. Had it been hoisted, every first visit to a page would
+  have blanked the sidebar and season picker, and that is exactly what would have been
+  seen while clicking through.
+
+**Three things this does NOT establish, and none should be claimed:**
+
+| | |
+|---|---|
+| **The connection this actually targets** | This was a desktop test. WI-22 exists for rural cell data, where 102 kB versus 479 kB is the whole argument, and no test has been run on a slow link. "No visible stall" on broadband is expected either way |
+| **The stale-chunk path** | R-6's chunk-load classifier now covers every page, but firing it needs a tab left open across a deploy. Still exercised only by its 21 unit tests |
+| **Which pages were opened** | Reported as "clicked through pages". `Reports` is the largest lazy chunk by far — 561 kB / 146 gz — so it is the one whose load is most likely to be perceptible; whether it was among them is not recorded |
 
 **Floor:** TypeScript **69**, error set unchanged (0 new, 0 fixed) · ESLint **107 / 28**,
-unchanged · tests **422**, unchanged · build succeeds.
+unchanged · tests **422**, unchanged · build succeeds · CI green (run #3).
 
 ## Open items and standing notes
 
