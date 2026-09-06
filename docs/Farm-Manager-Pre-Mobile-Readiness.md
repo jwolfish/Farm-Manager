@@ -14,11 +14,12 @@
 | | | State |
 |---|---|---|
 | **WI-22 / PERF-1** | Code-split the bundle | **DONE 6 Sep 2026.** First paint 468 → **102.11 kB gzip** by making 12 of 13 pages `React.lazy`. §3 is kept as the record of what was wrong |
-| **WI-29a** | Adopt a router | **DONE 6 Sep 2026.** Hash routes (`#/fields`, `#/fields/:fieldId`) replace `activePage` in `sessionStorage`, so back, forward and a shared link all work. Verified in a browser against the real route table. §2 is kept as the record of what was wrong |
+| **WI-29a** | Adopt a router | **DONE 6 Sep 2026.** Real routes (`/fields`, `/fields/:fieldId`) replace `activePage` in `sessionStorage`, so back, forward and a shared link all work. Verified in a browser against the real route table. Shipped as hash routes and switched to clean paths the same day, when the move to Netlify supplied the rewrite rule. §2 is kept as the record of what was wrong |
 
-**First paint is now 118.40 kB gzip**, not 102.11 — `react-router-dom` is +16.29 kB gz and
-`App.tsx` imports it eagerly. WI-22's target is ≤ 300 kB gz, so the router did not spend
-the headroom it was given.
+**First paint is now 119.11 kB gzip**, not 102.11 — `react-router-dom` is +16.29 kB gz and
+`App.tsx` imports it eagerly, plus 0.47 for WI-29b's module boundaries and 0.24 for
+`BrowserRouter`. WI-22's target is ≤ 300 kB gz, so the router did not spend the headroom
+it was given.
 
 **WI-29b, the decomposition, is DONE too, and `App.tsx` is 559 lines rather than 1,118.**
 It never gated mobile — the back button was the deliverable — but it was worth doing before
@@ -44,11 +45,13 @@ because of mobile.
 ## 2. WI-29 was the finding, and it is now closed
 
 > **WI-29a closed 6 Sep 2026, hours after this section was written.** The URL is the
-> navigation state; `#/fields` and `#/fields/:fieldId` are real history entries, so back
+> navigation state; `/fields` and `/fields/:fieldId` are real history entries, so back
 > and forward work and a field screen is linkable. `HashRouter` was chosen over clean
-> paths precisely because of the gap this section identifies — no host is committed
+> paths precisely because of the gap this section identifies — no host was committed
 > anywhere in the repo, so a router that needs a rewrite rule would ship an unverified
-> promise. The route table is one tested file, `src/lib/appRoutes.ts`; `DashboardLayout`
+> promise. **That gap closed hours later**: the app moved to Netlify, the rewrite is
+> committed as `public/_redirects`, and the router is `BrowserRouter`. The `#` is gone.
+> The route table is one tested file, `src/lib/appRoutes.ts`; `DashboardLayout`
 > took a zero-line diff. Full record in the status doc's WI-29a section. **The
 > measurements below are the "before", kept because they are what made the case.**
 >

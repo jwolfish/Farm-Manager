@@ -1,0 +1,17 @@
+# Deliberately narrow. This repository has core.autocrlf=true on the owner's machine, which
+# is fine for source — but the three files below are parsed line-by-line by Netlify rather
+# than by a compiler, and a stray CR is the kind of thing that makes a rewrite rule quietly
+# not apply. A missing rewrite does not break navigation inside the app; it breaks refresh
+# and pasted links only, which is a failure nobody notices until someone else hits it.
+#
+# CI checks out on Linux and would get LF regardless. This is for a local build that is
+# ever deployed by hand.
+#
+# NOT a whole-repo normalisation on purpose: CRLF working copies are also what the
+# edge-function byte-for-byte verification is calibrated against (see CLAUDE.md — compare
+# with `diff --strip-trailing-cr`), and renormalising everything would rewrite that
+# comparison's baseline for no benefit.
+
+public/_redirects text eol=lf
+public/_headers   text eol=lf
+netlify.toml      text eol=lf

@@ -13,11 +13,11 @@
  * any decision left inside it can only ever be verified by reading. This one can be
  * tested, and is.
  *
- * Paths are hash routes at runtime — '/fields' is '#/fields' in the address bar. That
- * was a deliberate choice: a HashRouter needs no rewrite rule from the host, so a deep
- * link and a page refresh work on any static host, including preview origins that
- * rotate. Nothing in this file changes if that is later swapped for clean paths; the
- * router type in App.tsx is the only thing that would.
+ * The paths below are what the address bar shows verbatim — '/fields', not '#/fields'.
+ * They were hash routes until the app moved to Netlify on 6 Sep 2026, and the switch
+ * touched nothing in this file: the router type in App.tsx is the only thing that knows.
+ * What clean paths depend on is the host rewriting unknown paths to index.html, which is
+ * committed as `public/_redirects`. Those two must move together or a refresh 404s.
  */
 
 export const DASHBOARD_PAGE = 'dashboard';

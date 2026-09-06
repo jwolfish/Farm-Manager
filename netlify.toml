@@ -1,0 +1,27 @@
+# Netlify configuration.
+#
+# WHAT ACTUALLY DEPLOYS THIS SITE IS GITHUB ACTIONS, NOT NETLIFY.
+# `.github/workflows/ci.yml` runs the floor (tests → baselines → build) and only then
+# uploads `dist/` with `netlify deploy --no-build`. That ordering is the point: Netlify's
+# own Git integration builds on every push regardless of whether CI passed, which would
+# put a tree with failing tests in front of the owner. The deploy is downstream of the
+# gate rather than parallel to it.
+#
+# So the [build] block below is a FALLBACK. It is what Netlify would use if the site is
+# ever connected to the repository directly — worth keeping correct, and worth knowing it
+# is not normally exercised.
+#
+# The rules that govern the SERVED site — the SPA rewrite and cache headers — are
+# deliberately NOT here. They live in `public/_redirects` and `public/_headers`, which
+# Vite copies verbatim into `dist/`, so they travel inside the deployed artifact whoever
+# built it. A rewrite rule that lives only in this file would be one more thing that has
+# to be resolved correctly at deploy time to avoid a 404 on refresh.
+
+[build]
+  command = "npm run build"
+  publish = "dist"
+
+[build.environment]
+  # Matches the CI job. The default Netlify image is older, and npm 11's behaviour around
+  # install scripts is what the project has measured everything against.
+  NODE_VERSION = "24"

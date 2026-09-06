@@ -1,0 +1,16 @@
+# The SPA rewrite, and the thing that makes clean URLs possible at all.
+#
+# WI-29a chose HashRouter because no host was committed to this repository, and a
+# BrowserRouter without this line means a refresh on /fields returns a 404 — which reads
+# to the owner as the app being broken rather than as a missing config file. Netlify is
+# now that host, so this line is the promise the router is relying on. Deleting it does
+# not break navigation from inside the app; it breaks refresh, deep links and bookmarks,
+# which is a far quieter failure.
+#
+# Netlify serves a real file first and only falls through to this rule when nothing
+# matches, so /assets/index-abc123.js is still served as itself.
+#
+# This file lives in public/ rather than in netlify.toml on purpose: Vite copies it
+# verbatim into dist/, so the rule ships inside the deployed artifact whoever built it.
+
+/*    /index.html    200

@@ -113,11 +113,12 @@ The status doc is the source of truth for what is done. Update it when a round l
   until WI-29b deleted a dead parameter and an unnecessary dependency). **`App.tsx` itself
   now reports zero**, down from five.
 - `npx vite build` succeeds and emits **40 chunks**. The number that matters is **first
-  paint: 417.29 kB raw / 118.87 kB gzip**, which is `dist/index.html`'s single
+  paint: 418.65 kB raw / 119.11 kB gzip**, which is `dist/index.html`'s single
   `<script>` and nothing else — measure it that way, by reading the tags out of
   `index.html`, not by looking for "the main chunk". WI-29a added 48.85 kB raw /
-  16.29 kB gzip to it (`react-router-dom`, which `App.tsx` imports eagerly) and WI-29b a
-  further 2.55 kB raw of module boundaries; WI-22's
+  16.29 kB gzip to it (`react-router-dom`, which `App.tsx` imports eagerly), WI-29b a
+  further 2.55 kB raw of module boundaries, and the Netlify move 1.36 kB raw for
+  `BrowserRouter` in place of `HashRouter`; WI-22's
   target is ≤ 300 kB gzip, so it is still met with room.
 
   **WI-22 landed 6 Sep 2026 and changed what these figures mean.** Until then all thirteen
@@ -125,7 +126,8 @@ The status doc is the source of truth for what is done. Update it when a round l
   round's growth landed in it. Twelve pages are now `React.lazy` (`Auth` stays eager), so
   `recharts` (eleven report sub-pages) and `jspdf` (reached through the `lib/exportUtils`
   barrel) are out of the first paint entirely. **479.30 → 102.11 kB gzip**, against WI-22's
-  ≤ 300 kB target. WI-29 then took it to **118.87 kB gzip**.
+  ≤ 300 kB target. WI-29 then took it to 118.87, and the Netlify move to
+  **119.11 kB gzip**.
 
   Consequence for future work: **app-level code is the only thing that still lands in the
   first paint.** R-1's 2.09 kB, R-6's 4.64 kB and WI-29a's 16.29 kB gz did, because they
@@ -243,16 +245,18 @@ These are real mistakes made during this work, not hypotheticals.
 
 13. **The URL is the navigation state, and `lib/appRoutes.ts` is the only thing that
    knows how a page key and a path correspond.** WI-29a replaced `activePage` in
-   `sessionStorage` with hash routes (`#/fields`, `#/fields/:fieldId`), because the old
+   `sessionStorage` with real routes (`/fields`, `/fields/:fieldId`), because the old
    scheme left the history stack with one entry — so the phone's back gesture exited the
    app. `DashboardLayout` still speaks in page keys ('dashboard', 'spray-planner') and is
    deliberately untouched; the mapping is what got extracted, so it can be tested where
    `App.tsx` cannot. **Add a page in both places or not at all** — a sidebar key with no
    route navigates to a URL that falls through the catch-all and bounces to the dashboard,
    which presents as a click that does nothing. Three things that look like oversights and
-   are not: `HashRouter` is chosen so a deep link and a refresh need no rewrite rule from
-   the host, and swapping it for `BrowserRouter` is the only change needed if a host ever
-   provides one; sidebar items are still buttons rather than `<Link>`s, so middle-click and
+   are not: **`BrowserRouter` depends on `public/_redirects`**, the `/* /index.html 200`
+   rewrite the Netlify move added on 6 Sep — those two move together, and a host without
+   that rule needs `HashRouter` back, which is the one-line reversal (the symptom is that
+   in-app navigation works while every refresh and pasted link 404s); sidebar items are
+   still buttons rather than `<Link>`s, so middle-click and
    open-in-new-tab do not work yet; and `handleBackFromFieldDetail` navigates to `/fields`
    explicitly rather than calling `navigate(-1)`, because a field screen is now reachable
    by link and history.back() with nothing behind it leaves the app — the exact failure
@@ -280,6 +284,24 @@ These are real mistakes made during this work, not hypotheticals.
    And **`AppFullScreens.tsx` must keep importing nothing from `lib/`** — that is what
    makes those screens renderable on a machine with no Supabase credentials, which is how
    every screen defect in this project has been found.
+
+## Hosting — Netlify, deployed by CI (6 Sep 2026)
+
+The app left Bolt on 6 Sep 2026. There is **no publish step**: push to `main`, CI runs the
+floor, and only then does a `deploy` job upload `dist/`. A pull request gets its own
+preview URL. Full detail is in `DEVELOPER_GUIDE.md` → Deployment; the parts that bite:
+
+- **`public/_redirects` is why `BrowserRouter` is allowed.** See guardrail 13. It and the
+  router type move together or refresh returns 404.
+- **`public/_headers` marks `/assets/*` immutable and `index.html` not cacheable.** The
+  second half matters: a cached `index.html` names chunk filenames a deploy has deleted,
+  which manufactures R-6's chunk-load error on purpose.
+- **Deploys are gated on `verify`, not on Netlify's Git integration.** Do not connect the
+  Netlify site to the repository as well — it would build on every push regardless of
+  whether the floor passed, and deploy twice.
+- **A build with no `VITE_SUPABASE_*` succeeds and ships a white page**, because
+  `supabase.ts` throws at module import, above React and above every error boundary. The
+  deploy job greps the bundle for the URL rather than trusting the build's exit code.
 
 ## Verifying your own work
 
@@ -312,7 +334,7 @@ The individual commands still work when you want one of them:
 ```
 npx tsc --noEmit -p tsconfig.app.json   # 68
 npx eslint .                            # 105 errors / 28 warnings
-npx vite build                          # must succeed; first paint 118.87 kB gz
+npx vite build                          # must succeed; first paint 119.11 kB gz
 npm test                                # 435 passing, must stay green
 ```
 

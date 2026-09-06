@@ -60,3 +60,101 @@ jobs:
                 "$(awk "BEGIN{printf \"%.2f\", $gz/1024}")"
             done
           } >> "$GITHUB_STEP_SUMMARY"
+
+  # ---------------------------------------------------------------------------------
+  # Deploy to Netlify — 6 Sep 2026, replacing the Bolt publish button.
+  #
+  # `needs: verify` is the entire reason this lives here rather than in Netlify's own Git
+  # integration. Netlify builds on every push regardless of whether the floor passed, so a
+  # tree with failing tests would reach the owner. Here a red `verify` means nothing is
+  # deployed at all.
+  #
+  # It REBUILDS rather than reusing the verify job's dist/. That is not waste: the verify
+  # build runs with no Supabase environment, which is fine as a compile check and produces
+  # a bundle that throws `Missing Supabase environment variables` at module load. Shipping
+  # that would be a white page. The build below has the real values and is asserted to.
+  # ---------------------------------------------------------------------------------
+  deploy:
+    name: Deploy to Netlify
+    needs: verify
+    if: github.event_name == 'pull_request' || github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+
+    env:
+      NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+      NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
+      VITE_SUPABASE_URL: ${{ secrets.VITE_SUPABASE_URL }}
+      VITE_SUPABASE_ANON_KEY: ${{ secrets.VITE_SUPABASE_ANON_KEY }}
+
+    steps:
+      # Skip rather than fail while the four secrets do not exist yet, so adding this
+      # workflow does not turn every push red before the Netlify site has been created.
+      # It says so in the run summary instead of failing silently — a skipped deploy that
+      # looks identical to a successful one is the WI-15 lie in a new place.
+      - name: Are the deploy secrets configured?
+        id: guard
+        run: |
+          missing=''
+          for name in NETLIFY_AUTH_TOKEN NETLIFY_SITE_ID VITE_SUPABASE_URL VITE_SUPABASE_ANON_KEY; do
+            if [ -z "${!name}" ]; then missing="$missing $name"; fi
+          done
+          if [ -n "$missing" ]; then
+            echo "ready=false" >> "$GITHUB_OUTPUT"
+            echo "::warning::Netlify deploy skipped — missing repository secrets:$missing"
+            echo "**Deploy skipped** — missing repository secrets:$missing" >> "$GITHUB_STEP_SUMMARY"
+          else
+            echo "ready=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v4
+        if: steps.guard.outputs.ready == 'true'
+
+      - uses: actions/setup-node@v4
+        if: steps.guard.outputs.ready == 'true'
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: Install
+        if: steps.guard.outputs.ready == 'true'
+        run: npm ci
+
+      - name: Build with the real Supabase environment
+        if: steps.guard.outputs.ready == 'true'
+        run: npx vite build
+
+      # The check that can return "no". A build with an empty or misspelled VITE_ secret
+      # succeeds — Vite inlines `undefined` and says nothing — and the failure only shows
+      # up as a white screen in front of the owner. The URL is inlined as a literal, so
+      # its presence in the bundle is direct evidence the environment reached the build.
+      - name: Assert the environment reached the bundle
+        if: steps.guard.outputs.ready == 'true'
+        run: |
+          if ! grep -rqF -- "$VITE_SUPABASE_URL" dist/assets; then
+            echo "::error::Built bundle does not contain VITE_SUPABASE_URL. Refusing to deploy a white page."
+            exit 1
+          fi
+
+      # `--no-build`: the build already happened above, with the environment. Without this
+      # the CLI would honour netlify.toml's [build] command and build a second time, this
+      # time with none.
+      - name: Deploy
+        if: steps.guard.outputs.ready == 'true'
+        id: netlify
+        run: |
+          if [ "${{ github.event_name }}" = "push" ]; then PROD='--prod'; else PROD=''; fi
+          npx --yes netlify-cli@27 deploy \
+            --dir=dist \
+            --no-build \
+            --json \
+            $PROD \
+            --message "${{ github.sha }} — ${{ github.event_name }}" > deploy.json
+          url=$(jq -r '.deploy_url // .url' deploy.json)
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+          {
+            echo "### Deployed"
+            echo ''
+            if [ -n "$PROD" ]; then echo "**Production**"; else echo "**Deploy preview**"; fi
+            echo ''
+            echo "$url"
+          } >> "$GITHUB_STEP_SUMMARY"

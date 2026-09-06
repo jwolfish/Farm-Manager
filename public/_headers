@@ -1,0 +1,35 @@
+# Cache and security headers for the deployed site. Copied into dist/ by Vite, like
+# _redirects beside it.
+#
+# WHY THE CACHING MATTERS HERE SPECIFICALLY. Netlify's default is
+# `max-age=0, must-revalidate`, so every asset costs a revalidation round trip on every
+# load even when it has not changed. WI-22 exists because this app is used on rural cell
+# data; 40 chunks each paying a round trip is the same problem the code splitting was
+# meant to solve, arriving from the other direction.
+#
+# Vite fingerprints every file in /assets/, so a changed file is a changed URL. That is
+# what makes `immutable` safe rather than reckless: nothing under /assets/ is ever
+# rewritten in place.
+
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable
+
+# index.html is the opposite case and must NOT be cached. It is the only file that names
+# which hashed chunks exist, so a stale copy points at chunk filenames a deploy has
+# already deleted. That is exactly R-6's chunk-load error — the one case where "reload the
+# page" is the correct advice — and there is no reason to manufacture it.
+
+/index.html
+  Cache-Control: public, max-age=0, must-revalidate
+
+# Two headers that cost nothing and close ordinary footguns.
+#
+# NOT SET, deliberately: Content-Security-Policy. The PDF and print reports build an HTML
+# string and open it as a same-origin blob URL (guardrail 2), and Tailwind ships inline
+# styles. A CSP strict enough to be worth having would break report printing, and the
+# control that actually protects that path is `esc()` on every interpolation — which is
+# SEC-2, and is already in place. A CSP here would be reassurance rather than defence.
+
+/*
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: strict-origin-when-cross-origin

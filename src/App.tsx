@@ -1,6 +1,6 @@
 import { Suspense, lazy, useCallback, useEffect } from 'react';
 import {
-  HashRouter,
+  BrowserRouter,
   Navigate,
   Route,
   Routes,
@@ -524,20 +524,22 @@ function AppWithFarm() {
 }
 
 /*
- * WI-29a. HashRouter rather than BrowserRouter, and it is a deployment decision more
- * than a routing one.
+ * WI-29a chose HashRouter; the move to Netlify (6 Sep 2026) made this BrowserRouter.
+ * It has always been a deployment decision rather than a routing one, and the deployment
+ * is what changed — nothing about the routes did.
  *
- * Clean paths require the host to rewrite every unknown path to index.html. There is no
- * host committed to this repository — the developer guide says only "any CDN or static
- * host" — so a BrowserRouter would ship a promise nobody has verified, and the failure
- * mode is that refreshing on /fields returns a 404, which reads to a user as the app
- * being broken. A hash route needs no server co-operation at all: a deep link, a
- * refresh and a bookmark work anywhere the static files are served from, including the
- * preview origins that rotate.
+ * Clean paths require the host to rewrite every unknown path to index.html, and until
+ * there was a committed host that promise could not be made: a BrowserRouter without the
+ * rewrite means a refresh on /fields returns a 404, which reads to the owner as the app
+ * being broken rather than as a missing config file. The rewrite now exists and is
+ * committed — `public/_redirects`, which Vite copies into dist/ so it travels inside the
+ * deployed artifact. Vite's own dev server does the same fallback natively, so `npm run
+ * dev` and production agree.
  *
- * The cost is a '#' in the URL. If a real deployment with a rewrite rule ever exists,
- * this becomes BrowserRouter and nothing else in the app changes — every path is
- * already declared in lib/appRoutes.ts.
+ * IF THIS IS EVER SERVED FROM SOMEWHERE WITHOUT THAT RULE, THIS LINE GOES BACK TO
+ * HashRouter. That is the whole change — every path is declared in lib/appRoutes.ts and
+ * nothing else in the app knows which router it is under. The symptom that says you need
+ * it: navigation inside the app works perfectly, and a refresh or a pasted link 404s.
  *
  * It sits ABOVE the providers so that anything inside them, including the Auth screen,
  * may navigate. It sits INSIDE main.tsx's root error boundary, so a router failure is
@@ -545,14 +547,14 @@ function AppWithFarm() {
  */
 function App() {
   return (
-    <HashRouter>
+    <BrowserRouter>
       <AuthProvider>
         <NotificationProvider>
           <AppWithFarm />
           <ToastContainer />
         </NotificationProvider>
       </AuthProvider>
-    </HashRouter>
+    </BrowserRouter>
   );
 }
 

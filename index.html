@@ -2,12 +2,21 @@
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Farm Manager</title>
-    <meta property="og:image" content="https://bolt.new/static/og_default.png" />
-    <meta name="twitter:card" content="summary_large_image" />
-    <meta name="twitter:image" content="https://bolt.new/static/og_default.png" />
+    <meta name="description" content="Field, program, inventory and cost management for a row-crop operation." />
+    <!--
+      Three tags from the Bolt starter were removed here on 6 Sep 2026, when the app moved
+      to Netlify. Two were og:image / twitter:image pointing at bolt.new's default share
+      image, so every link shared from this app carried someone else's branding. The third
+      was a favicon link to /vite.svg, a file this project has never contained — a
+      guaranteed 404 on every page load. A real icon can be dropped into public/ and
+      re-linked whenever there is one worth using; an absent link and a broken link render
+      identically today.
+    -->
+    <meta property="og:title" content="Farm Manager" />
+    <meta property="og:description" content="Field, program, inventory and cost management for a row-crop operation." />
+    <meta property="og:type" content="website" />
   </head>
   <body>
     <div id="root"></div>

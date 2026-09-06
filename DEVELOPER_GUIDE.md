@@ -1150,11 +1150,46 @@ The `team_members` table previously had no database-level guard against duplicat
 npm run build
 ```
 
-Output goes to `dist/`. The build is a standard static site that can be served from any CDN or static host (Netlify, Vercel, Cloudflare Pages, etc.).
+Output goes to `dist/`. The build is a standard static site.
+
+### Hosting — Netlify, deployed from CI
+
+**The app moved off Bolt to Netlify on 6 Sep 2026.** The old workflow was: push to GitHub → Bolt pulls into its preview container → click Publish → `bolt.host`. There is no publish step now.
+
+**Deploys come from GitHub Actions, not from Netlify's Git integration**, and that is deliberate. `.github/workflows/ci.yml` runs the floor — tests, the baseline ratchet, the build — and a `deploy` job runs only `needs: verify`. Netlify's own Git integration builds on every push whether or not CI passed, which would put a failing tree in front of the owner. Here a red floor deploys nothing.
+
+| Event | What happens |
+|---|---|
+| Push to `main` | `verify`, then `netlify deploy --prod` |
+| Pull request | `verify`, then a draft deploy — its own preview URL, printed in the run summary |
+| Push to any other branch | `verify` only |
+
+**Four repository secrets are required** (Settings → Secrets and variables → Actions). Until all four exist the deploy job *skips with a warning* rather than failing, so the workflow is safe to merge before the Netlify site is created:
+
+| Secret | Where it comes from |
+|---|---|
+| `NETLIFY_AUTH_TOKEN` | Netlify → User settings → Applications → personal access token |
+| `NETLIFY_SITE_ID` | Netlify → Site configuration → Site ID |
+| `VITE_SUPABASE_URL` | Supabase project URL |
+| `VITE_SUPABASE_ANON_KEY` | Supabase anon key |
+
+**The site is not connected to the GitHub repository.** Create it in Netlify by deploying manually once (or with `netlify sites:create`); Actions does everything after that. If it is ever connected to Git, turn CI's deploy job off first or every push will deploy twice.
+
+Three files govern the served site, all committed:
+
+| File | What it does |
+|---|---|
+| `netlify.toml` | Build command, publish directory, Node 24. A **fallback** — only used if Netlify ever builds this itself |
+| `public/_redirects` | The SPA rewrite, `/* /index.html 200`. Vite copies it into `dist/`, so it ships inside the artifact |
+| `public/_headers` | Immutable caching for `/assets/*`, no caching for `index.html`, plus `nosniff` and a referrer policy |
+
+**`public/_redirects` is load bearing.** The app uses `BrowserRouter` (clean paths, no `#`), which is only correct because that rewrite exists. Remove it and in-app navigation still works while every refresh, bookmark and pasted link returns 404 — a quiet failure. If this is ever served from a host without a rewrite rule, change `BrowserRouter` back to `HashRouter` in `src/App.tsx`; that one line is the entire change.
+
+**Supabase auth needs the deployed origin.** Add it under Authentication → URL Configuration (Site URL and the redirect allowlist), or password-reset and confirmation links point at the old host.
 
 ### Environment Variables
 
-The production host must provide:
+Local development reads `.env`; CI reads the repository secrets above.
 
 ```
 VITE_SUPABASE_URL=https://your-project.supabase.co
@@ -1162,6 +1197,8 @@ VITE_SUPABASE_ANON_KEY=your-anon-key
 ```
 
 These are embedded at build time by Vite. The anon key provides no elevated database access beyond what RLS policies permit and is safe to expose publicly.
+
+**A build with these missing still succeeds.** Vite inlines `undefined`, and the failure only appears as a white screen — `src/lib/supabase.ts` throws `Missing Supabase environment variables` at module *import*, which is above React and so is not caught by any error boundary. The deploy job therefore greps the built bundle for the Supabase URL and refuses to deploy if it is absent.
 
 ### Supabase Project Setup
 

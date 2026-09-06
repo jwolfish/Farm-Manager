@@ -5,8 +5,12 @@ complete, shopping-list coverage complete, and **field-level fertilizer rates V-
 V-8 complete, confirmed in the running app**. Only V-7, the optional CSV import, remains,
 and it is **deferred by the owner's decision** until the grid has been used for a season.
 **WI-22, WI-29a and WI-29b all landed 6 Sep, so BOTH mobile blockers are cleared and
-WI-29 is closed** — first paint is 118.87 kB gzip, the browser's back button works, and
+WI-29 is closed** — first paint is 119.11 kB gzip, the browser's back button works, and
 `App.tsx` is 559 lines rather than 1,118.
+**The app also left Bolt for Netlify the same day** — no publish button, deploys gated on
+`npm run verify` in CI, and clean URLs at last (`BrowserRouter`, one word, exactly as
+WI-29a predicted). See *Off Bolt, onto Netlify*. The site itself does not exist yet: the
+deploy job skips until the owner creates it and sets four repository secrets.
 **The random reload is acted on at last: R-1, R-5, R-4 item 2 and R-6 all landed 6 Sep** —
 the full-screen amplifier is gone, a failed seasons load no longer reads as an empty farm,
 the render-phase mutation is in an effect, and the app has error boundaries at last, so a
@@ -98,7 +102,7 @@ live cascade, with the two fields that correctly moved by exactly $80 as the con
 | Tests | **435 passing**, 13 files (422 before WI-29a added 13; 401 before R-6 added 21; 386 before R-1 added 15; 380 before V-8 added 6; 347 before V-6 added 25) |
 | TypeScript | **68 errors** (103 at review, 98 before WI-19, 75 before V-8 replaced two `Json` casts with `Array.isArray` guards, 73 before the chemical path got the same four, 69 before WI-29b deleted a dead parameter). Unmoved by R-1, R-6 and WI-29a; set compared with positions stripped at every step |
 | ESLint | **105 errors, 28 warnings** (from 136/28; 109 before V-8 deleted one `prefer-const` and one `no-explicit-any`; 107 before WI-29b deleted a dead parameter and an unnecessary dependency). Unmoved by R-1, by the cast guards, by R-6 or by WI-29a |
-| Build | succeeds — **40 chunks. First paint 417.29 kB raw / 118.87 kB gzip**, which is the single `<script>` in `dist/index.html`. WI-22 landed 6 Sep and took it from 1,794.82 kB / 479.30 gz to 102.11 gz by making 12 of 13 pages `React.lazy`; WI-29a then added 16.29 kB gz of `react-router-dom` and WI-29b 0.47 kB gz of module boundaries, both eager. Still inside WI-22's ≤ 300 kB gz target. **Quote first paint, not a "main chunk"** |
+| Build | succeeds — **40 chunks. First paint 418.65 kB raw / 119.11 kB gzip**, which is the single `<script>` in `dist/index.html`. WI-22 landed 6 Sep and took it from 1,794.82 kB / 479.30 gz to 102.11 gz by making 12 of 13 pages `React.lazy`; WI-29a then added 16.29 kB gz of `react-router-dom`, WI-29b 0.47 kB gz of module boundaries, and the Netlify move 0.24 kB gz for `BrowserRouter`, all eager. Still inside WI-22's ≤ 300 kB gz target. **Quote first paint, not a "main chunk"** |
 | Migrations | **63 files**, matching the database one-for-one |
 | Edge function | **version 17**, running source confirmed identical to the repo by sha256, re-verified 6 Sep |
 | Security advisors | 14 WARN — 13 are the by-design `authenticated_security_definer_function_executable` lint that fires on every RPC, 1 is `auth_leaked_password_protection` (WI-6). No new class of finding. V-6’s internal `apply_field_fertilizer_rates` is correctly absent, being executable by neither role |
@@ -2653,6 +2657,13 @@ needs no server co-operation at all. The cost is a `#` in the address bar; if a 
 deployment with a rewrite rule ever exists, the router type is a one-line change and
 nothing else moves, because every path is already declared in one file.
 
+> **Superseded the same day.** That "if" arrived within hours: the app moved to Netlify,
+> the rewrite rule is committed as `public/_redirects`, and the router is now
+> `BrowserRouter`. The prediction held exactly — the change was one word in `App.tsx` and
+> nothing else in the routing moved. See *Off Bolt, onto Netlify* below. The paragraph is
+> kept because the reasoning is still the reasoning: the router type is a property of the
+> host, and if this is ever served from somewhere without a rewrite, it goes back.
+
 **The decision is a pure function, per the `appLoadState` / `renderErrorState` pattern.**
 `App.tsx` imports the Supabase client at module load and cannot be booted on a machine
 with no credentials, so a mapping left inline in it could only ever be verified by
@@ -2859,6 +2870,124 @@ here has run against Supabase. The five screens were rendered with fixtures; the
 hooks were not, because they reach the database. What would catch a mistake in this move
 is ordinary use: sign in, switch farms, create a season, import into one, delete one. A
 decomposition that broke something would break it there.
+
+### Off Bolt, onto Netlify — 6 Sep 2026
+
+**The publish button is gone.** The workflow was: commit → push → Bolt pulls the repo into
+its preview container → click **Publish** → `bolt.host`. Two steps, one of them inside a
+product no longer being used to write any code — Round 3 moved authorship out of Bolt in
+August and nothing has gone back. It is now: commit → push → CI runs the floor → CI
+deploys. Nothing else.
+
+**Nothing in the app was coupled to Bolt**, which is why this was an afternoon rather than
+a project. The audit found exactly three artefacts, all cosmetic: `og:image` and
+`twitter:image` in `index.html` pointing at `bolt.new/static/og_default.png`, so every link
+ever shared from this app carried someone else's branding; and a favicon `<link>` to
+`/vite.svg`, **a file this repository has never contained** — a guaranteed 404 on every
+page load since the project began. `.bolt/config.json` and `.bolt/prompt` are inert and
+were left alone. The only real coupling to any host is two environment variables.
+
+**The deploy is gated on the floor, and that is the design decision.** Netlify's own Git
+integration builds on every push whether or not CI passed, which would put a tree with
+failing tests in front of the owner — so the site is deliberately **not** connected to the
+repository. `.github/workflows/ci.yml` gained a `deploy` job with `needs: verify`:
+
+| Event | Result |
+|---|---|
+| Push to `main` | floor, then `netlify deploy --prod` |
+| Pull request | floor, then a draft deploy with its own preview URL in the run summary |
+| Push to any other branch | floor only |
+
+**Two guards in that job exist because of failure modes this project has already met.**
+
+- It **skips rather than fails** while the four repository secrets do not exist, and says
+  so as a warning naming the missing ones. Merging a workflow that reddens every push
+  until unrelated setup happens is its own kind of noise; a skip that looked like a
+  success would be the WI-15 lie in a new place, so it is neither.
+- It **greps the built bundle for `VITE_SUPABASE_URL` and refuses to deploy if it is
+  absent.** A build with an empty or misspelled secret *succeeds* — Vite inlines
+  `undefined` and says nothing — and `src/lib/supabase.ts` then throws at module import,
+  which is above React and above every R-6 boundary. The whole failure is a white page in
+  front of the owner. The URL is inlined as a literal, so its presence in the bundle is
+  direct evidence the environment reached the build. This is the same rule the RLS work
+  follows: a check that cannot return "no" is worth nothing.
+
+It also **rebuilds** rather than shipping the `verify` job's `dist/`, which is not waste —
+that build deliberately runs with no Supabase environment and produces exactly the bundle
+described above.
+
+**Three committed files govern the served site**, and the split between them is
+deliberate. `netlify.toml` holds only build configuration and is a *fallback*, used solely
+if Netlify ever builds this itself. The rules that govern the **served** site live in
+`public/_redirects` and `public/_headers`, because Vite copies those verbatim into `dist/`
+— so they travel inside the deployed artifact whoever built it, rather than depending on a
+config file being resolved correctly at deploy time. Confirmed present in `dist/` after a
+build.
+
+`_headers` marks `/assets/*` immutable — safe because Vite fingerprints every filename, so
+a changed file is a changed URL — and explicitly marks `index.html` **not** cacheable.
+That second half is the interesting one: `index.html` is the only file naming which hashed
+chunks exist, so a cached copy points at filenames a deploy has already deleted. That is
+precisely R-6's chunk-load error, and there is no reason to manufacture it. Netlify's
+default is `must-revalidate` on everything, so this trades 40 revalidation round trips for
+one — which matters on the rural cell data WI-22 exists for.
+
+**No CSP, deliberately.** The reports build HTML strings and open them as same-origin blob
+URLs (guardrail 2), and Tailwind ships inline styles; a CSP strict enough to be worth
+having would break report printing. The control that actually protects that path is
+SEC-2's `esc()` on every interpolation, which is already in place. A CSP here would be
+reassurance rather than defence, and it is recorded as absent rather than forgotten.
+
+**THE `#` IS GONE — `HashRouter` → `BrowserRouter`, and it was one word.** WI-29a's own
+prediction, made hours earlier, was that the router type was a property of the host and
+that swapping it would need no other change. It held exactly: one import, one JSX tag, and
+three comments that had gone stale. `lib/appRoutes.ts` is untouched apart from its header,
+and its 13 tests still pass unmodified — the paths in that file were always written clean
+(`/fields`), and only the router decided whether a `#` appeared in front of them.
+
+**Verified in a browser, which is the point.** A unit test on a path mapping cannot show
+that a *cold load at a clean deep path* resolves — that is the entire BrowserRouter
+question, and it is a property of the server plus the router together. A throwaway harness
+mounted the **real** `appRoutes.ts` under `BrowserRouter` with the same `Routes` /
+`useMatch` / `navigate` wiring `App.tsx` uses, against stand-in pages, then was deleted:
+
+| Check | Result |
+|---|---|
+| **Cold load at `/fields/8f14e45f-…`** | Renders field detail, `fieldId` bound, sidebar lights **fields**. No `#` |
+| dashboard → fields → products → reports, back, back | products, then fields — highlight tracked at each step |
+| forward | returns to products |
+| **Refresh while on `/spray-planner`** | Survives — the exact case a missing rewrite turns into a 404 |
+| `/not-a-page` | Lands on `/dashboard` |
+| The bare origin | Lands on `/dashboard` |
+| `location.hash` at every step | Empty string |
+| Console | Clean |
+
+**What that does NOT establish, and must not be claimed.** The refresh and deep-link
+checks passed against **Vite's dev server**, which does SPA fallback natively. That is the
+same behaviour `public/_redirects` asks Netlify for, and it is the right rehearsal — but
+**Netlify has not served this yet**, so the rewrite rule itself is proven by reading. It
+is also the single thing most worth checking first after the site exists: paste
+`<site>/fields` into a fresh tab. If that 404s, the rewrite did not take, and everything
+else will look perfect because in-app navigation does not need it.
+
+**Also not done, and both are the owner's:** the Netlify site does not exist yet and the
+four repository secrets are not set, so the deploy job has never run — it will skip with a
+warning until they are. And **SEC-8 is now unblocked but still open**: `ALLOWED_ORIGIN` on
+the cascade function has been left at `*` since Round 5 specifically because Bolt preview
+origins rotate and no production URL was committed. A stable Netlify domain is exactly what
+that was waiting for. Note that setting it strictly would break deploy previews, so it
+wants a comma-separated list or a permissive preview context — worth doing deliberately
+rather than as a footnote to this move. Supabase's Authentication → URL Configuration also
+needs the new origin, or password-reset and confirmation links keep pointing at
+`bolt.host`.
+
+**Floor:** tests **435**, unchanged · TypeScript **68**, unchanged · ESLint **105 errors,
+28 warnings**, unchanged · build succeeds, 40 chunks unchanged, every lazy chunk
+byte-identical. **First paint 417.29 → 418.65 kB raw, 118.87 → 119.11 kB gzip** — +1.36 kB
+raw, which is `BrowserRouter`'s history handling in place of `HashRouter`'s. It is the only
+source change on the eager path, and it is stated rather than buried. WI-22's target is
+≤ 300 kB gz, so it is still met with room.
+
 ## Open items and standing notes
 
 **Nothing in this section is open any more.** It is all practice notes and closed records
@@ -3085,7 +3214,7 @@ All figures below are measured, not estimated.
 | ESLint | 136 errors, 28 warnings | 134 / 28 | 134 / 28 | 134 / 28 | 109 / 28 | 109 / 28 | **105 / 28** |
 | Tests | 0 | 178 passing, 4 files | 206 passing, 5 files | 206 passing, 5 files | 206 passing, 5 files | 282 passing, 7 files | **435 passing, 13 files** |
 | CI | none | none | none | none | none | none | **GitHub Actions on every push — tests, baseline ratchet, build** |
-| First-paint JS | 1,747 kB (465 kB gz) | 1,754.43 kB (467.56 kB gz) | 1,751.97 kB (467.39 kB gz) | 1,751.96 kB (467.50 kB gz) | 1,751.91 kB (467.46 kB gz) | 1,760.80 kB (470.25 gz) | **417.29 kB (118.87 kB gz)** — WI-22 took it to 102.11 gz; WI-29a added 16.29 gz of `react-router-dom`, WI-29b 0.47 gz of module boundaries |
+| First-paint JS | 1,747 kB (465 kB gz) | 1,754.43 kB (467.56 kB gz) | 1,751.97 kB (467.39 kB gz) | 1,751.96 kB (467.50 kB gz) | 1,751.91 kB (467.46 kB gz) | 1,760.80 kB (470.25 gz) | **418.65 kB (119.11 kB gz)** — WI-22 took it to 102.11 gz; WI-29a added 16.29 gz of `react-router-dom`, WI-29b 0.47 gz of module boundaries, the Netlify move 0.24 gz for `BrowserRouter` |
 | Lazy chunks | — | — | — | — | — | `FertilizerContractsTab` 25.96, `BookingModal` 20.02 | **those two plus `FieldFertilizerRateGridPanel` 19.83 kB (6.36 gz)** |
 | Migrations | 40 files | 43 | 46 | 52 | 52 | 58 | **63, diffed against the database one-for-one** |
 | Edge function | — | v8 pending | — | v10 | v10 | v13 | **v17, source confirmed in sync by sha256** |
@@ -3116,8 +3245,9 @@ work R-1 / R-5 / R-4 item 2 / R-6, itemised.**
   which took `recharts` and `jspdf` out of the first paint entirely. Note this changes what
   the row means: it is now the single `<script>` in `index.html`, not "the main chunk".
   **WI-29 then put 51.40 kB raw back** — 48.85 of `react-router-dom` (WI-29a) and 2.55 of
-  module boundaries (WI-29b), both eager because `App.tsx` is. 102.11 → **118.87 kB gzip**,
-  still far inside the ≤ 300 kB target.
+  module boundaries (WI-29b), both eager because `App.tsx` is, and the Netlify move a
+  further 1.36 for `BrowserRouter`. 102.11 → **119.11 kB gzip**, still far inside the
+  ≤ 300 kB target.
 - **Migrations 58 → 63:** shopping-list coverage columns, `field_fertilizer_rates`, the save
   RPC, its `applies` flag, and V-6's bulk RPC.
 
