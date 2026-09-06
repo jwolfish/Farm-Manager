@@ -8,12 +8,15 @@ to origin (`83bf040`). **Shopping-list coverage sits on `field-fertilizer-rates-
 and is not yet merged**; its migration `20260904183110` **is** applied to the live
 database. The four `f-4a` / `f-4b` / `f-5` / `f-6` branches still exist locally but are
 0 commits ahead.
-**Edge function:** `process-cascade-task` **version 14** — deployed 31 Aug 18:44 UTC,
-carries WI-15, SEC-3, the F-1 density bridge and the override-total fix. **Verified
-byte-for-byte against the repository copy** by `supabase functions download` plus a
-sha256 comparison — not by markers, as every prior round did. *(This line was stale twice
-before that method existed — it said 10 when the platform was at 11, and 12 when it was at
-13. Confirm with `list_edge_functions` rather than trusting the number written here.)*
+**Edge function:** `process-cascade-task` **version 16** — deployed 5 Sep at the V-3 step.
+Carries WI-15, SEC-3, the F-1 density bridge, the override-total fix, and V-0's
+`refreshProgramOverridesInSeason`. **Verified byte-for-byte against the repository copy**
+by `supabase functions download` plus a sha256 comparison — not by markers, as every round
+before 31 Aug did. *(This line has now been stale three times: it said 10 when the platform
+was at 11, 12 when it was at 13, and 14 when it was at 15. Confirm with
+`list_edge_functions` rather than trusting the number written here. The 5 Sep deploy also
+downloaded the running source **before** replacing it and diffed it against the repo — it
+matched, so every one of those discrepancies was in this document, never in the code.)*
 **Supabase project:** `wvccxjakqwqfmyewclue` (bolt-native-database-63401892)
 **Companion docs:** `Farm-Manager-Code-Review-Summary.md`,
 `Farm-Manager-Remediation-PRD.md`, `Farm-Manager-Random-Reload-Diagnosis.md`
@@ -38,7 +41,7 @@ the running app — *How to prove the fix*, at the end of that section.
 | ESLint | **109 errors, 28 warnings** (from 136/28) |
 | Build | succeeds — **1,768.55 kB** (472.56 kB gz), plus lazy `FertilizerContractsTab` 25.96 kB and `BookingModal` 20.07 kB |
 | Migrations | **59 files**, matching the database one-for-one (diffed, not counted) |
-| Edge function | **version 13**, deployed source confirmed identical to the repo |
+| Edge function | **version 16**, deployed source confirmed identical to the repo by sha256 (5 Sep) |
 | Security advisors | 12 WARN — 11 are the by-design `authenticated_security_definer_function_executable` lint that fires on every RPC, 1 is `auth_leaked_password_protection` (WI-6). No new class of finding |
 | Cascade tasks | 53 total, **0 failed** |
 | SEC-5 policy matrix | **120 assertions, 0 failures** (extended at V-1 and re-run against the live schema; was 101 at F-3) |
@@ -1613,9 +1616,10 @@ repairs an entry whose stored cost is junk.
 **What is NOT verified, and should not be claimed.** Only the pure decision has tests. The
 functions that touch the database — `getResolvedFieldCosts`, `refreshProgramOverridesInSeason`
 and its edge-function twin — are proven by reading. No cascade has run against an array-shaped
-override, because none exists to run against. **The edge function is changed but NOT deployed**,
-so the two copies differ until V-3 deploys and byte-verifies it. That is deliberate and is what
-V-3 is for.
+override, because none exists to run against.
+
+*Deployed 5 Sep as part of V-3 — see that section. The sentence that stood here said the two
+copies differ until V-3 deploys; they no longer do.*
 
 
 ### Field-level fertilizer rates — V-1 — 4 Sep 2026
@@ -1660,6 +1664,58 @@ unchanged — TypeScript 75 identical set, ESLint 109/28, tests 320, build byte-
 `field_chemical_applications` tables, which §6 of the design doc recommends. They are empty
 and referenced by nothing, but dropping a table is irreversible and they are not in this
 feature's way. Left for an explicit decision.
+
+### Field-level fertilizer rates — V-3, the deploy — 5 Sep 2026
+
+**`process-cascade-task` is now version 16**, carrying V-0's
+`refreshProgramOverridesInSeason` and its `recalculateFieldTotal` helper. Deployed with
+`npm run deploy:cascade`, which reads the file from disk.
+
+**Verified byte-for-byte, both directions.**
+
+*Before* deploying, the running function was downloaded and diffed against the repository
+copy **as it stood before V-0** — identical. That mattered more than it looks: it proved
+nothing had drifted while the two copies were deliberately out of step, so the deploy could
+only add V-0's changes and nothing else.
+
+*After* deploying, downloaded again:
+
+```
+1151 lines both sides
+local  sha256: 30908b5946d5f712e2e21adeaed582143f2d9cbdd5cebe2b274713dbb8e4fe06
+remote sha256: 30908b5946d5f712e2e21adeaed582143f2d9cbdd5cebe2b274713dbb8e4fe06
+diff reports identical
+```
+
+**The recorded version number was wrong for the third time.** This document said v14; the
+platform reported **15** before this deploy and **16** after. The pre-deploy download is what
+settles it — the source matched, so the drift was only ever in the number written here, not
+in the code. Confirm with `list_edge_functions`, never with this line.
+
+**Still not exercised: a real cascade.** The deployed source is byte-identical to code that
+12 unit tests cover, but no cascade has run since the deploy, and none has ever run against
+an array-shaped override because none exists. The end-to-end path remains proven by reading.
+
+**Baseline captured for the app check**, so the comparison is one glance. All nine
+overridden fields currently reconcile — every row reads `correct`:
+
+| Field | Override | Total |
+|---|---|---|
+| Adkins | hauling 70 | 688.59 |
+| Home East of Farm South | chemical 105 | 711.37 |
+| Home North Slew | chemical 104 | 715.39 |
+| Home West of Bins | chemical 105 | 713.99 |
+| Home West of Lane | chemical 105 | 723.53 |
+| T & L Back 40 and Middle | chemical 105 | 715.24 |
+| Townline Road | hauling 70 | 673.27 |
+| Umek | hauling 60 | **663.72** |
+| Vandemeer NE | chemical 105 | 709.63 |
+
+**Pass:** every total unchanged after a cascade, Umek still 663.72. **Fail:** any total
+springs back to its un-overridden figure — Umek 683.72, Home West of Bins 689.51.
+
+That check closes two things at once: V-3's own acceptance criterion, and the *How to prove
+the fix* item outstanding since 31 Aug, which has never been run.
 
 ## Open items and standing notes
 

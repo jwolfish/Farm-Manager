@@ -375,7 +375,7 @@ Each step independently verifiable, per the standing practice.
 | **V-0** | **DONE 4 Sep 2026.** Defects 1–3 fixed; defect 4 is a V-5 guard and cannot be built before rates exist. No migration, no behaviour change for any existing row | 12 new tests (308 → 320); the old overlay reproduced beside the new one so a revert fails; tsc set byte-identical at 75; lint 109/28; the 9 numeric overrides re-checked in production and unchanged. Edge function mirrored but **not deployed** — that is V-3 |
 | **V-1** | **DONE 4 Sep 2026** — migration `20260905040540` applied. The two dead application tables were **not** dropped; see §6 | Rehearsed 12/0 then rolled back, applied, rollback confirmed. SEC-5 matrix extended 101 → **120 assertions, 0 failures**. Advisor at the documented 12 WARN baseline |
 | **V-2** | **DONE 4 Sep 2026** — `src/lib/fieldFertilizerRates.ts`: the resolver, the cost math, and the §7.1 rate/total round trip. Not yet wired to anything | 20 tests (320 → **340**), including the control that a farm with no custom rates accumulates identically to the program-only path. Build byte-identical, which confirms nothing imports it yet |
-| **V-3** | Cascade refresh of program-shaped overrides, **both copies**, edge function deployed. *Code landed in V-0; only the deploy remains* | `sha256` of the downloaded function against the repo copy; a real price change observed leaving a custom-rated field correct |
+| **V-3** | **Deployed 5 Sep 2026 — edge function v16.** Code landed in V-0; the cascade has not yet been observed running | `sha256` of the downloaded function against the repo copy; a real price change observed leaving a custom-rated field correct |
 | **V-4** | `save_field_fertilizer_rates` RPC — write rates, override and total in one transaction. **It does not compute the cost; see §5.2a** | Rehearsed; a bad line leaves no partial rate set; stranger and `anon` refused |
 | **V-5** | Field-level entry UI: which programs run (§7.2), then rates, entered as totals (§7.1) | Rendered in a browser at 1280 px and 375 px before it is called done; a test that editing rates preserves the program list and vice versa |
 | **V-6** | Bulk grid — fields down, products across, one program at a time. **Also the import review surface** (§10) | Same. Must stand on its own, because V-7 depends on it |
@@ -386,12 +386,19 @@ Each step independently verifiable, per the standing practice.
 stomped by a template cascade but goes stale on a price change — and a fertilizer booking
 changes prices, which is the whole reason this feature exists.
 
-**V-3's deploy was deliberately left for the owner, 4 Sep.** The edge-function code landed
-with V-0 and bundles clean, but Deno is not installed on this machine so it cannot be
-typechecked here, and the cascade is the single function that computes every field cost.
-Deploying it unattended would leave the running money math unverified-by-use until someone
-watched a cascade — which is V-3's own acceptance criterion anyway. Until it is deployed the
-two copies differ, by choice; that is the known cost of waiting.
+**V-3's deploy was held back overnight on 4 Sep and done on 5 Sep with the owner present.**
+The reason for waiting: the cascade is the single function that computes every field cost,
+and Deno is not installed on this machine, so it could be bundled but not typechecked.
+Deploying unattended would have left the running money math unverified-by-use.
+
+**Deployed 5 Sep as version 16**, byte-verified in both directions — the running source was
+downloaded and diffed against the pre-V-0 repo copy *before* replacing it (identical, so
+nothing had drifted while the copies were deliberately out of step), then downloaded again
+after (`sha256 30908b59…`, 1,151 lines, diff clean). The two copies are back in step.
+
+**What remains is the observation, not the deploy.** No cascade has run since, so the
+end-to-end path is still proven by reading and by 12 unit tests. See the V-3 section of the
+status doc for the baseline table to compare against.
 
 **Browser verification is not optional here.** Rendering screens found real defects three
 rounds running on the fertilizer feature; V-5 and V-6 are the two steps most exposed to it.
