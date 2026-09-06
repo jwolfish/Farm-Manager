@@ -36,10 +36,10 @@ the running app — *How to prove the fix*, at the end of that section.
 
 | Measured 6 Sep 2026 | |
 |---|---|
-| Tests | **380 passing**, 10 files (347 before V-6 added 25, then 8 on `formatRate`) |
-| TypeScript | **75 errors** (103 at review, 98 before WI-19) |
-| ESLint | **109 errors, 28 warnings** (from 136/28) |
-| Build | succeeds — **1,786.85 kB** (477.04 kB gz), plus lazy `FertilizerContractsTab` 25.96 kB, `BookingModal` 20.07 kB and `FieldFertilizerRateGridPanel` 19.82 kB |
+| Tests | **386 passing**, 10 files (380 before V-8 added 6; 347 before V-6 added 25) |
+| TypeScript | **73 errors** (103 at review, 98 before WI-19, 75 before V-8 replaced two `Json` casts with `Array.isArray` guards) |
+| ESLint | **107 errors, 28 warnings** (from 136/28; 109 before V-8 deleted one `prefer-const` and one `no-explicit-any`) |
+| Build | succeeds — **1,787.96 kB** (477.27 kB gz), plus lazy `FertilizerContractsTab` 25.96 kB, `BookingModal` 20.07 kB and `FieldFertilizerRateGridPanel` 19.82 kB |
 | Migrations | **63 files**, matching the database one-for-one |
 | Edge function | **version 16**, deployed source confirmed identical to the repo by sha256 (5 Sep) |
 | Security advisors | 14 WARN — 13 are the by-design `authenticated_security_definer_function_executable` lint that fires on every RPC, 1 is `auth_leaked_password_protection` (WI-6). No new class of finding. V-6’s internal `apply_field_fertilizer_rates` is correctly absent, being executable by neither role |
@@ -2129,6 +2129,107 @@ display was confirmed on screen.
 
 **Floor:** TypeScript 75 (identical set), ESLint 109/28, tests 372 → **380**, build
 1,786.66 → **1,786.85 kB**. No migration.
+
+
+### Field-level fertilizer rates — V-8, the last reader — 6 Sep 2026
+
+**The shopping list and the plan calculator now resolve per field.** Until this, a
+custom-rated field was costed correctly on its own page and *ordered at the program's rate*
+— Prairie Stream 2's 2 ton of Rhizosorb would have gone to a supplier as 1.4. The field's
+money and the field's tonnage came from two different readings of the same plan.
+
+That is the two-table defect this feature has produced three times now, in opposite
+directions each time: V-5's display read the program, the reset cleared only one table, and
+these two read the program. **This was the last reader that did not know**, and closing it
+is what the design doc's §8 lists V-8 as.
+
+| Reader | Was | Now |
+|---|---|---|
+| `computeFertilizerNeedByProduct` — the shopping list **and** the Contracts tab | walked each program's shared item list | resolves per (field, program) through `resolveFieldFertilizerItems` |
+| `computePlanNeed` — the F-6 plan calculator | same | same |
+
+Both go through the one resolver and the one accumulator, so they still differ in **scope**
+and cannot differ in **arithmetic** — which is why F-4 extracted the accumulator and V-2
+extracted the resolver in the first place.
+
+**`custom` is a REQUIRED argument on `computePlanNeed`, not an optional one.** An optional
+parameter would let a caller silently get the pre-V-8 answer, which is exactly how the
+shopping list came to disagree with the field page for a day. Callers pass empty collections
+to mean "this season has no custom rates" — a statement rather than an omission. Making it
+required is also what surfaced the change: eight existing tests failed to compile against
+the new signature rather than quietly passing the old behaviour.
+
+**The products map is season-wide, deliberately.** Both functions previously took each
+product's metadata from the product embedded in the program item. Under replace-wholly a
+field may carry a product its program never had — Prairie Stream 2 could add Urea to the
+P & K pass — and a map built from the programs alone would drop that product's tonnage
+without a word, because it would simply not appear in the list.
+
+**VERIFIED AGAINST LIVE DATA, independently of the TypeScript.** The resolution was
+recomputed in SQL for the 2027 season and compared before and after:
+
+| Product | Before V-8 | After V-8 | Delta |
+|---|---|---|---|
+| Urea | 63.2025 | 63.2025 | 0 |
+| AMS | 23.3730 | 23.3730 | 0 |
+| Potash | 3.5625 | 3.5625 | 0 |
+| 6-24-6 | 15.5025 | 15.5025 | 0 |
+| **Rhizosorb P** | **1.9000** | **2.5000** | **+0.6000** |
+
+Two things make that evidence rather than a number. **Urea's 63.2025 is exactly the figure
+the 4 Sep list recorded**, so the query is reproducing the real logic and not an invention
+of mine. And **four of five products move by zero**, which is the control: the change is
+inert wherever nothing is customised. The one that moves is Prairie Stream 2's 70 acres
+going from the program's 40 lb/ac (1.4 t) to its own 57.142857 lb/ac (2.0 t), on top of the
+0.5 t another field contributes unchanged.
+
+**A correction worth recording, because the wrong number was nearly written down.** The
+first version of that query cross-joined the before and after sets — `FROM products LEFT
+JOIN before LEFT JOIN after` — which multiplied every sum by the row count of the other
+side. It reported Urea at 2,401 ton and Rhizosorb moving by +1.2 instead of +0.6. Both sides
+were inflated, so the shape looked plausible. What caught it was the magnitude failing a
+sanity check against a known figure, not the query looking wrong. A verification query needs
+checking as hard as the code it verifies.
+
+**Rendering found a defect for the seventh round running, and this one was a lie on screen.**
+The plan calculator's footnote still read *"Rates come from the programs as written."* That
+was true when F-6 shipped it and V-8 made it false — and false in the expensive direction:
+it tells the owner the answer ignores per-field rates, so anyone believing it would adjust
+the tonnage a second time for a field already counted at its own rate. It now says which
+fields are counted at which rates. **Copy that describes behaviour ages with the behaviour.**
+
+**Checked on screen against hand figures**, with Prairie Stream's real numbers: Prairie
+Stream1 at 25 ac × 40 lb = 0.5 t plus Prairie Stream 2 at 70 ac × 57.142857 = 2.0 t gives
+**Rhizosorb 2.5 ton**, matching the SQL to the digit; Potash 95 ac × 75 lb = **3.56 ton**.
+
+**Every read in the two changed paths is now checked.** `computeFertilizerNeedByProduct`
+swallowed five. A swallowed read there returns a *shorter* list, which reads as a smaller
+plan and under-orders — the quiet direction, and the WI-15 lie in its purest form.
+
+**Two baselines moved down, and both are real deletions rather than suppressions:**
+
+- **TypeScript 75 → 73.** Two `TS2352` casts of a `Json` column to `ProgramRef[]` are gone,
+  replaced by `Array.isArray` guards. That is a behaviour fix as well as a type fix: a
+  non-array `override_value` or `fertilizer_programs` was previously iterated as if it were
+  a program list. The remaining 73 are a strict subset of the old 75, compared with
+  positions stripped.
+- **ESLint 109 → 107.** One `prefer-const` (`let templateMap`) and one `no-explicit-any`
+  (`.filter((o: any) => …)`), both in the code rewritten here. Diffed by rule and message,
+  not by count.
+
+**Floor:** tests 380 → **386**, build 1,786.85 → **1,787.96 kB** (477.04 → 477.27 gz). No
+migration.
+
+**Not yet exercised: a shopping list generated since the change.** The arithmetic is proven
+by tests, the resolution by SQL against real rows, and the calculator on screen — but no
+list has been generated through the running app, so the one number that matters to a
+supplier has not been read off the screen. Generating a 2027 fertilizer list and seeing
+**Rhizosorb 2.5 ton** is the check that closes it.
+
+**With this, every reader of a field's fertilizer plan resolves through one function.**
+`FieldProgramDetails`, `FieldDetail`'s cost math, the V-5 editor, the V-6 grid, the shopping
+list, the Contracts tab and the plan calculator all call `resolveFieldFertilizerItems`. The
+next one added must too, and the standing rule in `CLAUDE.md` says so.
 
 ## Open items and standing notes
 

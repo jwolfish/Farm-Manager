@@ -1,6 +1,13 @@
 import { supabase } from './supabase';
 import { accumulateNeed, neededAfterOnHand, NeedContribution } from './shoppingListMath';
 import { loadFertilizerCoverage } from './fertilizerCoverage';
+import {
+  contributionsFromItems,
+  resolveFieldFertilizerItems,
+  type FertilizerProductMeta,
+  type FieldRate,
+  type ProgramItemRate,
+} from './fieldFertilizerRates';
 
 export interface ShoppingLineInput {
   masterProductId: string | null;
@@ -213,32 +220,99 @@ export interface FertilizerNeed {
  * shows this same number beside what has actually been contracted, and the two
  * must not be able to disagree. The shopping list is now a second consumer of
  * this rather than the only implementation.
+ *
+ * V-8: it resolves PER FIELD rather than walking each program's shared item list.
+ * Until now a field with its own rates was costed correctly on its own page and
+ * ordered at the program's rate here — Prairie Stream 2's 2 ton of Rhizosorb would
+ * have been quoted as 1.4. The field's money and the field's tonnage came from two
+ * different readings of the same plan, which is the two-table defect this feature
+ * keeps producing, in its third and last place.
+ *
+ * Every read is checked. A swallowed read makes this return a SHORTER list, which
+ * reads as a smaller plan and under-orders — the quiet direction.
  */
 export async function computeFertilizerNeedByProduct(
   seasonId: string
 ): Promise<FertilizerNeed[]> {
-  const [fieldsRes, overridesRes] = await Promise.all([
-    supabase
-      .from('fields')
-      .select('id, acreage, field_costs(template_id)')
-      .eq('season_id', seasonId),
-    supabase
-      .from('field_cost_overrides')
-      .select('field_id, cost_item_name, override_value')
-      .eq('cost_item_name', 'fertilizer_programs'),
-  ]);
+  const fieldsRes = await supabase
+    .from('fields')
+    .select('id, acreage, field_costs(template_id)')
+    .eq('season_id', seasonId);
+
+  if (fieldsRes.error) {
+    throw new Error(`Could not load fields: ${fieldsRes.error.message}`);
+  }
 
   const fields = fieldsRes.data ?? [];
   if (fields.length === 0) return [];
 
-  const fieldIds = fields.map((f: any) => f.id);
-  const overridesFiltered = (overridesRes.data ?? []).filter((o: any) =>
-    fieldIds.includes(o.field_id)
-  );
-  const overrideMap = new Map<string, ProgramRef[]>();
-  for (const o of overridesFiltered) {
-    overrideMap.set(o.field_id, o.override_value as ProgramRef[]);
+  const fieldIds = fields.map((f: any) => f.id as string);
+
+  /*
+   * Bounded by `fieldIds` rather than fetched for every field the caller can see
+   * and filtered in JavaScript — PERF-2 / WI-23, which named this exact query.
+   * That is why the fields read is sequential rather than in the Promise.all: the
+   * bound is not knowable until it returns.
+   */
+  const [overridesRes, ratesRes, productsRes] = await Promise.all([
+    supabase
+      .from('field_cost_overrides')
+      .select('field_id, override_value')
+      .eq('cost_item_name', 'fertilizer_programs')
+      .in('field_id', fieldIds),
+    supabase
+      .from('field_fertilizer_rates')
+      .select('field_id, program_id, fertilizer_product_id, application_rate, application_rate_unit')
+      .in('field_id', fieldIds),
+    supabase
+      .from('fertilizer_products')
+      .select('id, product_name, unit_type, price_per_unit, density_lb_per_gal')
+      .eq('season_id', seasonId),
+  ]);
+
+  if (overridesRes.error) {
+    throw new Error(`Could not load field overrides: ${overridesRes.error.message}`);
   }
+  if (ratesRes.error) {
+    throw new Error(`Could not load per-field fertilizer rates: ${ratesRes.error.message}`);
+  }
+  if (productsRes.error) {
+    throw new Error(`Could not load fertilizer products: ${productsRes.error.message}`);
+  }
+
+  const overrideMap = new Map<string, ProgramRef[]>();
+  for (const o of overridesRes.data ?? []) {
+    if (Array.isArray(o.override_value)) {
+      overrideMap.set(o.field_id, o.override_value as unknown as ProgramRef[]);
+    }
+  }
+
+  /*
+   * Season-wide rather than taken from the embedded product on each program item.
+   * Under replace-wholly a field may carry a product its program never had, so a
+   * map built only from program items would drop that product's tonnage entirely
+   * — silently, because it would simply not appear in the list.
+   */
+  const products = new Map<string, FertilizerProductMeta>(
+    (productsRes.data ?? []).map((p) => [
+      p.id,
+      {
+        productId: p.id,
+        productName: p.product_name,
+        unitType: p.unit_type,
+        pricePerUnit: Number(p.price_per_unit ?? 0),
+        density: p.density_lb_per_gal == null ? null : Number(p.density_lb_per_gal),
+      },
+    ])
+  );
+
+  const fieldRates: FieldRate[] = (ratesRes.data ?? []).map((r) => ({
+    fieldId: r.field_id,
+    programId: r.program_id,
+    productId: r.fertilizer_product_id,
+    rate: Number(r.application_rate),
+    rateUnit: r.application_rate_unit,
+  }));
 
   const templateIds = [
     ...new Set(
@@ -251,94 +325,102 @@ export async function computeFertilizerNeedByProduct(
     ),
   ];
 
-  let templateMap = new Map<string, ProgramRef[]>();
+  const templateMap = new Map<string, ProgramRef[]>();
   if (templateIds.length > 0) {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('cost_templates')
       .select('id, fertilizer_programs')
       .in('id', templateIds);
+    if (error) throw new Error(`Could not load cost templates: ${error.message}`);
     for (const t of data ?? []) {
-      templateMap.set(t.id, (t.fertilizer_programs as ProgramRef[]) ?? []);
+      // Guarded, not cast. `fertilizer_programs` is a `Json` column, so anything
+      // that is not an array must mean "no programs" rather than be read as one.
+      templateMap.set(
+        t.id,
+        Array.isArray(t.fertilizer_programs) ? (t.fertilizer_programs as unknown as ProgramRef[]) : []
+      );
     }
   }
 
-  const allProgramIds = new Set<string>();
-  for (const f of fields as any[]) {
+  /** A field's effective program list — its override array, else its template's. */
+  const refsFor = (f: any): ProgramRef[] => {
     const fc = Array.isArray(f.field_costs) ? f.field_costs[0] : f.field_costs;
     const templateId: string | null = fc?.template_id ?? null;
-    const refs = overrideMap.get(f.id) ?? (templateId ? (templateMap.get(templateId) ?? []) : []);
-    for (const r of refs) allProgramIds.add(r.program_id);
+    return overrideMap.get(f.id) ?? (templateId ? (templateMap.get(templateId) ?? []) : []);
+  };
+
+  const allProgramIds = new Set<string>();
+  for (const f of fields as any[]) {
+    for (const r of refsFor(f)) allProgramIds.add(r.program_id);
   }
 
   if (allProgramIds.size === 0) return [];
 
-  const { data: programs } = await supabase
+  const { data: programs, error: programsError } = await supabase
     .from('fertilizer_programs')
-    .select(`
-      id,
-      fertilizer_program_items (
-        application_rate, application_rate_unit,
-        fertilizer_products ( id, product_name, unit_type, density_lb_per_gal )
-      )
-    `)
+    .select('id, fertilizer_program_items ( fertilizer_product_id, application_rate, application_rate_unit )')
     .in('id', [...allProgramIds]);
 
-  const programMap = new Map<string, any>();
-  for (const p of programs ?? []) programMap.set(p.id, p);
+  if (programsError) {
+    throw new Error(`Could not load fertilizer programs: ${programsError.message}`);
+  }
 
-  // Collect contributions per fertilizer product, converting on the way in to
-  // the product's own unit rather than summing mixed rate units (WI-12).
-  const fertMeta = new Map<
-    string,
-    { prodId: string; name: string; priceUnit: string; density: number | null }
-  >();
+  const programItems = new Map<string, ProgramItemRate[]>();
+  for (const p of programs ?? []) {
+    const raw = Array.isArray(p.fertilizer_program_items) ? p.fertilizer_program_items : [];
+    programItems.set(
+      p.id,
+      raw.map((i: { fertilizer_product_id: string; application_rate: number; application_rate_unit: string }) => ({
+        productId: i.fertilizer_product_id,
+        rate: Number(i.application_rate),
+        rateUnit: i.application_rate_unit,
+      }))
+    );
+  }
+
+  // Contributions per product, converted into the product's own unit on the way
+  // in rather than summed across mixed rate units (WI-12).
+  const fertMeta = new Map<string, FertilizerProductMeta>();
   const fertContributions = new Map<string, NeedContribution[]>();
+  const resolveIssues = new Set<string>();
 
   for (const f of fields as any[]) {
-    const fc = Array.isArray(f.field_costs) ? f.field_costs[0] : f.field_costs;
-    const templateId: string | null = fc?.template_id ?? null;
-    const refs = overrideMap.get(f.id) ?? (templateId ? (templateMap.get(templateId) ?? []) : []);
     const acreage = Number(f.acreage);
 
-    for (const ref of refs) {
-      const program = programMap.get(ref.program_id);
-      if (!program) continue;
-      const items = Array.isArray(program.fertilizer_program_items) ? program.fertilizer_program_items : [];
-      for (const item of items) {
-        const prod = Array.isArray(item.fertilizer_products)
-          ? item.fertilizer_products[0]
-          : item.fertilizer_products;
-        if (!prod) continue;
-        const rate = Number(item.application_rate);
-        const rateUnit: string = item.application_rate_unit ?? prod.unit_type ?? '';
+    for (const ref of refsFor(f)) {
+      if (!programItems.has(ref.program_id)) continue;
 
-        if (!fertMeta.has(prod.id)) {
-          fertMeta.set(prod.id, {
-            prodId: prod.id,
-            name: prod.product_name,
-            priceUnit: prod.unit_type ?? rateUnit,
-            density: prod.density_lb_per_gal ?? null,
-          });
-          fertContributions.set(prod.id, []);
+      // The one resolver. A field with custom rows for this pass contributes its
+      // own list wholly; one without contributes the program's, exactly as before.
+      const resolved = resolveFieldFertilizerItems(
+        f.id, ref.program_id, programItems.get(ref.program_id) ?? [], fieldRates, products
+      );
+      resolved.issues.forEach((i) => resolveIssues.add(i));
+
+      for (const item of resolved.items) {
+        if (!fertMeta.has(item.product.productId)) {
+          fertMeta.set(item.product.productId, item.product);
         }
-        fertContributions.get(prod.id)!.push({ rate, rateUnit, acreage });
       }
+      contributionsFromItems(resolved.items, acreage, fertContributions);
     }
   }
 
   const needs: FertilizerNeed[] = [];
   for (const meta of fertMeta.values()) {
     const accumulated = accumulateNeed(
-      fertContributions.get(meta.prodId) ?? [],
-      meta.priceUnit,
+      fertContributions.get(meta.productId) ?? [],
+      meta.unitType,
       meta.density
     );
     needs.push({
-      productId: meta.prodId,
-      productName: meta.name,
+      productId: meta.productId,
+      productName: meta.productName,
       unit: accumulated.unit,
       total: accumulated.total,
-      issues: accumulated.issues,
+      // A rate naming a product this season has no row for is reported against
+      // every line rather than dropped, because it cannot be attributed to one.
+      issues: [...accumulated.issues, ...resolveIssues],
     });
   }
 

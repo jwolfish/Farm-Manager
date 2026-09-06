@@ -2,7 +2,8 @@ import { supabase } from './supabase';
 import { queueCascadeTask, type TaskType, type CascadeTaskData } from './backgroundTasks';
 import { computeFertilizerNeedByProduct, type FertilizerNeed } from './shoppingListGeneration';
 import type { ContractRow, LoadLineRow } from './fertilizerContractMath';
-import type { PlanField, PlanProgram, PlanProgramItem } from './fertilizerPlanMath';
+import type { PlanCustomRates, PlanField, PlanProgram, PlanProgramItem } from './fertilizerPlanMath';
+import type { FertilizerProductMeta, FieldRate } from './fieldFertilizerRates';
 
 /**
  * Data access for fertilizer contract tracking — F-4.
@@ -149,8 +150,9 @@ export async function loadContractData(seasonId: string): Promise<ContractData> 
 export async function loadPlanInputs(seasonId: string): Promise<{
   fields: PlanField[];
   programs: PlanProgram[];
+  custom: PlanCustomRates;
 }> {
-  const [fieldsRes, programsRes] = await Promise.all([
+  const [fieldsRes, programsRes, productsRes] = await Promise.all([
     supabase
       .from('fields')
       .select('id, name, acreage')
@@ -167,11 +169,18 @@ export async function loadPlanInputs(seasonId: string): Promise<{
       `)
       .eq('season_id', seasonId)
       .order('program_name'),
+    supabase
+      .from('fertilizer_products')
+      .select('id, product_name, unit_type, price_per_unit, density_lb_per_gal')
+      .eq('season_id', seasonId),
   ]);
 
   if (fieldsRes.error) throw new Error(`Could not load fields: ${fieldsRes.error.message}`);
   if (programsRes.error) {
     throw new Error(`Could not load fertilizer programs: ${programsRes.error.message}`);
+  }
+  if (productsRes.error) {
+    throw new Error(`Could not load fertilizer products: ${productsRes.error.message}`);
   }
 
   const fields: PlanField[] = (fieldsRes.data ?? []).map((f) => ({
@@ -207,7 +216,43 @@ export async function loadPlanInputs(seasonId: string): Promise<{
     return { id: p.id, name: p.program_name, items };
   });
 
-  return { fields, programs };
+  /*
+   * V-8. Bounded by the season's own field ids rather than fetched wholesale, and
+   * checked rather than swallowed: a failed read here would hand the calculator an
+   * empty rate set, which is indistinguishable from "no field has custom rates"
+   * and would quietly answer with the program's tonnage instead of the field's.
+   */
+  const fieldIds = fields.map((f) => f.id);
+  let rates: FieldRate[] = [];
+  if (fieldIds.length > 0) {
+    const { data, error } = await supabase
+      .from('field_fertilizer_rates')
+      .select('field_id, program_id, fertilizer_product_id, application_rate, application_rate_unit')
+      .in('field_id', fieldIds);
+    if (error) throw new Error(`Could not load per-field fertilizer rates: ${error.message}`);
+    rates = (data ?? []).map((r) => ({
+      fieldId: r.field_id,
+      programId: r.program_id,
+      productId: r.fertilizer_product_id,
+      rate: Number(r.application_rate),
+      rateUnit: r.application_rate_unit,
+    }));
+  }
+
+  const products = new Map<string, FertilizerProductMeta>(
+    (productsRes.data ?? []).map((p) => [
+      p.id,
+      {
+        productId: p.id,
+        productName: p.product_name,
+        unitType: p.unit_type,
+        pricePerUnit: Number(p.price_per_unit ?? 0),
+        density: p.density_lb_per_gal == null ? null : Number(p.density_lb_per_gal),
+      },
+    ])
+  );
+
+  return { fields, programs, custom: { rates, products } };
 }
 
 /**

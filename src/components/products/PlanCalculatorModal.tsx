@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { loadPlanInputs } from '../../lib/fertilizerContracts';
-import type { PlanField, PlanProgram } from '../../lib/fertilizerPlanMath';
+import type { PlanCustomRates, PlanField, PlanProgram } from '../../lib/fertilizerPlanMath';
 import { PlanCalculator, type PlanResult } from './PlanCalculator';
 
 export type { PlanResult };
@@ -24,9 +24,18 @@ interface Props {
   onApply: (result: PlanResult) => void;
 }
 
+const NO_CUSTOM_RATES: PlanCustomRates = { rates: [], products: new Map() };
+
 function usePlanInputs(seasonId: string) {
   const [fields, setFields] = useState<PlanField[]>([]);
   const [programs, setPrograms] = useState<PlanProgram[]>([]);
+  /*
+   * Starts empty and is replaced by the real thing on load. It is never left empty
+   * on a FAILED load, because `loadPlanInputs` throws and the error branch below
+   * renders the message instead of a form — an empty rate set would silently mean
+   * "no field has custom rates" and answer with the program's tonnage.
+   */
+  const [custom, setCustom] = useState<PlanCustomRates>(NO_CUSTOM_RATES);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -39,6 +48,7 @@ function usePlanInputs(seasonId: string) {
         if (cancelled) return;
         setFields(data.fields);
         setPrograms(data.programs);
+        setCustom(data.custom);
       })
       .catch((err: unknown) => {
         if (cancelled) return;
@@ -52,17 +62,18 @@ function usePlanInputs(seasonId: string) {
     return () => { cancelled = true; };
   }, [seasonId]);
 
-  return { fields, programs, loading, error };
+  return { fields, programs, custom, loading, error };
 }
 
 export function PlanCalculatorModal({ open, onClose, seasonId, productId, onApply }: Props) {
-  const { fields, programs, loading, error } = usePlanInputs(seasonId);
+  const { fields, programs, custom, loading, error } = usePlanInputs(seasonId);
   return (
     <PlanCalculator
       open={open}
       onClose={onClose}
       fields={fields}
       programs={programs}
+      custom={custom}
       loading={loading}
       error={error}
       productId={productId}

@@ -8,6 +8,7 @@ import {
   type PlanField,
   type PlanProgram,
   type PlanNeedLine,
+  type PlanCustomRates,
 } from '../../lib/fertilizerPlanMath';
 
 /**
@@ -22,10 +23,14 @@ import {
  *   - the load ticket, to fill a delivery from the plan;
  *   - the booking form, to answer "how much do I contract for these fields?".
  *
- * Rates are used as the program writes them. What you edit is the resulting
- * tonnage, after applying — the owner's decision, and it covers the common case
- * (the plan said 23.4, the truck brought 24) without building per-field rate
- * overrides, which would be the largest chunk of UI in the whole feature.
+ * Rates come from `computePlanNeed`, which since V-8 resolves them PER FIELD: a
+ * field carrying its own list for a pass contributes that list rather than the
+ * shared one. Before that this screen would have answered with the program's
+ * tonnage for a field whose own plan says otherwise — the calculator contradicting
+ * the field page.
+ *
+ * What you edit here is still the resulting tonnage, after applying — the owner's
+ * decision, and it covers the common case (the plan said 23.4, the truck brought 24).
  *
  * PRESENTATION ONLY, AND IN ITS OWN FILE ON PURPOSE. It takes its data as props
  * and imports nothing that reaches Supabase, so it can be rendered with fixtures
@@ -49,6 +54,8 @@ export interface CalculatorProps {
   onClose: () => void;
   fields: PlanField[];
   programs: PlanProgram[];
+  /** The season's per-field rates, and every product they may name — V-8. */
+  custom: PlanCustomRates;
   loading: boolean;
   error: string | null;
   /**
@@ -60,7 +67,7 @@ export interface CalculatorProps {
 }
 
 export function PlanCalculator({
-  open, onClose, fields, programs, loading, error, productId, onApply,
+  open, onClose, fields, programs, custom, loading, error, productId, onApply,
 }: CalculatorProps) {
   const [selectedFields, setSelectedFields] = useState<Set<string>>(new Set());
   const [selectedPrograms, setSelectedPrograms] = useState<Set<string>>(new Set());
@@ -73,8 +80,8 @@ export function PlanCalculator({
   };
 
   const allLines = useMemo(
-    () => computePlanNeed(fields, programs, selectedFields, selectedPrograms),
-    [fields, programs, selectedFields, selectedPrograms]
+    () => computePlanNeed(fields, programs, selectedFields, selectedPrograms, custom),
+    [fields, programs, selectedFields, selectedPrograms, custom]
   );
 
   // Scoped to one product for the booking form, but computed over the whole
@@ -255,8 +262,16 @@ export function PlanCalculator({
                   {note && <p className="mt-3 text-xs text-gray-500 italic">{note}</p>}
                 </div>
 
+                {/*
+                  This used to read "Rates come from the programs as written", which V-8
+                  made false — and dangerously so, because it tells the owner the answer
+                  ignores per-field rates when it no longer does. Believing it means
+                  adjusting the tonnage a second time for a field already counted at its
+                  own rate. Caught by rendering the screen, 6 Sep.
+                */}
                 <p className="text-xs text-gray-500">
-                  Rates come from the programs as written. Adjust the tonnage after applying
+                  A field with its own rates for a pass is counted at those; every other
+                  field is counted at the program&rsquo;s. Adjust the tonnage after applying
                   if the truck brings something different — that number is what gets saved.
                 </p>
               </>

@@ -1,4 +1,11 @@
 import { accumulateNeed, type NeedContribution } from './shoppingListMath';
+import {
+  contributionsFromItems,
+  resolveFieldFertilizerItems,
+  type FertilizerProductMeta,
+  type FieldRate,
+  type ProgramItemRate,
+} from './fieldFertilizerRates';
 
 /**
  * The plan calculator — F-6.
@@ -63,61 +70,91 @@ export interface PlanNeedLine {
   issues: string[];
 }
 
+/** The season's per-field rates and the products they may name — V-8. */
+export interface PlanCustomRates {
+  rates: readonly FieldRate[];
+  /**
+   * Every fertilizer product in the season, not merely those the chosen programs
+   * name. Under replace-wholly a field may carry a product its program never had,
+   * and a map built from the programs alone would drop that product's tonnage
+   * without saying so.
+   */
+  products: ReadonlyMap<string, FertilizerProductMeta>;
+}
+
 /**
  * Tonnage per product for a fields x programs selection.
  *
- * Rates are used exactly as the program writes them — per the owner's decision,
- * the calculator does not offer per-field rate overrides. What you edit is the
- * resulting tonnage, which covers the common case (the plan said 23.4, the truck
- * brought 24) without building the largest chunk of UI in the feature.
+ * F-6 shipped this using each program's rates exactly as written, because
+ * per-field rates did not exist. **V-8 makes it resolve per field**, so a field
+ * carrying its own list for a pass contributes that list rather than the shared
+ * one. Without it the calculator would contradict the field's own plan: Prairie
+ * Stream 2's 2 ton of Rhizosorb would be ordered as the program's 1.4.
+ *
+ * `custom` is REQUIRED rather than optional. An optional argument here would let a
+ * caller silently get the pre-V-8 answer, which is exactly how the shopping list
+ * came to disagree with the field page for a day. Pass empty collections to mean
+ * "this season has no custom rates" — that is a statement, not an omission.
+ *
+ * An explicitly selected field is calculated for even if that pass is not on its
+ * program list, because the question this screen answers is "what if I ran THIS
+ * program on THESE fields?". Its own rates still apply if it has any.
  */
 export function computePlanNeed(
   fields: PlanField[],
   programs: PlanProgram[],
   selectedFieldIds: ReadonlySet<string>,
-  selectedProgramIds: ReadonlySet<string>
+  selectedProgramIds: ReadonlySet<string>,
+  custom: PlanCustomRates
 ): PlanNeedLine[] {
   const chosenFields = fields.filter((f) => selectedFieldIds.has(f.id));
   const chosenPrograms = programs.filter((p) => selectedProgramIds.has(p.id));
   if (chosenFields.length === 0 || chosenPrograms.length === 0) return [];
 
-  const meta = new Map<string, PlanProgramItem>();
+  const meta = new Map<string, FertilizerProductMeta>();
   const contributions = new Map<string, NeedContribution[]>();
+  const resolveIssues = new Set<string>();
 
   for (const field of chosenFields) {
     const acreage = Number(field.acreage);
     if (!Number.isFinite(acreage) || acreage <= 0) continue;
 
     for (const program of chosenPrograms) {
-      for (const item of program.items) {
-        if (!meta.has(item.productId)) {
-          meta.set(item.productId, item);
-          contributions.set(item.productId, []);
-        }
-        contributions.get(item.productId)!.push({
-          rate: item.rate,
-          rateUnit: item.rateUnit || item.productUnit,
-          acreage,
-        });
+      const programItems: ProgramItemRate[] = program.items.map((i) => ({
+        productId: i.productId,
+        rate: i.rate,
+        rateUnit: i.rateUnit || i.productUnit,
+      }));
+
+      // The one resolver — the same call the field's own cost, the V-6 grid and
+      // the shopping list make. They differ in scope; they cannot differ in maths.
+      const resolved = resolveFieldFertilizerItems(
+        field.id, program.id, programItems, custom.rates, custom.products
+      );
+      resolved.issues.forEach((i) => resolveIssues.add(i));
+
+      for (const item of resolved.items) {
+        if (!meta.has(item.product.productId)) meta.set(item.product.productId, item.product);
       }
+      contributionsFromItems(resolved.items, acreage, contributions);
     }
   }
 
   const lines: PlanNeedLine[] = [];
-  for (const item of meta.values()) {
+  for (const product of meta.values()) {
     // Same accumulator the shopping list uses: each contribution converted into
     // the product's own unit on the way in, never summed raw across units.
     const accumulated = accumulateNeed(
-      contributions.get(item.productId) ?? [],
-      item.productUnit,
-      item.density
+      contributions.get(product.productId) ?? [],
+      product.unitType,
+      product.density
     );
     lines.push({
-      productId: item.productId,
-      productName: item.productName,
+      productId: product.productId,
+      productName: product.productName,
       unit: accumulated.unit,
       total: accumulated.total,
-      issues: accumulated.issues,
+      issues: [...accumulated.issues, ...resolveIssues],
     });
   }
 

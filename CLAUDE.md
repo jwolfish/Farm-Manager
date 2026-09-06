@@ -62,7 +62,7 @@ Rules this feature keeps re-learning the hard way:
 
 @docs/Fertilizer-Contract-Tracking-Design.md
 
-## Field-level fertilizer rates (V-0 … V-6 done; V-7, V-8 remain)
+## Field-level fertilizer rates (V-0 … V-6 and V-8 done; only V-7, the CSV import, remains)
 
 Per-field rates that replace a program's for one pass on one field. The rules that have
 already cost defects:
@@ -72,7 +72,8 @@ already cost defects:
   `field_fertilizer_rates` holds the rates behind a program-shaped override. Reading one
   and not the other showed 185 where 200 was stored; clearing one and not the other left
   orphaned rates after a reset. Same defect, opposite directions, hours apart.
-  **The reader that still does not know is the shopping list — that is V-8.**
+  **Every reader now goes through `resolveFieldFertilizerItems` — V-8 closed the last two,
+  the shopping list and the plan calculator. Any new one must too.**
 - **Replace-wholly.** Any custom rows for a (field, program) pair *are* that field's item
   list for the pass. No rows means inherit. "None of this pass this year" is expressed by
   removing the program from the field's list, not by an empty rate set.
@@ -97,13 +98,15 @@ The status doc is the source of truth for what is done. Update it when a round l
 
 ## Known baseline — do not treat these as regressions you caused
 
-- `npx tsc --noEmit -p tsconfig.app.json` reports **75 errors** (was 103 at review, 98
-  before WI-19 began). The regeneration of `database.types.ts` briefly took it to 103 —
+- `npx tsc --noEmit -p tsconfig.app.json` reports **73 errors** (was 103 at review, 98
+  before WI-19 began; 75 until V-8 replaced two `Json`-to-`ProgramRef[]` casts with real
+  `Array.isArray` guards). The regeneration of `database.types.ts` briefly took it to 103 —
   12 errors resolved, 17 revealed that the stale hand-written file had been hiding —
   before the unused-symbol sweep brought it to 76. See the WI-19 section of the status
   doc for the full accounting; every movement is itemised there.
-- `npx eslint .` reports **109 errors, 28 warnings** (was 136/28 at review).
-- `npx vite build` succeeds and emits a **1,786.85 kB** main chunk (477.04 kB gz), plus two
+- `npx eslint .` reports **107 errors, 28 warnings** (was 136/28 at review; 109 until V-8
+  removed one `prefer-const` and one `no-explicit-any` from the code it rewrote).
+- `npx vite build` succeeds and emits a **1,787.96 kB** main chunk (477.27 kB gz), plus two
   lazy fertilizer chunks: **25.96 kB** `FertilizerContractsTab` (7.10 gz) and **20.07 kB**
   `BookingModal` (6.03 gz), the latter shared by the Contracts tab, the Shopping Lists tab
   and the plan calculator. It was 1,751.91 kB before fertilizer F-1, which added 2.38 kB for
@@ -116,7 +119,7 @@ The status doc is the source of truth for what is done. Update it when a round l
   `FieldProgramDetails`; V-5 added **15.85 kB** for the per-field plan editor on the eager
   `FieldDetail` path; and V-6 added only **1.06 kB** to the main chunk plus a third lazy
   chunk, **19.82 kB** `FieldFertilizerRateGridPanel` (6.35 gz).
-- `npm test` reports **380 passing** in 10 files (372 before `formatRate` added 8; 347
+- `npm test` reports **386 passing** in 10 files (380 before V-8 added 6; 372 before `formatRate` added 8; 347
   before V-6 added 25; 340 before V-5 added 7; 320 before V-2 added 20; 308 before V-0
   added 12; 295 before shopping-list coverage added 13).
 - There is **no CI**. Adding it is WI-21 in the PRD.
