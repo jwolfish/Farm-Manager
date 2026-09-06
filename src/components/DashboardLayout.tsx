@@ -26,6 +26,8 @@ import {
   Tractor,
   Check,
   Droplets,
+  Menu,
+  X,
 } from 'lucide-react';
 
 interface DashboardLayoutProps {
@@ -67,6 +69,17 @@ export function DashboardLayout({
 }: DashboardLayoutProps) {
   const { user, signOut } = useAuth();
   const { ownedFarms } = useFarm();
+  /*
+   * MOB-1. The sidebar was `w-64 flex-shrink-0` and always in flow, so on a 390 px phone
+   * it took 256 px — 66 % of the screen — and left 134 px for the page. The owner's
+   * report was "a mess", "scrolls poorly", "unusable", and this single fact is most of
+   * it: nothing downstream can be usable in 134 px, however well it is laid out.
+   *
+   * Below `md:` the sidebar is now an off-canvas drawer over the content. From `md:` up
+   * it is exactly what it was — static, in flow, always visible — so the desktop layout
+   * is untouched by design rather than by luck.
+   */
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [showSeasonDropdown, setShowSeasonDropdown] = useState(false);
   const [showFarmDropdown, setShowFarmDropdown] = useState(false);
   const [showCreateFarmModal, setShowCreateFarmModal] = useState(false);
@@ -77,6 +90,16 @@ export function DashboardLayout({
   const seasonDropdownRef = useRef<HTMLDivElement>(null);
 
   const isSharedFarm = activeFarmContext?.isOwn === false;
+
+  /*
+   * MOB-1. Every navigation closes the drawer. A drawer that stays open over the page you
+   * just asked for is the classic version of this bug, and on a phone it looks exactly
+   * like the tap doing nothing. Harmless above `md:`, where the drawer state is unused.
+   */
+  const navigateAndClose = (page: string) => {
+    setMobileNavOpen(false);
+    onNavigate(page);
+  };
 
   useEffect(() => {
     const handleClick = (e: MouseEvent) => {
@@ -159,8 +182,65 @@ export function DashboardLayout({
         </div>
       )}
 
+      {/*
+       * MOB-1. The phone's only chrome when the drawer is shut. It carries the farm and
+       * the season name deliberately: which season you are looking at is not negotiable
+       * (the F-4b lesson), and putting the picker behind a tap would otherwise hide it.
+       * `md:hidden`, so the desktop header is unchanged.
+       */}
+      <div className="md:hidden flex items-center gap-2 px-3 py-2 bg-white border-b border-gray-200 flex-shrink-0">
+        <button
+          onClick={() => setMobileNavOpen(true)}
+          aria-label="Open menu"
+          aria-expanded={mobileNavOpen}
+          className="p-2.5 -ml-1 rounded-lg text-gray-700 hover:bg-gray-100 transition-colors"
+        >
+          <Menu className="w-6 h-6" />
+        </button>
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-bold text-gray-900 truncate leading-tight">
+            {displayFarmName ?? 'Farm Manager'}
+          </p>
+          {currentSeason && (
+            <p className="text-xs text-gray-500 truncate leading-tight">{currentSeason.name}</p>
+          )}
+        </div>
+        <NotificationBell onInviteAccepted={onInviteAccepted ?? (() => {})} />
+      </div>
+
       <div className="flex flex-1 overflow-hidden">
-        <aside className="w-64 bg-white border-r border-gray-200 flex flex-col flex-shrink-0">
+        {/*
+         * MOB-1. The scrim. Tapping outside a drawer is how a drawer is dismissed, and
+         * without it the only way out is the X — which is at the top of a scrolling panel
+         * and may not be on screen.
+         */}
+        {mobileNavOpen && (
+          <div
+            className="md:hidden fixed inset-0 bg-black bg-opacity-50 z-30"
+            onClick={() => setMobileNavOpen(false)}
+            aria-hidden="true"
+          />
+        )}
+        {/*
+         * MOB-1. Shown or hidden, NOT slid in with a transform.
+         *
+         * The first version used `-translate-x-full` / `translate-x-0` for a slide. On
+         * screen it stayed off-canvas with `mobileNavOpen` true, `translate-x-0` applied
+         * and `--tw-translate-x: 0px` — and a scan of every matched rule found none
+         * setting a transform at all. Tailwind's transform-variable plumbing was not
+         * resolving here and the reason was not worth chasing, because the animation is a
+         * nice-to-have and a drawer that opens is the requirement. `hidden`/`flex` has no
+         * such dependency and is verifiable in one measurement.
+         *
+         * Exactly one display class is ever in the string: a bare `flex` in the base would
+         * fight `hidden`, and which won would depend on Tailwind's output order rather
+         * than on anything written here.
+         */}
+        <aside
+          className={`w-64 bg-white border-r border-gray-200 flex-col flex-shrink-0 overflow-y-auto
+            fixed inset-y-0 left-0 z-40 md:static md:z-auto
+            ${mobileNavOpen ? 'flex' : 'hidden'} md:flex`}
+        >
           <div className="px-5 pt-5 pb-4 border-b border-gray-200">
             <div className="flex items-center justify-between mb-3">
               <div className="flex items-center gap-2.5">
@@ -169,7 +249,23 @@ export function DashboardLayout({
                 </div>
                 <h1 className="font-bold text-gray-900 text-base leading-tight">Farm Manager</h1>
               </div>
-              <NotificationBell onInviteAccepted={onInviteAccepted ?? (() => {})} />
+              <div className="flex items-center gap-1">
+                {/* MOB-1. The bell is in the mobile top bar too, so this one is desktop-only
+                    rather than duplicated on screen at the same time. */}
+                <span className="hidden md:block">
+                  <NotificationBell onInviteAccepted={onInviteAccepted ?? (() => {})} />
+                </span>
+                <button
+                  onClick={() => setMobileNavOpen(false)}
+                  aria-label="Close menu"
+                  className="md:hidden p-3 -mr-1 rounded-lg text-gray-600 hover:bg-gray-100 transition-colors"
+                >
+                  {/* MOB-1. p-3 not p-2.5: at p-2.5 this measured 40 px against the
+                      design doc's >= 44 px rule for new controls — the same defect V-5
+                      hit at 38 px. */}
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
             </div>
 
             <div ref={farmDropdownRef} className="relative">
@@ -209,6 +305,7 @@ export function DashboardLayout({
                             key={farm.id}
                             onClick={() => {
                               setShowFarmDropdown(false);
+                              setMobileNavOpen(false);
                               if (!isActive) onSwitchToOwnedFarm?.(farm);
                             }}
                             className={`w-full text-left px-3 py-2.5 text-sm transition-colors flex items-center justify-between gap-2 ${
@@ -337,7 +434,7 @@ export function DashboardLayout({
               return (
                 <button
                   key={item.id}
-                  onClick={() => onNavigate(item.id)}
+                  onClick={() => navigateAndClose(item.id)}
                   className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
                     isActive
                       ? 'bg-green-50 text-green-700'
@@ -352,7 +449,7 @@ export function DashboardLayout({
 
             {!isSharedFarm && (
               <button
-                onClick={() => onNavigate('team')}
+                onClick={() => navigateAndClose('team')}
                 className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
                   activePage === 'team'
                     ? 'bg-green-50 text-green-700'
@@ -369,7 +466,7 @@ export function DashboardLayout({
             {!isSharedFarm && (
               <>
                 <button
-                  onClick={() => onNavigate('farm-settings')}
+                  onClick={() => navigateAndClose('farm-settings')}
                   className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
                     activePage === 'farm-settings'
                       ? 'bg-green-50 text-green-700'
@@ -380,7 +477,7 @@ export function DashboardLayout({
                   Farm Settings
                 </button>
                 <button
-                  onClick={() => onNavigate('account-settings')}
+                  onClick={() => navigateAndClose('account-settings')}
                   className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
                     activePage === 'account-settings'
                       ? 'bg-green-50 text-green-700'
@@ -394,7 +491,7 @@ export function DashboardLayout({
             )}
             {isSharedFarm && (
               <button
-                onClick={() => onNavigate('account-settings')}
+                onClick={() => navigateAndClose('account-settings')}
                 className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors ${
                   activePage === 'account-settings'
                     ? 'bg-green-50 text-green-700'
