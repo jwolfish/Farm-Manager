@@ -9,21 +9,47 @@
 
 ## 1. The short answer
 
-**Two items gated a mobile effort. One of them is now done. Everything else does not.**
+**Two items gated a mobile effort. BOTH are now done. Everything else does not.**
 
 | | | State |
 |---|---|---|
 | **WI-22 / PERF-1** | Code-split the bundle | **DONE 6 Sep 2026.** First paint 468 → **102.11 kB gzip** by making 12 of 13 pages `React.lazy`. §3 is kept as the record of what was wrong |
-| **WI-29** | Adopt a router | **Still open, and now the only structural blocker.** **No back button** — navigation is `sessionStorage` plus a hand-rolled `switch`, so the phone's back gesture leaves the app instead of going back a screen. On a desktop this is an annoyance; on a phone it is the primary navigation control |
+| **WI-29a** | Adopt a router | **DONE 6 Sep 2026.** Hash routes (`#/fields`, `#/fields/:fieldId`) replace `activePage` in `sessionStorage`, so back, forward and a shared link all work. Verified in a browser against the real route table. §2 is kept as the record of what was wrong |
 
-**One decision to settle before starting**, not a work item: the `<DataList>` question in §4.
+**First paint is now 118.40 kB gzip**, not 102.11 — `react-router-dom` is +16.29 kB gz and
+`App.tsx` imports it eagerly. WI-22's target is ≤ 300 kB gz, so the router did not spend
+the headroom it was given.
+
+**WI-29b, the decomposition, remains and does NOT gate mobile.** `App.tsx` is still
+~1,000 lines. The back button was the deliverable and it is delivered; extracting
+`SeasonProvider` and farm switching is maintainability, and it is worth doing before the
+layout pass touches this file — but nothing is blocked on it.
+
+**So the structural prerequisites are cleared, and what is left before starting is one
+decision**, not a work item: the `<DataList>` question in §4.
 
 Everything else on the remediation list — correctness, security, the remaining type errors,
 the duplicated cost math — is **independent of form factor** and should not gate mobile.
 Some of it is more urgent than mobile on its own merits; none of it gets easier or harder
 because of mobile.
 
-## 2. WI-29 is the finding, and it is not currently written down as a mobile blocker
+## 2. WI-29 was the finding, and it is now closed
+
+> **WI-29a closed 6 Sep 2026, hours after this section was written.** The URL is the
+> navigation state; `#/fields` and `#/fields/:fieldId` are real history entries, so back
+> and forward work and a field screen is linkable. `HashRouter` was chosen over clean
+> paths precisely because of the gap this section identifies — no host is committed
+> anywhere in the repo, so a router that needs a rewrite rule would ship an unverified
+> promise. The route table is one tested file, `src/lib/appRoutes.ts`; `DashboardLayout`
+> took a zero-line diff. Full record in the status doc's WI-29a section. **The
+> measurements below are the "before", kept because they are what made the case.**
+>
+> **Two things this section says that are still true.** `App.tsx` has *not* shrunk — the
+> decomposition is WI-29b and is not started. And the sidebar items are still buttons
+> rather than links, so middle-click and open-in-new-tab do not work; that was deliberate,
+> to keep `DashboardLayout` out of the diff.
+
+### As it stood before the fix
 
 The fertilizer design doc's §8 mobile survey (30 Aug) called the bundle the real blocker and
 was right about that. It did not mention the router, because on a desktop the missing back
@@ -176,13 +202,17 @@ real email for invitations, and the collaboration test with a second account.
 
 1. ~~**WI-22 — code-split.**~~ **Done 6 Sep 2026.** `manualChunks` turned out to be
    unnecessary once the pages were lazy; see §3.
-2. **WI-29 — router. Now the only structural blocker.** Adopt React Router, move
-   `activePage` out of `sessionStorage`, and extract season management out of the 947-line
-   `App.tsx` while doing it. The back button is the deliverable; the decomposition is the
-   means. **WI-22 makes this easier, not harder** — the page boundaries it introduced are
-   the same boundaries routes will need, and each page is now a lazily-loaded unit already.
+2. ~~**WI-29 — router.**~~ **WI-29a done 6 Sep 2026.** The decomposition turned out not to
+   be "the means" — the router landed without it, and keeping them apart kept one large
+   diff out of the file carrying R-1's load presentation, R-6's boundaries and WI-22's
+   `Suspense` placements. **WI-22 did make it easier**, as predicted: each page was already
+   a lazily-loaded unit, so the route boundaries were the boundaries WI-22 had drawn.
+   **WI-29b — extract `SeasonProvider` and farm switching from the ~1,000-line
+   `App.tsx` — is still open, and no longer blocks anything.** Worth doing before the
+   layout pass edits this file, not before starting.
 3. **Answer the `<DataList>` question** — one primitive adopted 31 times, or 31 hand
-   retrofits. Decide before starting, not during.
+   retrofits. Decide before starting, not during. **This is now the only thing standing
+   between here and the mobile effort.**
 4. **Then the mobile effort proper**, which at that point is layout and input hygiene
    (45 `type="number"` to convert, 21 modals to swap to `<ResponsiveModal>`) rather than
    architecture.
@@ -201,3 +231,11 @@ fertilizer contract system being built. **The fertilizer contract system is buil
 F-1 … F-6 complete, confirmed end to end against real data — and the remediation is far
 enough along that the only genuine mobile prerequisites are the two structural items in §1.
 Mobile is no longer waiting on features. It is waiting on the bundle and the router.
+
+**And that last sentence went stale the same day it was written.** Both landed on 6 Sep —
+WI-22 in the morning, WI-29a in the afternoon. **Mobile is not waiting on anything
+structural any more.** What is left before the effort starts is the `<DataList>` decision
+in §4, which is a judgement call rather than a work item, and the effort itself is then
+layout and input hygiene. Recording the correction rather than editing the claim away,
+because a document that names the blockers is exactly the one that goes quietly wrong when
+they are removed.

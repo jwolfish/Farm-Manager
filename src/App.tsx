@@ -1,4 +1,13 @@
 import { Suspense, lazy, useCallback, useEffect, useRef, useState } from 'react';
+import {
+  HashRouter,
+  Navigate,
+  Route,
+  Routes,
+  useLocation,
+  useMatch,
+  useNavigate,
+} from 'react-router-dom';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { NotificationProvider, useNotifications } from './contexts/NotificationContext';
 import { FarmProvider, useFarm } from './contexts/FarmContext';
@@ -42,6 +51,14 @@ import { fetchSharedFarms, SharedFarm } from './lib/teamMembers';
 import { fetchOwnedFarms, createFarm, Farm } from './lib/farms';
 import { Plus } from 'lucide-react';
 import { useCascadeTaskNotifications } from './hooks/useCascadeTaskNotifications';
+import {
+  DASHBOARD_PAGE,
+  FIELD_DETAIL_PATTERN,
+  PAGE_PATHS,
+  fieldDetailPath,
+  pageKeyFromPath,
+  pathForPage,
+} from './lib/appRoutes';
 // TEMPORARY — the "random reload" investigation. Remove with lib/authDiagnostics.ts.
 import { logAuthDiagnostic } from './lib/authDiagnostics';
 
@@ -89,9 +106,31 @@ function AppContent() {
   const { activeFarm, ownedFarms, setOwnedFarms, setOwnFarm, setOwnFarmById, setSharedFarm, activeFarmId } = useFarm();
   const wasAuthenticated = useRef(false);
   const loadedForUserIdRef = useRef<string | null>(null);
-  const [activePage, setActivePage] = useState<string>(() => {
-    return sessionStorage.getItem('activePage') || 'dashboard';
-  });
+  /*
+   * WI-29a. `activePage` was React state seeded from `sessionStorage`, which meant the
+   * browser's history stack had exactly one entry for the whole session: the back
+   * gesture left the app rather than going back a screen. On a desktop that reads as a
+   * papercut; on a phone, back is the primary navigation control, and "the app closed
+   * itself" is precisely the report the random-reload thread has spent a week chasing.
+   *
+   * The URL is now the state, so back, forward and a shared link all work. It stays a
+   * plain string here because `DashboardLayout` identifies pages that way and is
+   * untouched by this change — the mapping between the two lives in lib/appRoutes.ts,
+   * where it can be tested.
+   */
+  const location = useLocation();
+  const navigate = useNavigate();
+  const activePage = pageKeyFromPath(location.pathname);
+  /*
+   * WI-29a. Which field is open was `selectedFieldId` in React state, so it survived
+   * exactly as long as this component instance did — a remount landed on the Fields
+   * page with no explanation, and the URL never said which field you were looking at.
+   * It is a route parameter now, which also makes a field's screen linkable.
+   */
+  const fieldDetailMatch = useMatch(FIELD_DETAIL_PATTERN);
+  const selectedFieldId = fieldDetailMatch?.params.fieldId
+    ? decodeURIComponent(fieldDetailMatch.params.fieldId)
+    : null;
   const [seasons, setSeasons] = useState<Season[]>([]);
   const [currentSeason, setCurrentSeason] = useState<Season | null>(null);
   const [loading, setLoading] = useState(true);
@@ -105,7 +144,6 @@ function AppContent() {
   const [pendingSeasonId, setPendingSeasonId] = useState<string | null>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [seasonToDelete, setSeasonToDelete] = useState<Season | null>(null);
-  const [selectedFieldId, setSelectedFieldId] = useState<string | null>(null);
   const [sharedFarms, setSharedFarms] = useState<SharedFarm[]>([]);
   const [dataLoadError, setDataLoadError] = useState<string | null>(null);
   /*
@@ -317,10 +355,17 @@ function AppContent() {
    * not ask for is the rest of R-4, and the diagnosis says not to implement that until
    * a real session log shows which sign-out is actually firing. This moves the side
    * effect somewhere legal without deciding that question.
+   *
+   * WI-29a: this was `sessionStorage.removeItem('activePage')`, and that key no longer
+   * exists. Forgetting the page is now a replace-navigation to the dashboard, which is
+   * the same OBSERVABLE behaviour and is still deliberately unchanged. `replace` rather
+   * than a push, so signing out does not leave a history entry that back would return
+   * to — the old code changed no URL at all, and a push would have been a new behaviour
+   * smuggled in under a refactor.
    */
   useEffect(() => {
     if (!user && wasAuthenticated.current) {
-      sessionStorage.removeItem('activePage');
+      navigate(PAGE_PATHS[DASHBOARD_PAGE], { replace: true });
       /*
        * R-1. A sign-out ends the session that made the loaded state worth keeping, so
        * the next sign-in is a first load again. Without this, signing back in — as
@@ -329,12 +374,25 @@ function AppContent() {
        */
       setHasLoadedOnce(false);
     }
-  }, [user]);
+  }, [user, navigate]);
 
-  const handleNavigate = (page: string) => {
-    sessionStorage.setItem('activePage', page);
-    setActivePage(page);
-  };
+  /*
+   * WI-29a. This is a `useCallback` where the old one was a plain function, and the
+   * reason is worth recording because it is the lint telling the truth.
+   *
+   * The old body touched only `sessionStorage` and a `setState` setter, both of which
+   * exhaustive-deps knows are stable, so it never asked the four farm-switch callbacks
+   * below to declare it. `navigate` is a hook return value, so the new body is reactive
+   * and those four callbacks genuinely do depend on it. Memoising here and declaring it
+   * there keeps the four stable — `navigate` itself does not change between renders —
+   * rather than silencing four correct warnings.
+   */
+  const handleNavigate = useCallback(
+    (page: string) => {
+      navigate(pathForPage(page));
+    },
+    [navigate]
+  );
 
   const handleSeasonChange = async (seasonId: string) => {
     const season = seasons.find((s) => s.id === seasonId);
@@ -507,13 +565,17 @@ function AppContent() {
   };
 
   const handleViewFieldDetail = (fieldId: string) => {
-    setSelectedFieldId(fieldId);
-    handleNavigate('field-detail');
+    navigate(fieldDetailPath(fieldId));
   };
 
+  /*
+   * WI-29a. An explicit destination rather than `navigate(-1)`. A field screen is now
+   * reachable by link and by refresh, so "back" from it may have no history entry
+   * behind it at all — and history.back() with nothing to go back to leaves the app,
+   * which is the exact failure this work item exists to remove.
+   */
   const handleBackFromFieldDetail = () => {
-    setSelectedFieldId(null);
-    handleNavigate('fields');
+    navigate(PAGE_PATHS.fields);
   };
 
   /*
@@ -530,7 +592,7 @@ function AppContent() {
     setHasLoadedOnce(false);
     await loadSeasonsByFarm(farm.id, user.id);
     handleNavigate('dashboard');
-  }, [user, setOwnFarmById, loadSeasonsByFarm]);
+  }, [user, setOwnFarmById, loadSeasonsByFarm, handleNavigate]);
 
   const handleSwitchToSharedFarm = useCallback(async (farm: SharedFarm) => {
     if (!user) return;
@@ -563,7 +625,7 @@ function AppContent() {
       await loadSeasons(farm.ownerId);
     }
     handleNavigate('dashboard');
-  }, [user, setSharedFarm, addNotification, loadSharedFarms, loadSeasonsByFarm, loadSeasons]);
+  }, [user, setSharedFarm, addNotification, loadSharedFarms, loadSeasonsByFarm, loadSeasons, handleNavigate]);
 
   const handleSwitchToOwnFarm = useCallback(async () => {
     if (!user) return;
@@ -577,7 +639,7 @@ function AppContent() {
       await loadSeasons(user.id);
     }
     handleNavigate('dashboard');
-  }, [user, ownedFarms, setOwnFarmById, setOwnFarm, loadSeasonsByFarm, loadSeasons]);
+  }, [user, ownedFarms, setOwnFarmById, setOwnFarm, loadSeasonsByFarm, loadSeasons, handleNavigate]);
 
   const handleFarmCreated = useCallback(async (newFarm: Farm) => {
     if (!user) return;
@@ -587,7 +649,7 @@ function AppContent() {
     setHasLoadedOnce(false);
     await loadSeasonsByFarm(newFarm.id, user.id);
     handleNavigate('dashboard');
-  }, [user, ownedFarms, setOwnedFarms, setOwnFarmById, loadSeasonsByFarm]);
+  }, [user, ownedFarms, setOwnedFarms, setOwnFarmById, loadSeasonsByFarm, handleNavigate]);
 
   const handleFarmsUpdated = useCallback(async () => {
     if (!user) return;
@@ -852,7 +914,7 @@ function AppContent() {
     </>
   );
 
-  if (activePage === 'field-detail' && selectedFieldId && currentSeason?.id) {
+  if (selectedFieldId && currentSeason?.id) {
     return (
       <>
         {/*
@@ -918,38 +980,92 @@ function AppContent() {
        * could only fire for the three lazy panels; every page is now reachable that way.
        */}
       <Suspense fallback={<PageLoadFallback />}>
-      {activePage === 'dashboard' && <Dashboard seasonId={currentSeason?.id || null} />}
-      {activePage === 'fields' && (
-        <Fields
-          seasonId={currentSeason?.id || null}
-          onViewFieldDetail={handleViewFieldDetail}
-          readOnly={activeRole === 'viewer'}
+      {/*
+       * WI-29a. This was a chain of `activePage === '…' &&` tests. Two things the
+       * switch to <Routes> changes beyond the back button:
+       *
+       *  - An unknown path now lands somewhere. The old chain rendered NOTHING for a
+       *    key it did not recognise, so the content area went blank with the sidebar
+       *    still lit — indistinguishable from a page that failed to load.
+       *  - The three owner-only screens redirect instead of rendering nothing. On a
+       *    shared farm, `isOwnFarm && <Team/>` produced exactly that blank area; a
+       *    collaborator who reached /team saw an empty page rather than being told
+       *    anything. They are now sent to the dashboard, which is at least a screen.
+       */}
+      <Routes>
+        <Route path={PAGE_PATHS.dashboard} element={<Dashboard seasonId={currentSeason?.id || null} />} />
+        <Route
+          path={PAGE_PATHS.fields}
+          element={
+            <Fields
+              seasonId={currentSeason?.id || null}
+              onViewFieldDetail={handleViewFieldDetail}
+              readOnly={activeRole === 'viewer'}
+            />
+          }
         />
-      )}
-      {activePage === 'products' && <Products seasonId={currentSeason?.id || null} readOnly={activeRole === 'viewer'} />}
-      {activePage === 'templates' && <CostTemplates seasonId={currentSeason?.id || null} readOnly={activeRole === 'viewer'} />}
-      {activePage === 'yields' && <Yields seasonId={currentSeason?.id || null} readOnly={activeRole === 'viewer'} />}
-      {activePage === 'sales' && <SalesTracking seasonId={currentSeason?.id || null} readOnly={activeRole === 'viewer'} />}
-      {activePage === 'spray-planner' && (
-        <SprayPlanner
-          currentSeasonId={currentSeason?.id || null}
-          effectiveUserId={activeFarm ? activeFarm.ownerId ?? user?.id ?? null : user?.id ?? null}
-          farmId={activeFarm?.farmId ?? null}
+        <Route
+          path={PAGE_PATHS.products}
+          element={<Products seasonId={currentSeason?.id || null} readOnly={activeRole === 'viewer'} />}
         />
-      )}
-      {activePage === 'reports' && <Reports currentSeasonId={currentSeason?.id || null} />}
-      {activePage === 'account-settings' && isOwnFarm && <AccountSettings />}
-      {activePage === 'farm-settings' && isOwnFarm && (
-        <FarmSettings onFarmsUpdated={handleFarmsUpdated} />
-      )}
-      {activePage === 'team' && isOwnFarm && (
-        <Team
-          onSwitchToFarm={handleSwitchToSharedFarm}
-          onSwitchToOwnFarm={handleSwitchToOwnFarm}
-          sharedFarms={sharedFarms}
-          onRefreshSharedFarms={loadSharedFarms}
+        <Route
+          path={PAGE_PATHS.templates}
+          element={<CostTemplates seasonId={currentSeason?.id || null} readOnly={activeRole === 'viewer'} />}
         />
-      )}
+        <Route
+          path={PAGE_PATHS.yields}
+          element={<Yields seasonId={currentSeason?.id || null} readOnly={activeRole === 'viewer'} />}
+        />
+        <Route
+          path={PAGE_PATHS.sales}
+          element={<SalesTracking seasonId={currentSeason?.id || null} readOnly={activeRole === 'viewer'} />}
+        />
+        <Route
+          path={PAGE_PATHS['spray-planner']}
+          element={
+            <SprayPlanner
+              currentSeasonId={currentSeason?.id || null}
+              effectiveUserId={activeFarm ? activeFarm.ownerId ?? user?.id ?? null : user?.id ?? null}
+              farmId={activeFarm?.farmId ?? null}
+            />
+          }
+        />
+        <Route path={PAGE_PATHS.reports} element={<Reports currentSeasonId={currentSeason?.id || null} />} />
+        <Route
+          path={PAGE_PATHS['account-settings']}
+          element={isOwnFarm ? <AccountSettings /> : <Navigate to={PAGE_PATHS.dashboard} replace />}
+        />
+        <Route
+          path={PAGE_PATHS['farm-settings']}
+          element={
+            isOwnFarm ? (
+              <FarmSettings onFarmsUpdated={handleFarmsUpdated} />
+            ) : (
+              <Navigate to={PAGE_PATHS.dashboard} replace />
+            )
+          }
+        />
+        <Route
+          path={PAGE_PATHS.team}
+          element={
+            isOwnFarm ? (
+              <Team
+                onSwitchToFarm={handleSwitchToSharedFarm}
+                onSwitchToOwnFarm={handleSwitchToOwnFarm}
+                sharedFarms={sharedFarms}
+                onRefreshSharedFarms={loadSharedFarms}
+              />
+            ) : (
+              <Navigate to={PAGE_PATHS.dashboard} replace />
+            )
+          }
+        />
+        {/*
+         * `replace`, so a mistyped or stale URL does not leave a history entry that
+         * back would bounce off forever.
+         */}
+        <Route path="*" element={<Navigate to={PAGE_PATHS.dashboard} replace />} />
+      </Routes>
       </Suspense>
       </ErrorBoundary>
       {loadStatusOverlays}
@@ -966,14 +1082,36 @@ function AppWithFarm() {
   );
 }
 
+/*
+ * WI-29a. HashRouter rather than BrowserRouter, and it is a deployment decision more
+ * than a routing one.
+ *
+ * Clean paths require the host to rewrite every unknown path to index.html. There is no
+ * host committed to this repository — the developer guide says only "any CDN or static
+ * host" — so a BrowserRouter would ship a promise nobody has verified, and the failure
+ * mode is that refreshing on /fields returns a 404, which reads to a user as the app
+ * being broken. A hash route needs no server co-operation at all: a deep link, a
+ * refresh and a bookmark work anywhere the static files are served from, including the
+ * preview origins that rotate.
+ *
+ * The cost is a '#' in the URL. If a real deployment with a rewrite rule ever exists,
+ * this becomes BrowserRouter and nothing else in the app changes — every path is
+ * already declared in lib/appRoutes.ts.
+ *
+ * It sits ABOVE the providers so that anything inside them, including the Auth screen,
+ * may navigate. It sits INSIDE main.tsx's root error boundary, so a router failure is
+ * still caught rather than blanking the page.
+ */
 function App() {
   return (
-    <AuthProvider>
-      <NotificationProvider>
-        <AppWithFarm />
-        <ToastContainer />
-      </NotificationProvider>
-    </AuthProvider>
+    <HashRouter>
+      <AuthProvider>
+        <NotificationProvider>
+          <AppWithFarm />
+          <ToastContainer />
+        </NotificationProvider>
+      </AuthProvider>
+    </HashRouter>
   );
 }
 

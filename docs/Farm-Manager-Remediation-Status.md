@@ -4,6 +4,9 @@
 complete, shopping-list coverage complete, and **field-level fertilizer rates V-0 … V-6 and
 V-8 complete, confirmed in the running app**. Only V-7, the optional CSV import, remains,
 and it is **deferred by the owner's decision** until the grid has been used for a season.
+**WI-22 and WI-29a both landed 6 Sep, so BOTH mobile blockers are cleared** — first paint
+is 118.40 kB gzip and the browser's back button works. WI-29b, the `App.tsx`
+decomposition, is the remaining half of WI-29 and is not started.
 **The random reload is acted on at last: R-1, R-5, R-4 item 2 and R-6 all landed 6 Sep** —
 the full-screen amplifier is gone, a failed seasons load no longer reads as an empty farm,
 the render-phase mutation is in an effect, and the app has error boundaries at last, so a
@@ -87,10 +90,10 @@ live cascade, with the two fields that correctly moved by exactly $80 as the con
 
 | Measured 6 Sep 2026 | |
 |---|---|
-| Tests | **422 passing**, 12 files (401 before R-6 added 21; 386 before R-1 added 15; 380 before V-8 added 6; 347 before V-6 added 25) |
+| Tests | **435 passing**, 13 files (422 before WI-29a added 13; 401 before R-6 added 21; 386 before R-1 added 15; 380 before V-8 added 6; 347 before V-6 added 25) |
 | TypeScript | **69 errors** (103 at review, 98 before WI-19, 75 before V-8 replaced two `Json` casts with `Array.isArray` guards, 73 before the chemical path got the same four). Unmoved by R-1 and R-6; set compared with positions stripped at every step |
 | ESLint | **107 errors, 28 warnings** (from 136/28; 109 before V-8 deleted one `prefer-const` and one `no-explicit-any`). Unmoved by R-1, by the cast guards, or by R-6 |
-| Build | succeeds — **40 chunks. First paint 365.89 kB raw / 102.11 kB gzip**, which is the single `<script>` in `dist/index.html`. WI-22 landed 6 Sep and took it from 1,794.82 kB / 479.30 gz by making 12 of 13 pages `React.lazy`. Total across all chunks 612 kB gz, up from 593 — chunking overhead, and the correct trade. **Quote first paint, not a "main chunk"** |
+| Build | succeeds — **40 chunks. First paint 414.74 kB raw / 118.40 kB gzip**, which is the single `<script>` in `dist/index.html`. WI-22 landed 6 Sep and took it from 1,794.82 kB / 479.30 gz to 102.11 gz by making 12 of 13 pages `React.lazy`; WI-29a then added 16.29 kB gz of `react-router-dom`, which `App.tsx` imports eagerly. Still inside WI-22's ≤ 300 kB gz target. **Quote first paint, not a "main chunk"** |
 | Migrations | **63 files**, matching the database one-for-one |
 | Edge function | **version 17**, running source confirmed identical to the repo by sha256, re-verified 6 Sep |
 | Security advisors | 14 WARN — 13 are the by-design `authenticated_security_definer_function_executable` lint that fires on every RPC, 1 is `auth_leaked_password_protection` (WI-6). No new class of finding. V-6’s internal `apply_field_fertilizer_rates` is correctly absent, being executable by neither role |
@@ -103,14 +106,23 @@ collaboration defects found by testing, none of which were in the original revie
 
 **Partial:** SEC-6 (WI-6 untouched) · SEC-8 (mechanism in place, `ALLOWED_ORIGIN` unset by
 choice) · WI-19 (103 → 69; **all 73 read for defects on 6 Sep and none found**, 69 remain,
-86 `no-explicit-any` the substantive group) · WI-20 (422 tests, but nowhere near the
+86 `no-explicit-any` the substantive group) · WI-20 (435 tests, but nowhere near the
 80 % target) · WI-23 / PERF-2 (V-8 bounded the shopping list's fertilizer override query
 with `.in('field_id', …)`; the chemical one at `shoppingListGeneration.ts:57` still selects
 every visible row and filters in JavaScript) · WI-21 (core gate done; the types-drift and
 pgTAP jobs need Supabase credentials in repository secrets).
 
 **Newly closed 6 Sep:** WI-21 core gate · **WI-22 / PERF-1** — first paint 479.30 →
-**102.11 kB gzip**, against a ≤ 300 kB target.
+**102.11 kB gzip**, against a ≤ 300 kB target · **WI-29a**, the router and the back
+button. **With those two, both mobile blockers named in
+`Farm-Manager-Pre-Mobile-Readiness.md` §1 are cleared.**
+
+**WI-29 is half closed, and the halves are separately useful.** WI-29a is the router;
+**WI-29b, the decomposition, is not started** — `App.tsx` is still ~1,000 lines holding
+auth gating, farm selection, season CRUD, the import wizard and delete confirmation. It
+was split off deliberately rather than skipped: the router works without it, and doing
+both at once would have put one large diff through the file carrying R-1's load
+presentation, R-6's boundary placements and WI-22's `Suspense` placements.
 
 ### The override defect — found and FIXED 31 Aug 2026
 
@@ -2597,6 +2609,124 @@ establishes two things the built output could not:
 **Floor:** TypeScript **69**, error set unchanged (0 new, 0 fixed) · ESLint **107 / 28**,
 unchanged · tests **422**, unchanged · build succeeds · CI green (run #3).
 
+### WI-29a / MNT-4 — the router, and the back button — 6 Sep 2026
+
+**The phone's back gesture now goes back a screen instead of leaving the app.** That is
+the deliverable, and until today it was the only structural item left between here and a
+mobile effort — WI-22 closed hours earlier, and `Farm-Manager-Pre-Mobile-Readiness.md` §1
+names these two and nothing else.
+
+**What was wrong was narrow and total.** `activePage` was a string in `useState`, seeded
+from `sessionStorage` and dispatched through a chain of `activePage === '…' &&` tests.
+No URL ever changed, so the browser's history stack held exactly one entry for the whole
+session. On a desktop that reads as a missing convenience; on a phone, back is the primary
+navigation control, and "the app closed itself" is precisely the report this session has
+spent a week chasing under the name *random reload*.
+
+**A second defect fell out of it that no document had recorded.** Which field was open
+lived in `selectedFieldId`, also React state, so a remount landed on the Fields page with
+no explanation and the URL never said which field was on screen. It is a route parameter
+now — `#/fields/:fieldId` — which also makes a field's screen linkable for the first time.
+
+| | |
+|---|---|
+| Router | `HashRouter`, wrapping the providers inside `main.tsx`'s R-6 root boundary |
+| Route table | `src/lib/appRoutes.ts` — 11 page paths, the field-detail pattern, and the mapping in both directions |
+| Page dispatch | `<Routes>` inside `DashboardLayout`, inside the R-6 boundary, inside WI-22's `<Suspense>` — all three placements unchanged |
+| `DashboardLayout` | **Zero diff.** It still takes `activePage` / `onNavigate` and still identifies pages by short string; only where that string comes from changed |
+
+**HashRouter rather than BrowserRouter, and it is a deployment decision.** Clean paths
+require the host to rewrite every unknown path to `index.html`. **No host is committed to
+this repository** — the developer guide says only "any CDN or static host", and SEC-8's
+`ALLOWED_ORIGIN` note records that preview origins rotate. A `BrowserRouter` would
+therefore ship a promise nobody has verified, and its failure mode is that refreshing on
+`/fields` returns a 404, which reads to the owner as the app being broken. A hash route
+needs no server co-operation at all. The cost is a `#` in the address bar; if a real
+deployment with a rewrite rule ever exists, the router type is a one-line change and
+nothing else moves, because every path is already declared in one file.
+
+**The decision is a pure function, per the `appLoadState` / `renderErrorState` pattern.**
+`App.tsx` imports the Supabase client at module load and cannot be booted on a machine
+with no credentials, so a mapping left inline in it could only ever be verified by
+reading. **13 tests**, and the one that earns its keep is the round trip: every sidebar
+page key must survive key → path → key. A key with no route navigates to a URL that falls
+through the catch-all and bounces to the dashboard, which presents to the user as a click
+that does nothing — the least debuggable class of navigation bug, and the one that
+appears the moment somebody adds a page to one list and not the other.
+
+**Two behaviour improvements came free with `<Routes>`, and both were blank screens.**
+
+- **An unknown path now lands somewhere.** The old `&&` chain rendered *nothing* for a
+  key it did not recognise, so the content area went blank with the sidebar still lit —
+  indistinguishable from a page that failed to load.
+- **The three owner-only screens redirect rather than rendering nothing.** On a shared
+  farm, `isOwnFarm && <Team/>` produced exactly that blank area: a collaborator who
+  reached Team saw an empty page and was told nothing. They go to the dashboard now.
+
+**Four new ESLint warnings appeared and were fixed rather than baselined**, because they
+were the lint telling the truth. `handleNavigate` used to touch only `sessionStorage` and
+a `setState` setter — both of which `exhaustive-deps` knows are stable — so the four
+farm-switch `useCallback`s were never asked to declare it. `navigate` is a hook return
+value, so the new body is reactive and those four genuinely do depend on it. It is a
+`useCallback` now and they declare it; `navigate` does not change between renders, so
+nothing re-renders more than before.
+
+**R-4 item 2 is preserved exactly.** The sign-out effect's
+`sessionStorage.removeItem('activePage')` had no key left to remove; it is now
+`navigate('/dashboard', { replace: true })` — the same observable behaviour, still
+deliberately undecided pending the auth log. `replace` rather than a push, because the old
+code changed no URL at all and a push would have smuggled a new behaviour in under a
+refactor.
+
+**VERIFIED IN A BROWSER — and this is the round's real evidence.** The route table has 13
+unit tests, but a unit test on a path mapping does not prove a back *gesture*. A throwaway
+harness mounted the **real** `appRoutes.ts` with the same `Routes` / `useMatch` /
+`navigate` wiring `App.tsx` now uses, against stand-in pages, then was deleted:
+
+| Check | Result |
+|---|---|
+| dashboard → fields → products → reports, then back, back | **products, then fields** — and the sidebar highlight tracked the URL at each step |
+| forward | returns to products |
+| Open a field | URL becomes `#/fields/8f14e45f-…`; back returns to Fields |
+| **Deep link on a cold page load** at `#/fields/8f14e45f-…` | **renders that field** — this is the whole HashRouter argument, proven rather than asserted: a full page load at a nested path with no server rewrite |
+| `#/not-a-page` | lands on the dashboard, `activePage` reads dashboard |
+| The bare origin | redirects to `#/dashboard` |
+| History length after three pushes | **5**, so neither `replace` redirect added an entry |
+| Console | clean |
+
+**Rendering did not find a defect this round** — the second time in ten. Worth saying
+plainly rather than dropping the streak quietly. The likeliest reason is the same as
+R-6's: the thing under test is a state machine with almost no layout, so there is far less
+here to be wrong than in a rate grid.
+
+**What this does NOT establish, and must not be claimed:**
+
+| | |
+|---|---|
+| **The real app** | The harness proves the routing; it does not prove `App.tsx`. Nothing here has been run against Supabase, because this machine has no credentials. The owner's check is the short one below |
+| **The phone** | Back was driven with `history.back()`, not with a phone's back gesture. They are the same API, but nobody has held the device |
+| **Sidebar links** | Nav items are still `<button onClick>`, not `<Link>`, so middle-click and open-in-new-tab do not work. Deliberate for this round: converting them means touching `DashboardLayout`, and keeping its diff at zero is what makes this one reviewable |
+
+**The owner's check, and it is thirty seconds.** Open the app, click Fields, click a
+field, then press the browser's back button — twice. **Pass:** you land on Fields, then on
+wherever you were before it, and the address bar reads `#/fields/…` while a field is open.
+**Fail:** the browser leaves the app, or the field screen shows the wrong field.
+
+**Floor:** TypeScript **69**, error set byte-identical with positions stripped · ESLint
+**107 / 28**, unchanged · tests 422 → **435** · build succeeds, 40 chunks unchanged, the
+lazy chunks byte-identical. **First paint 365.89 → 414.74 kB raw, 102.11 → 118.40 kB
+gzip** — `react-router-dom` 7.18.3, which `App.tsx` imports eagerly. That is a real
++16.29 kB gz against WI-22's number and it is stated rather than buried; the target is
+≤ 300 kB gzip, so it is still met with room. One new runtime dependency, the first added
+to this project during the remediation.
+
+**WI-29b, the decomposition, is NOT done and is the other half of this work item.**
+`App.tsx` is still ~1,000 lines holding auth gating, farm selection, season CRUD, the
+import wizard and delete confirmation. It was split off deliberately: the router works
+without it, and doing both at once would put one large diff through the file that carries
+R-1's load presentation, R-6's boundary placements and WI-22's `Suspense` placements —
+all three of which this document calls load bearing.
+
 ## Open items and standing notes
 
 **Nothing in this section is open any more.** It is all practice notes and closed records
@@ -2821,9 +2951,9 @@ All figures below are measured, not estimated.
 |---|---|---|---|---|---|---|---|
 | TypeScript errors | 103 | 103 (identical set) | 99 | 98 | 76 | 75 | **69** |
 | ESLint | 136 errors, 28 warnings | 134 / 28 | 134 / 28 | 134 / 28 | 109 / 28 | 109 / 28 | **107 / 28** |
-| Tests | 0 | 178 passing, 4 files | 206 passing, 5 files | 206 passing, 5 files | 206 passing, 5 files | 282 passing, 7 files | **422 passing, 12 files** |
+| Tests | 0 | 178 passing, 4 files | 206 passing, 5 files | 206 passing, 5 files | 206 passing, 5 files | 282 passing, 7 files | **435 passing, 13 files** |
 | CI | none | none | none | none | none | none | **GitHub Actions on every push — tests, baseline ratchet, build** |
-| First-paint JS | 1,747 kB (465 kB gz) | 1,754.43 kB (467.56 kB gz) | 1,751.97 kB (467.39 kB gz) | 1,751.96 kB (467.50 kB gz) | 1,751.91 kB (467.46 kB gz) | 1,760.80 kB (470.25 gz) | **365.89 kB (102.11 kB gz)** — WI-22 |
+| First-paint JS | 1,747 kB (465 kB gz) | 1,754.43 kB (467.56 kB gz) | 1,751.97 kB (467.39 kB gz) | 1,751.96 kB (467.50 kB gz) | 1,751.91 kB (467.46 kB gz) | 1,760.80 kB (470.25 gz) | **414.74 kB (118.40 kB gz)** — WI-22 took it to 102.11 gz, WI-29a added 16.29 gz of `react-router-dom` |
 | Lazy chunks | — | — | — | — | — | `FertilizerContractsTab` 25.96, `BookingModal` 20.02 | **those two plus `FieldFertilizerRateGridPanel` 19.83 kB (6.36 gz)** |
 | Migrations | 40 files | 43 | 46 | 52 | 52 | 58 | **63, diffed against the database one-for-one** |
 | Edge function | — | v8 pending | — | v10 | v10 | v13 | **v17, source confirmed in sync by sha256** |
@@ -2831,9 +2961,10 @@ All figures below are measured, not estimated.
 **The 6 Sep column is shopping-list coverage, field-level rates V-0 … V-8, and the reload
 work R-1 / R-5 / R-4 item 2 / R-6, itemised.**
 
-- **Tests 282 → 422**, every step accounted for: +13 pre-coverage work (282 → 295), +13
+- **Tests 282 → 435**, every step accounted for: +13 pre-coverage work (282 → 295), +13
   shopping-list coverage (→ 308), +12 V-0 (→ 320), +20 V-2 (→ 340), +7 V-5 (→ 347), +25 V-6
-  (→ 372), +8 `formatRate` (→ 380), +6 V-8 (→ 386), +15 R-1 (→ 401), +21 R-6 (→ **422**).
+  (→ 372), +8 `formatRate` (→ 380), +6 V-8 (→ 386), +15 R-1 (→ 401), +21 R-6 (→ 422),
+  +13 WI-29a on the route table (→ **435**).
 - **TypeScript 75 → 69**, a strict subset at every step. Two removals are V-8's and four are
   the chemical path taking the same `Array.isArray` guards on 6 Sep. The V-8 pair was a
   behaviour fix as much as a type fix; the later four are hardening, since a query filter

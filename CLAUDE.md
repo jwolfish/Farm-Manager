@@ -110,23 +110,25 @@ The status doc is the source of truth for what is done. Update it when a round l
 - `npx eslint .` reports **107 errors, 28 warnings** (was 136/28 at review; 109 until V-8
   removed one `prefer-const` and one `no-explicit-any` from the code it rewrote).
 - `npx vite build` succeeds and emits **40 chunks**. The number that matters is **first
-  paint: 365.89 kB raw / 102.11 kB gzip**, which is `dist/index.html`'s single
+  paint: 414.74 kB raw / 118.40 kB gzip**, which is `dist/index.html`'s single
   `<script>` and nothing else — measure it that way, by reading the tags out of
-  `index.html`, not by looking for "the main chunk".
+  `index.html`, not by looking for "the main chunk". WI-29a added 48.85 kB raw /
+  16.29 kB gzip to it (`react-router-dom`, which `App.tsx` imports eagerly); WI-22's
+  target is ≤ 300 kB gzip, so it is still met with room.
 
   **WI-22 landed 6 Sep 2026 and changed what these figures mean.** Until then all thirteen
   pages were static imports, so the eager chunk was 1,794.82 kB / 479.30 gz and every
   round's growth landed in it. Twelve pages are now `React.lazy` (`Auth` stays eager), so
   `recharts` (eleven report sub-pages) and `jspdf` (reached through the `lib/exportUtils`
   barrel) are out of the first paint entirely. **479.30 → 102.11 kB gzip**, against WI-22's
-  ≤ 300 kB target.
+  ≤ 300 kB target. WI-29a then took it to **118.40 kB gzip**.
 
   Consequence for future work: **app-level code is the only thing that still lands in the
-  first paint.** R-1's 2.09 kB and R-6's 4.64 kB did, because they are `App.tsx` and
-  `main.tsx`; a change confined to one page no longer does. Total across all chunks went
+  first paint.** R-1's 2.09 kB, R-6's 4.64 kB and WI-29a's 16.29 kB gz did, because they
+  are `App.tsx` and `main.tsx`; a change confined to one page no longer does. Total across all chunks went
   593 → 612 kB gzip from chunking overhead, which is the correct trade and not a
   regression — quote first paint, not the total.
-- `npm test` reports **422 passing** in 12 files (401 before R-6 added 21; 386 before R-1 added 15; 380 before V-8 added 6; 372 before
+- `npm test` reports **435 passing** in 13 files (422 before WI-29a added 13; 401 before R-6 added 21; 386 before R-1 added 15; 380 before V-8 added 6; 372 before
   `formatRate` added 8; 347 before V-6 added 25; 340 before V-5 added 7; 320 before V-2 added 20; 308 before V-0
   added 12; 295 before shopping-list coverage added 13).
 - **CI exists as of 6 Sep 2026** — `.github/workflows/ci.yml`, WI-21's core gate. It runs
@@ -235,6 +237,23 @@ These are real mistakes made during this work, not hypotheticals.
    `action`) or the region it guards stays broken until a reload — the blank page in
    miniature.
 
+13. **The URL is the navigation state, and `lib/appRoutes.ts` is the only thing that
+   knows how a page key and a path correspond.** WI-29a replaced `activePage` in
+   `sessionStorage` with hash routes (`#/fields`, `#/fields/:fieldId`), because the old
+   scheme left the history stack with one entry — so the phone's back gesture exited the
+   app. `DashboardLayout` still speaks in page keys ('dashboard', 'spray-planner') and is
+   deliberately untouched; the mapping is what got extracted, so it can be tested where
+   `App.tsx` cannot. **Add a page in both places or not at all** — a sidebar key with no
+   route navigates to a URL that falls through the catch-all and bounces to the dashboard,
+   which presents as a click that does nothing. Three things that look like oversights and
+   are not: `HashRouter` is chosen so a deep link and a refresh need no rewrite rule from
+   the host, and swapping it for `BrowserRouter` is the only change needed if a host ever
+   provides one; sidebar items are still buttons rather than `<Link>`s, so middle-click and
+   open-in-new-tab do not work yet; and `handleBackFromFieldDetail` navigates to `/fields`
+   explicitly rather than calling `navigate(-1)`, because a field screen is now reachable
+   by link and history.back() with nothing behind it leaves the app — the exact failure
+   WI-29 exists to remove.
+
 ## Verifying your own work
 
 Bolt and Claude both fail the same way here: confident, plausible, incomplete. Prefer
@@ -266,8 +285,8 @@ The individual commands still work when you want one of them:
 ```
 npx tsc --noEmit -p tsconfig.app.json   # 69
 npx eslint .                            # 107 errors / 28 warnings
-npx vite build                          # must succeed; first paint 102.11 kB gz
-npm test                                # 422 passing, must stay green
+npx vite build                          # must succeed; first paint 118.40 kB gz
+npm test                                # 435 passing, must stay green
 ```
 
 **The Supabase CLI is installed as a dev dependency** (`supabase` 2.116.0, added 31 Aug
