@@ -9,8 +9,8 @@ WI-29 is closed** — first paint is 119.11 kB gzip, the browser's back button w
 `App.tsx` is 559 lines rather than 1,118.
 **The app also left Bolt for Netlify the same day** — no publish button, deploys gated on
 `npm run verify` in CI, and clean URLs at last (`BrowserRouter`, one word, exactly as
-WI-29a predicted). See *Off Bolt, onto Netlify*. The site itself does not exist yet: the
-deploy job skips until the owner creates it and sets four repository secrets.
+WI-29a predicted). See *Off Bolt, onto Netlify*. **Live and confirmed the same day** —
+rehearsed on a deploy preview, then merged to `main`, both runs green end to end.
 **The random reload is acted on at last: R-1, R-5, R-4 item 2 and R-6 all landed 6 Sep** —
 the full-screen amplifier is gone, a failed seasons load no longer reads as an empty farm,
 the render-phase mutation is in an effect, and the app has error boundaries at last, so a
@@ -2962,17 +2962,40 @@ mounted the **real** `appRoutes.ts` under `BrowserRouter` with the same `Routes`
 | `location.hash` at every step | Empty string |
 | Console | Clean |
 
-**What that does NOT establish, and must not be claimed.** The refresh and deep-link
-checks passed against **Vite's dev server**, which does SPA fallback natively. That is the
-same behaviour `public/_redirects` asks Netlify for, and it is the right rehearsal — but
-**Netlify has not served this yet**, so the rewrite rule itself is proven by reading. It
-is also the single thing most worth checking first after the site exists: paste
-`<site>/fields` into a fresh tab. If that 404s, the rewrite did not take, and everything
-else will look perfect because in-app navigation does not need it.
+**What the harness did NOT establish.** The refresh and deep-link checks passed against
+**Vite's dev server**, which does SPA fallback natively. That is the same behaviour
+`public/_redirects` asks Netlify for, and it is the right rehearsal — but it is not
+Netlify, so at the time of writing the rewrite rule itself was proven only by reading.
 
-**Also not done, and both are the owner's:** the Netlify site does not exist yet and the
-four repository secrets are not set, so the deploy job has never run — it will skip with a
-warning until they are. And **SEC-8 is now unblocked but still open**: `ALLOWED_ORIGIN` on
+### CONFIRMED IN PRODUCTION — 6 Sep 2026, the same day
+
+**The whole chain ran, and it was rehearsed before it was applied.** A pull request first,
+because a `pull_request` event deploys a *draft* rather than `--prod`: that exercises the
+guard, the build with real secrets, the bundle assertion and `netlify deploy` against a
+throwaway URL, with production untouched. Run #13 green, every step. Only then was `main`
+fast-forwarded — run #14, green, production.
+
+| Step, first execution | Result |
+|---|---|
+| Are the deploy secrets configured? | **passed rather than skipped** — so all four secret *names* are right. A typo in a name reads as "not configured", not as an error, which is why the distinction matters |
+| Assert the environment reached the bundle | passed — `VITE_SUPABASE_URL` really was inlined |
+| Deploy | passed — first run of `netlify-cli@27`, `--no-build`, and the `jq` parse of `--json`, none of which had ever executed |
+
+**The rewrite is confirmed, by the check that can return "no".** The owner direct-loaded
+`<preview>/fields` in a fresh tab — not by clicking Fields from the dashboard, which passes
+whether or not `_redirects` applied, because React Router handles that entirely in the
+client. Only a cold request for a path with no file behind it asks the server the question.
+It rendered. **That is what makes `BrowserRouter` legitimate rather than hopeful**, and it
+is the last thing this move was relying on reading rather than seeing.
+
+**The first production deploy carried more than this change.** `main` had advanced while
+this was being written — MOB-1 (`459bcb0`, the sidebar becomes a drawer on a phone) and
+MOB-2 (`596750a`, stop the page scrolling sideways), from concurrent work — so run #14
+shipped those too. Both had passed the floor on their own commits. Recorded because "the
+hosting change is the only new thing in production" would be false, and would be the wrong
+first suspect if something looks off.
+
+**Still open, and both are the owner's.** **SEC-8**: `ALLOWED_ORIGIN` on
 the cascade function has been left at `*` since Round 5 specifically because Bolt preview
 origins rotate and no production URL was committed. A stable Netlify domain is exactly what
 that was waiting for. Note that setting it strictly would break deploy previews, so it
