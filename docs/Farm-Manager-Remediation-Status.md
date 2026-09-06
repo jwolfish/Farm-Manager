@@ -34,15 +34,15 @@ Code fixed in both copies, 13 tests added, nine production rows repaired, edge f
 deployed as **v14** and verified byte-for-byte. The one thing left is a 5-minute check in
 the running app — *How to prove the fix*, at the end of that section.
 
-| Measured 4 Sep 2026 | |
+| Measured 6 Sep 2026 | |
 |---|---|
-| Tests | **347 passing**, 8 files (340 before V-5 added 7) |
+| Tests | **372 passing**, 9 files (347 before V-6 added 25) |
 | TypeScript | **75 errors** (103 at review, 98 before WI-19) |
 | ESLint | **109 errors, 28 warnings** (from 136/28) |
-| Build | succeeds — **1,768.55 kB** (472.56 kB gz), plus lazy `FertilizerContractsTab` 25.96 kB and `BookingModal` 20.07 kB |
-| Migrations | **62 files**, matching the database one-for-one |
+| Build | succeeds — **1,786.66 kB** (476.95 kB gz), plus lazy `FertilizerContractsTab` 25.96 kB, `BookingModal` 20.07 kB and `FieldFertilizerRateGridPanel` 19.82 kB |
+| Migrations | **63 files**, matching the database one-for-one |
 | Edge function | **version 16**, deployed source confirmed identical to the repo by sha256 (5 Sep) |
-| Security advisors | 13 WARN — 12 are the by-design `authenticated_security_definer_function_executable` lint that fires on every RPC, 1 is `auth_leaked_password_protection` (WI-6). No new class of finding |
+| Security advisors | 14 WARN — 13 are the by-design `authenticated_security_definer_function_executable` lint that fires on every RPC, 1 is `auth_leaked_password_protection` (WI-6). No new class of finding. V-6’s internal `apply_field_fertilizer_rates` is correctly absent, being executable by neither role |
 | Cascade tasks | **58 total, 0 failed** |
 | SEC-5 policy matrix | **120 assertions, 0 failures** (extended at V-1 and re-run against the live schema; was 101 at F-3) |
 
@@ -1929,6 +1929,144 @@ not exercise it.
 **So the next fertilizer price change is a real test of code that has only ever had unit
 tests.** Watch that Adkins' three program costs move with the template's rather than
 freezing.
+
+### Correction — the array-shaped override is gone again, 6 Sep 2026
+
+**The section above is out of date within hours of being written, and the reason is worth
+keeping.** It recorded that production held its first `fertilizer_programs` override
+(Adkins 2027) and concluded that `refreshProgramOverridesInSeason` was armed at last.
+
+Re-measured at the start of V-6: **9 overrides, all numeric, 0 array-shaped, 0 rate rows.**
+The owner then tested *Reset All Custom Values*, which deletes the override row outright —
+so the row that armed it was removed by the very test that confirmed the reset works.
+
+So the V-0 cascade fix is **still exercised only by unit tests**, exactly as it was before,
+and the standing note that production holds zero rows of that shape is true again. The
+first custom-rated field that survives will re-arm it. Recording the correction rather than
+editing the claim away, because the sequence — feature writes the row, reset removes it —
+is how a "this is now live" note goes quietly stale.
+
+### Field-level fertilizer rates — V-6, the bulk grid — 6 Sep 2026
+
+§5.3's answer to the entry burden: **rows are fields, columns are products, one program at
+a time.** Reached from a *Fertilizer Rates* button on the Fields page, which opens a
+full-screen panel with a program picker. Entry is by total for the field, with one toggle
+to the rate per acre — one toggle for the whole grid rather than two boxes per cell,
+because 32 fields × 3 products × 2 boxes is not a screen anyone can read.
+
+It is load bearing twice: §10.7 makes it the CSV import's review surface, so V-7 populates
+this grid rather than building a screen of its own.
+
+**Migration `20260906023514` — one transaction for a whole grid.** V-4's
+`save_field_fertilizer_rates` writes one (field, program) pair, which was right for the
+single-field editor. Looping it over 17 fields would be a save that can stop half way, and
+§10.7 requires the import commit to be all-or-nothing. So:
+
+| | |
+|---|---|
+| `apply_field_fertilizer_rates` | V-4/V-5's body, moved. `SECURITY DEFINER`, `search_path` pinned, executable by **neither** role — the F-3 pattern for an internal. Not an API |
+| `save_field_fertilizer_rates` | now a one-line delegate. Signature, grants and callers unchanged |
+| `save_field_fertilizer_rates_bulk` | `{"saves":[…]}`, one transaction, authorization re-checked **per entry** so a payload mixing two farms is refused on the foreign field |
+
+**The refactor is the point, not the new entry point.** Two copies of "what it means to save
+a field's rates for a pass" — the template seeding, replace-wholly, the `applies:false`
+branch — would eventually mean two different meanings on the row that carries every
+custom-rated field's fertilizer money. That is the shape guardrail 7 warns about.
+
+Two guards the wrapper adds beyond a loop: a **duplicate (field, program) pair raises**
+rather than letting the last one win, and an **empty payload raises** rather than reporting
+a successful save of nothing.
+
+**Rehearsed before applying — 13 assertions, 0 failures**, rollback confirmed (neither new
+function present, 0 rate rows), then applied for real. The ones that earn their keep: the
+V-4 entry point behaves identically after the refactor, asserted first; **a bad later entry
+rolls back the whole batch, leaving the good earlier one unwritten**; the duplicate pair and
+the empty and non-array payloads are all refused; `applies:false` still clears rates and
+drops the pass; an unknown field takes the batch down with it; unauthenticated is refused;
+and the internal is executable by neither `authenticated` nor `anon` while both wrappers are
+`authenticated`-only.
+
+**The SEC-5 matrix was not re-run, deliberately** — this migration replaces function bodies
+and adds one RPC. It creates no table, alters no policy and changes no grant on any table.
+The new surface is the RPC, and that was attacked directly in the rehearsal. Advisor is at
+the documented baseline plus exactly one more by-design
+`authenticated_security_definer_function_executable`, which is what adding an RPC does.
+
+**Still client-side, on purpose: the cost and the total.** The bulk RPC computes neither
+(§5.2a). The re-totalling loop that follows the save is therefore outside the transaction —
+V-4's documented trade-off, widened from one field to a batch. A total that misses its
+refresh is **stale, not wrong**, and self-heals on the next edit or cascade; a failure there
+is reported to the user rather than raised, because raising would say the save failed when
+the rates are safely committed.
+
+**One trap found while designing it, and closed.** A field with no `field_costs` row is
+shown **locked**. Applying a cost template calls `deleteAllOverrides`, which since 6 Sep
+also clears `field_fertilizer_rates` — so rates entered on a field before it has a template
+would be destroyed the moment one was assigned, and `recalculateFieldTotal` has nowhere to
+write in the meantime. Ten of 2027's 32 fields are in exactly that state today. Accepting
+work that will vanish is worse than saying why it cannot be accepted.
+
+**Rendering found defects for the sixth round running.** Both were invisible in review:
+
+1. **At 375 px not one product cell was reachable.** The field-name column plus a separate
+   *On* checkbox column consumed the whole viewport, so the only thing on screen was a name
+   and a checkbox. That is the F-4b defect exactly — the column the screen exists for is the
+   one that falls off the right edge. Fixed by folding the checkbox into the name cell and
+   capping that cell at `11rem` below `sm:`; two product columns now sit beside it, the page
+   does not scroll sideways (`scrollX` stays 0 after `scrollTo(999,0)`), and the table
+   scrolls inside its own container.
+2. **A row with an unparseable box showed a plausible, smaller `$/acre`.** Typing `60 lb`
+   into AMS dropped that product to nothing and the row read **$62.30** instead of $75.35 —
+   a legitimate-looking number produced by a silently missing product. The save was already
+   blocked; the cost now reads a red `?` instead.
+
+Also raised the mode toggle from a 36 px to a 46 px tap target; the rate boxes and the
+program picker were already 46/47 px.
+
+**Verified on screen against hand figures**, at 1280 px and 375 px, with a throwaway
+fixture harness (deleted afterwards):
+
+| | |
+|---|---|
+| Antioch, custom Urea 200 lb/ac × 24 ac | **2.4 ton**, $/ac **$64.00** |
+| Beck Road, inheriting, 13 ac | 1.203 t Urea, 0.377 t AMS, 0.455 gal Provant, **$75.35** |
+| Home West of Lane, custom, 83 ac | 7.055 t Urea, 3.735 t Potash, **$75.25** |
+| Program rate, computed independently | **$75.35/acre**, matching every inheriting row |
+
+**Replace-wholly proved through the save, not just on screen.** Typing a total into an
+inheriting row flips it to *Custom*, and the emitted payload carried **all three** products —
+Urea at the derived 230.769 lb/ac plus AMS 58 and Provant 0.14 — so the two the user did not
+touch are adopted rather than silently dropped. It is the **rate** that is emitted, not the
+total (§7.1). A field-only column (Potash on a Topdress row) renders, labelled *field only*.
+
+**One rule now has one implementation.** "A field's program list is its override array if it
+has one, else its template's" was about to be spelled out a third time, so it is extracted as
+`enabledProgramIds` and the V-5 loader was rewired onto it. The RPC's copy is in SQL and has
+to be, but there is no reason for two TypeScript readers to disagree.
+
+**Floor:**
+
+| | Before | After |
+|---|---|---|
+| Tests | 347 passing, 8 files | **372 passing, 9 files** — 25 on the grid model |
+| TypeScript | 75 | **75** — set byte-identical, positions stripped |
+| ESLint | 109 errors, 28 warnings | **109 / 28** |
+| Build — main | 1,785.60 kB (476.72 gz) | **1,786.66 kB (476.95 gz)** — +1.06 kB |
+| Build — lazy | — | **`FieldFertilizerRateGridPanel` 19.82 kB (6.35 gz)** |
+| Migrations | 62 | **63**, matching the database one-for-one |
+
+The panel is lazy, like the Contracts tab: ~20 kB on every first paint of the Fields page,
+for a screen most visits never open, is the wrong trade on a bundle already well past
+WI-22's target. `database.types.ts` regenerated and spliced on the `// ---` marker rather
+than a line count: **5 insertions, 0 deletions**, purely the two new function signatures.
+
+**NOT verified: the panel and its data layer against real data.** The grid's arithmetic has
+25 unit tests, the component was driven in a browser, and the RPC was attacked in a
+rehearsal — but `loadRateGridContext` and `saveRateGrid` have never run, because this
+machine has no Supabase credentials and production still holds **0 rate rows**. The round
+trip — save a grid, reload, see the same numbers, watch the field costs move — is the
+outstanding check, and it is the one that found both V-5 defects.
+
 
 ## Open items and standing notes
 

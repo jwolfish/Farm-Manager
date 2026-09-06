@@ -2,6 +2,7 @@ import { supabase } from './supabase';
 import { recalculateFieldTotal } from './templateLib/fieldCostOverrides';
 import {
   buildPlanPrograms,
+  enabledProgramIds,
   type FertilizerProductMeta,
   type FieldRate,
   type PlanEditorProgram,
@@ -113,33 +114,30 @@ export async function loadFieldPlan(fieldId: string): Promise<FieldPlanContext> 
 
   /*
    * The field's effective program list: its own override array if it has one, otherwise the
-   * template's. This is the same precedence `computeFertilizerNeedByProduct` uses, and the
-   * same one the RPC seeds from — three readers, one rule.
+   * template's. That precedence now lives in `enabledProgramIds` so this and the V-6 grid
+   * cannot drift apart — the RPC seeds from the same rule in SQL, which it must, but there
+   * is no reason for the two TypeScript readers to spell it out twice.
+   *
+   * The template is only fetched when there is no override, because when there is one the
+   * template's list is not the answer.
    */
-  let enabled: string[] = [];
-  if (Array.isArray(programOverride?.override_value)) {
-    enabled = (programOverride.override_value as Array<{ program_id?: string }>)
-      .map((e) => e?.program_id)
-      .filter((id): id is string => typeof id === 'string');
-  } else if (costRes.data?.template_id) {
+  let templatePrograms: unknown = null;
+  if (!Array.isArray(programOverride?.override_value) && costRes.data?.template_id) {
     const { data: template, error: templateError } = await supabase
       .from('cost_templates')
       .select('fertilizer_programs')
       .eq('id', costRes.data.template_id)
       .maybeSingle();
     if (templateError) throw new Error(`Could not load the template: ${templateError.message}`);
-    if (Array.isArray(template?.fertilizer_programs)) {
-      enabled = (template.fertilizer_programs as Array<{ program_id?: string }>)
-        .map((e) => e?.program_id)
-        .filter((id): id is string => typeof id === 'string');
-    }
+    templatePrograms = template?.fertilizer_programs ?? null;
   }
+  const enabled = enabledProgramIds(programOverride?.override_value, templatePrograms);
 
   return {
     fieldName: field.name,
     acreage: Number(field.acreage ?? 0),
     numericOverride,
-    programs: buildPlanPrograms(fieldId, seasonPrograms, fieldRates, products, new Set(enabled)),
+    programs: buildPlanPrograms(fieldId, seasonPrograms, fieldRates, products, enabled),
   };
 }
 

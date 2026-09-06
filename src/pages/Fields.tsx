@@ -1,7 +1,17 @@
-import { useEffect, useState, useMemo, useCallback, useRef } from 'react';
+import { useEffect, useState, useMemo, useCallback, useRef, lazy, Suspense } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
-import { Plus, Sprout, Square, CheckSquare, Filter, FileText } from 'lucide-react';
+import { Plus, Sprout, Square, CheckSquare, Filter, FileText, Grid3x3 } from 'lucide-react';
+/*
+ * Lazy, like the Fertilizer Contracts tab and for the same reason: the grid, its panel and
+ * its data layer are ~20 kB that every first paint of the Fields page would otherwise carry
+ * for a screen most visits never open, on a bundle already well over WI-22's target.
+ */
+const FieldFertilizerRateGridPanel = lazy(() =>
+  import('../components/fields/FieldFertilizerRateGridPanel').then((m) => ({
+    default: m.FieldFertilizerRateGridPanel,
+  }))
+);
 import { TemplateSelector } from '../components/TemplateSelector';
 import { SeedVarietyAssignmentComponent } from '../components/SeedVarietyAssignment';
 import { TemplateApplicationPreview } from '../components/TemplateApplicationPreview';
@@ -39,6 +49,7 @@ export function Fields({ seasonId, onViewFieldDetail }: FieldsProps) {
   const [cropFilter, setCropFilter] = useState<CropType | 'all'>('all');
   const [currentPage, setCurrentPage] = useState(1);
 
+  const [showRateGrid, setShowRateGrid] = useState(false);
   const [showTemplateSelector, setShowTemplateSelector] = useState(false);
   const [showSeedAssignment, setShowSeedAssignment] = useState(false);
   const [showApplicationPreview, setShowApplicationPreview] = useState(false);
@@ -348,6 +359,18 @@ export function Fields({ seasonId, onViewFieldDetail }: FieldsProps) {
               Apply Template ({selectedFields.size})
             </button>
           )}
+          {/*
+            The bulk rate grid lives here rather than under Products → Programs, because it
+            reads fields down the page and because it is the surface the CSV import (V-7)
+            will populate for review.
+          */}
+          <button
+            onClick={() => setShowRateGrid(true)}
+            className="flex items-center gap-2 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+          >
+            <Grid3x3 className="w-5 h-5" />
+            Fertilizer Rates
+          </button>
           <button
             onClick={() => {
               setShowForm(true);
@@ -361,6 +384,16 @@ export function Fields({ seasonId, onViewFieldDetail }: FieldsProps) {
           </button>
         </div>
       </div>
+
+      {showRateGrid && seasonId && (
+        <Suspense fallback={<div className="fixed inset-0 z-50 bg-white p-8 text-gray-500">Loading…</div>}>
+          <FieldFertilizerRateGridPanel
+            seasonId={seasonId}
+            onClose={() => setShowRateGrid(false)}
+            onSaved={loadFields}
+          />
+        </Suspense>
+      )}
 
       {fields.length > 0 && (
         <div className="mb-6 bg-white rounded-lg border border-gray-200 p-4">

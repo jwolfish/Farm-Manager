@@ -56,7 +56,7 @@ Live data, 3 Sep 2026, for scale:
 |---|---|
 | 2027 season | 30 fields, 777 ac; **17 have a cost row**, all on one template (`Corn Typical`, 3 fertilizer programs) |
 | 2026 season | 30 fields, 30 cost rows, 29 templated across 7 templates |
-| `field_cost_overrides` | **10 rows** — 9 numeric, and since 6 Sep **1 program-shaped** (Adkins 2027) |
+| `field_cost_overrides` | **9 rows, all numeric.** A program-shaped row existed briefly on 6 Sep (Adkins 2027) and was removed by the owner's own test of *Reset All Custom Values*, which deletes the row outright. So the array shape has still never run in anger |
 | `field_fertilizer_applications` | **0 rows**, referenced by no code (see §6) |
 
 A representative program: `Corn Fall Fertilizer T&L` = Potash 165 lb/ac + TSP 100 lb/ac.
@@ -381,7 +381,7 @@ Each step independently verifiable, per the standing practice.
 | **V-3** | **Deployed 5 Sep 2026 — edge function v16.** Code landed in V-0; the cascade has not yet been observed running | `sha256` of the downloaded function against the repo copy; a real price change observed leaving a custom-rated field correct |
 | **V-4** | **DONE 6 Sep 2026** — `save_field_fertilizer_rates`, migration `20260906011521`. Writes rates + override atomically; computes neither the cost nor the total (§5.2a) | Rehearsed; a bad line leaves no partial rate set; stranger and `anon` refused |
 | **V-5** | **DONE 6 Sep 2026** — the plan editor, its container, the `applies:false` RPC branch, and the *Edit plan* button on `FieldDetail`. Defect 4's warning included | Rendered at 1280 px and 375 px, which found a real defect (see below) and a 38 px tap target. Arithmetic checked on screen against hand figures |
-| **V-6** | Bulk grid — fields down, products across, one program at a time. **Also the import review surface** (§10) | Same. Must stand on its own, because V-7 depends on it |
+| **V-6** | **DONE 6 Sep 2026** — the bulk grid, reached from a *Fertilizer Rates* button on the Fields page, plus migration `20260906023514`: the V-4 body moved into an internal `apply_field_fertilizer_rates` so a new `save_field_fertilizer_rates_bulk` can write a whole grid in ONE transaction. §10.7 needs that for V-7 | Rehearsed 13/0 then rolled back and applied; the assertion that earns its keep is a bad later entry rolling back the whole batch. 25 tests (347 → **372**). Rendered at 1280 px and 375 px, which found two defects — see the status doc |
 | **V-7** | **Optional** CSV import of the FieldAlytics per-field export into that grid (§10) | Parsed against the real exported file; a `--Multiple--` row refused by name, not approximated; the imported total round-trips through the shopping list exactly; nothing written until the review is committed |
 | **V-8** | Shopping list and plan calculator honour per-field rates | One season's tonnage computed by hand against the app |
 

@@ -255,6 +255,35 @@ export interface PlanSavePayload {
   rates: Array<{ productId: string; rate: number; unit: string; sortOrder: number }>;
 }
 
+/**
+ * A field's effective fertilizer program list: its own override array if it has one,
+ * otherwise its template's.
+ *
+ * Extracted at V-6 because there were about to be three readers of this rule — the
+ * single-field editor, the bulk grid, and the RPC that seeds the override array — and a
+ * rule spelled out three times is a rule that will eventually be spelled out three
+ * different ways. The RPC's copy is in SQL and cannot import this, but the two TypeScript
+ * callers can and now do.
+ *
+ * Both arguments are `unknown` because both arrive as `Json` from Postgres and neither is
+ * guaranteed to be an array; anything else means "no list", not a crash.
+ */
+export function enabledProgramIds(
+  overrideValue: unknown,
+  templateValue: unknown
+): Set<string> {
+  const source = Array.isArray(overrideValue)
+    ? overrideValue
+    : Array.isArray(templateValue)
+      ? templateValue
+      : [];
+  return new Set(
+    (source as Array<{ program_id?: unknown }>)
+      .map((e) => e?.program_id)
+      .filter((id): id is string => typeof id === 'string')
+  );
+}
+
 /** One season program as the loader reads it. */
 export interface SeasonProgram {
   programId: string;

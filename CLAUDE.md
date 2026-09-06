@@ -62,6 +62,32 @@ Rules this feature keeps re-learning the hard way:
 
 @docs/Fertilizer-Contract-Tracking-Design.md
 
+## Field-level fertilizer rates (V-0 … V-6 done; V-7, V-8 remain)
+
+Per-field rates that replace a program's for one pass on one field. The rules that have
+already cost defects:
+
+- **A field's custom state lives in TWO tables, and every reader and every clearer must
+  know about both.** `field_cost_overrides` holds the numbers and the program list;
+  `field_fertilizer_rates` holds the rates behind a program-shaped override. Reading one
+  and not the other showed 185 where 200 was stored; clearing one and not the other left
+  orphaned rates after a reset. Same defect, opposite directions, hours apart.
+  **The reader that still does not know is the shopping list — that is V-8.**
+- **Replace-wholly.** Any custom rows for a (field, program) pair *are* that field's item
+  list for the pass. No rows means inherit. "None of this pass this year" is expressed by
+  removing the program from the field's list, not by an empty rate set.
+- **The rate is stored; the total is entered.** The rate is what survives a re-measured
+  field. Store the total and a changed acreage silently becomes a different prescription.
+- **Neither RPC computes the cost or the total.** That needs the unit table and the density
+  bridge, and putting those in SQL is the third copy in a third language that F-3 refused.
+  The client re-totals after the save; a missed refresh leaves a total stale, not wrong.
+- **`save_field_fertilizer_rates` and `save_field_fertilizer_rates_bulk` share one body**
+  (`apply_field_fertilizer_rates`, executable by neither role). Do not fork it.
+- **A field with no `field_costs` row cannot be given rates.** Applying a cost template
+  calls `deleteAllOverrides`, which clears rates too, so they would be destroyed later.
+
+@docs/Field-Level-Fertilizer-Rates-Design.md
+
 The status doc is the source of truth for what is done. Update it when a round lands.
 
 ## Known baseline — do not treat these as regressions you caused
@@ -72,7 +98,7 @@ The status doc is the source of truth for what is done. Update it when a round l
   before the unused-symbol sweep brought it to 76. See the WI-19 section of the status
   doc for the full accounting; every movement is itemised there.
 - `npx eslint .` reports **109 errors, 28 warnings** (was 136/28 at review).
-- `npx vite build` succeeds and emits a **1,785.60 kB** main chunk (476.72 kB gz), plus two
+- `npx vite build` succeeds and emits a **1,786.66 kB** main chunk (476.95 kB gz), plus two
   lazy fertilizer chunks: **25.96 kB** `FertilizerContractsTab` (7.10 gz) and **20.07 kB**
   `BookingModal` (6.03 gz), the latter shared by the Contracts tab, the Shopping Lists tab
   and the plan calculator. It was 1,751.91 kB before fertilizer F-1, which added 2.38 kB for
@@ -82,9 +108,12 @@ The status doc is the source of truth for what is done. Update it when a round l
   Contracts chunk only; F-6 added the plan calculator to the lazy chunks and **0.02 kB** to
   the main one; shopping-list coverage added **3.71 kB** to the main chunk, which is eager;
   field-rates V-0 added **0.89 kB**, the override read and two badges in
-  `FieldProgramDetails`.
-- `npm test` reports **347 passing** in 8 files (340 before V-5 added 7; 320 before V-2 added 20; 308
-  before V-0 added 12; 295 before shopping-list coverage added 13).
+  `FieldProgramDetails`; V-5 added **15.85 kB** for the per-field plan editor on the eager
+  `FieldDetail` path; and V-6 added only **1.06 kB** to the main chunk plus a third lazy
+  chunk, **19.82 kB** `FieldFertilizerRateGridPanel` (6.35 gz).
+- `npm test` reports **372 passing** in 9 files (347 before V-6 added 25; 340 before V-5
+  added 7; 320 before V-2 added 20; 308 before V-0 added 12; 295 before shopping-list
+  coverage added 13).
 - There is **no CI**. Adding it is WI-21 in the PRD.
 - Tests arrived with Round 3: `npm test` (Vitest). Test files are excluded from
   `tsconfig.app.json` so they do not move the 103-error baseline.
