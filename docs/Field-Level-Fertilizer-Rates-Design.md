@@ -56,7 +56,7 @@ Live data, 3 Sep 2026, for scale:
 |---|---|
 | 2027 season | 30 fields, 777 ac; **17 have a cost row**, all on one template (`Corn Typical`, 3 fertilizer programs) |
 | 2026 season | 30 fields, 30 cost rows, 29 templated across 7 templates |
-| `field_cost_overrides` | **9 rows, all numeric** — 0 program-shaped |
+| `field_cost_overrides` | **10 rows** — 9 numeric, and since 6 Sep **1 program-shaped** (Adkins 2027) |
 | `field_fertilizer_applications` | **0 rows**, referenced by no code (see §6) |
 
 A representative program: `Corn Fall Fertilizer T&L` = Potash 165 lb/ac + TSP 100 lb/ac.

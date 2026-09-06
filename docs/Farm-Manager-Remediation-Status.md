@@ -1893,6 +1893,43 @@ proven by rehearsal and the arithmetic by tests and by reading figures off the s
 `field_fertilizer_rates` row exists in production yet, so the round trip — save, re-open,
 see the same numbers, watch the field cost move — has not been observed.
 
+### V-5 confirmed in the app, and two defects it found — 6 Sep 2026
+
+**The round trip works.** The owner set Adkins' Corn Topdress N Urea rate to 200, and both
+reset paths — *Reset All Custom Values* on the field page and *Reset to program* inside the
+editor — were confirmed working after the fixes below.
+
+**Two defects, both found by using the screen, both the same class in opposite directions.**
+A field's custom state lives in **two tables**, and every path that reads or clears one has
+to know about the other:
+
+| | What happened | Fix |
+|---|---|---|
+| Display | The save was perfect — Urea 200 stored, program cost 82.75 → 87.25, total 561.11 → 565.61 — but the screen still read **185**. `FieldProgramDetails` read item rates from the shared `fertilizer_program_items` and never read `field_fertilizer_rates` | Resolves through `resolveFieldFertilizerItems`, the same function the editor and cost math use. Each program whose rates came from the field is labelled **Field rates** |
+| Reset | *Reset All Custom Values* cleared `field_cost_overrides` and left **3 orphaned rate rows**. The cost reverted to the template while the screen would still have shown the field's 200 | Both delete paths clear both tables. `deleteOverride` does so only for `fertilizer_programs`, so resetting a hauling override cannot delete rate work nobody asked to touch |
+
+V-0 had fixed which *programs* the screen shows; the first was which *rates*, one level
+deeper, and it went live the moment the first row existed. Money right, screen wrong — then
+the exact inverse an hour later. This feature will keep producing that pair until every
+reader knows about both tables. **The one that still does not is the shopping list, which is
+V-8**: it computes tonnage from program rates and ignores per-field ones.
+
+**PRODUCTION NOW HOLDS ITS FIRST ARRAY-SHAPED OVERRIDE.** Adkins carries a
+`fertilizer_programs` override whose array is byte-identical to its template's — the
+documented V-4 reset semantics, which leave the row rather than delete it, so the total
+resolves identically (`override_sum` 176.1125, column 176.11, total 561.11, all reconciling).
+
+That matters beyond this field. Every note in this document saying the program-shaped
+override "has never run" and "production holds zero rows of that shape" is now **out of
+date**. `refreshProgramOverridesInSeason` — the V-0 fix, in both copies, live in edge
+function v16 — is armed for the first time and will actually execute on the next fertilizer
+price change. Until now it had no row to act on, and the 6 Sep cascade proof explicitly did
+not exercise it.
+
+**So the next fertilizer price change is a real test of code that has only ever had unit
+tests.** Watch that Adkins' three program costs move with the template's rather than
+freezing.
+
 ## Open items and standing notes
 
 **Nothing in this section is open any more.** It is all practice notes and closed records
