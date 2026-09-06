@@ -4,9 +4,9 @@
 complete, shopping-list coverage complete, and **field-level fertilizer rates V-0 … V-6 and
 V-8 complete, confirmed in the running app**. Only V-7, the optional CSV import, remains,
 and it is **deferred by the owner's decision** until the grid has been used for a season.
-**WI-22 and WI-29a both landed 6 Sep, so BOTH mobile blockers are cleared** — first paint
-is 118.40 kB gzip and the browser's back button works. WI-29b, the `App.tsx`
-decomposition, is the remaining half of WI-29 and is not started.
+**WI-22, WI-29a and WI-29b all landed 6 Sep, so BOTH mobile blockers are cleared and
+WI-29 is closed** — first paint is 118.87 kB gzip, the browser's back button works, and
+`App.tsx` is 559 lines rather than 1,118.
 **The random reload is acted on at last: R-1, R-5, R-4 item 2 and R-6 all landed 6 Sep** —
 the full-screen amplifier is gone, a failed seasons load no longer reads as an empty farm,
 the render-phase mutation is in an effect, and the app has error boundaries at last, so a
@@ -91,9 +91,9 @@ live cascade, with the two fields that correctly moved by exactly $80 as the con
 | Measured 6 Sep 2026 | |
 |---|---|
 | Tests | **435 passing**, 13 files (422 before WI-29a added 13; 401 before R-6 added 21; 386 before R-1 added 15; 380 before V-8 added 6; 347 before V-6 added 25) |
-| TypeScript | **69 errors** (103 at review, 98 before WI-19, 75 before V-8 replaced two `Json` casts with `Array.isArray` guards, 73 before the chemical path got the same four). Unmoved by R-1 and R-6; set compared with positions stripped at every step |
-| ESLint | **107 errors, 28 warnings** (from 136/28; 109 before V-8 deleted one `prefer-const` and one `no-explicit-any`). Unmoved by R-1, by the cast guards, or by R-6 |
-| Build | succeeds — **40 chunks. First paint 414.74 kB raw / 118.40 kB gzip**, which is the single `<script>` in `dist/index.html`. WI-22 landed 6 Sep and took it from 1,794.82 kB / 479.30 gz to 102.11 gz by making 12 of 13 pages `React.lazy`; WI-29a then added 16.29 kB gz of `react-router-dom`, which `App.tsx` imports eagerly. Still inside WI-22's ≤ 300 kB gz target. **Quote first paint, not a "main chunk"** |
+| TypeScript | **68 errors** (103 at review, 98 before WI-19, 75 before V-8 replaced two `Json` casts with `Array.isArray` guards, 73 before the chemical path got the same four, 69 before WI-29b deleted a dead parameter). Unmoved by R-1, R-6 and WI-29a; set compared with positions stripped at every step |
+| ESLint | **105 errors, 28 warnings** (from 136/28; 109 before V-8 deleted one `prefer-const` and one `no-explicit-any`; 107 before WI-29b deleted a dead parameter and an unnecessary dependency). Unmoved by R-1, by the cast guards, by R-6 or by WI-29a |
+| Build | succeeds — **40 chunks. First paint 417.29 kB raw / 118.87 kB gzip**, which is the single `<script>` in `dist/index.html`. WI-22 landed 6 Sep and took it from 1,794.82 kB / 479.30 gz to 102.11 gz by making 12 of 13 pages `React.lazy`; WI-29a then added 16.29 kB gz of `react-router-dom` and WI-29b 0.47 kB gz of module boundaries, both eager. Still inside WI-22's ≤ 300 kB gz target. **Quote first paint, not a "main chunk"** |
 | Migrations | **63 files**, matching the database one-for-one |
 | Edge function | **version 17**, running source confirmed identical to the repo by sha256, re-verified 6 Sep |
 | Security advisors | 14 WARN — 13 are the by-design `authenticated_security_definer_function_executable` lint that fires on every RPC, 1 is `auth_leaked_password_protection` (WI-6). No new class of finding. V-6’s internal `apply_field_fertilizer_rates` is correctly absent, being executable by neither role |
@@ -113,16 +113,19 @@ every visible row and filters in JavaScript) · WI-21 (core gate done; the types
 pgTAP jobs need Supabase credentials in repository secrets).
 
 **Newly closed 6 Sep:** WI-21 core gate · **WI-22 / PERF-1** — first paint 479.30 →
-**102.11 kB gzip**, against a ≤ 300 kB target · **WI-29a**, the router and the back
-button. **With those two, both mobile blockers named in
-`Farm-Manager-Pre-Mobile-Readiness.md` §1 are cleared.**
+**102.11 kB gzip**, against a ≤ 300 kB target · **WI-29** entire — the router and the back
+button (WI-29a), then `App.tsx` 1,118 → 559 lines (WI-29b), which closes **MNT-4** with it.
+**With those, both mobile blockers named in `Farm-Manager-Pre-Mobile-Readiness.md` §1 are
+cleared.**
 
-**WI-29 is half closed, and the halves are separately useful.** WI-29a is the router;
-**WI-29b, the decomposition, is not started** — `App.tsx` is still ~1,000 lines holding
-auth gating, farm selection, season CRUD, the import wizard and delete confirmation. It
-was split off deliberately rather than skipped: the router works without it, and doing
-both at once would have put one large diff through the file carrying R-1's load
-presentation, R-6's boundary placements and WI-22's `Suspense` placements.
+**WI-29 is CLOSED, in two commits, and the halves were separately useful.** WI-29a is the
+router; **WI-29b** took `App.tsx` from 1,118 to **559 lines** into three hooks and one
+presentational file, and closes MNT-4 with it. Splitting them was deliberate: the router
+works without the decomposition, and doing both at once would have put one large diff
+through the file carrying R-1's load presentation, R-6's boundary placements and WI-22's
+`Suspense` placements. **The split also paid for itself in review** — WI-29a's diff is
+"what changed", WI-29b's is provably "what moved", and the baseline accounting in its
+section only reads as evidence because the two are not mixed together.
 
 ### The override defect — found and FIXED 31 Aug 2026
 
@@ -2720,13 +2723,124 @@ gzip** — `react-router-dom` 7.18.3, which `App.tsx` imports eagerly. That is a
 ≤ 300 kB gzip, so it is still met with room. One new runtime dependency, the first added
 to this project during the remediation.
 
-**WI-29b, the decomposition, is NOT done and is the other half of this work item.**
-`App.tsx` is still ~1,000 lines holding auth gating, farm selection, season CRUD, the
-import wizard and delete confirmation. It was split off deliberately: the router works
-without it, and doing both at once would put one large diff through the file that carries
-R-1's load presentation, R-6's boundary placements and WI-22's `Suspense` placements —
-all three of which this document calls load bearing.
+**WI-29b, the decomposition, is the other half of this work item and followed immediately
+— see its own section below.** At the time this section was written `App.tsx` was still
+1,118 lines holding auth gating, farm selection, season CRUD, the import wizard and delete
+confirmation. It was split off deliberately: the router works without it, and doing both at
+once would put one large diff through the file that carries R-1's load presentation, R-6's
+boundary placements and WI-22's `Suspense` placements — all three of which this document
+calls load bearing.
 
+
+### WI-29b / MNT-4 — decomposing App.tsx — 6 Sep 2026
+
+**`App.tsx` is 1,118 → 559 lines, and WI-29 is closed.** This is the other half of the
+work item: the router was the deliverable, the decomposition is the debt the review filed
+as MNT-4 — *"a 763-line god component"*, which had grown to 1,118 by the time it was
+touched.
+
+**Nothing behaves differently, and the evidence for that claim is the baseline diff.**
+This is a move, and the discipline that makes a move worth trusting is that it moves —
+the two `any`s and the ungainly button wrap noted below were both left exactly as they
+were rather than tidied in passing, because a behaviour change smuggled into a
+refactor is unfindable afterwards.
+
+| Extracted to | What went |
+|---|---|
+| `hooks/useSeasonData.ts` | Season and farm loading, and the three-value load state R-1 and R-5 turn on. 311 lines |
+| `hooks/useSeasonCrud.ts` | Create, import-into and delete a season — the form, the pending id, the confirmation. 242 lines |
+| `hooks/useFarmSwitching.ts` | The five farm handlers. 172 lines |
+| `components/app/AppFullScreens.tsx` | The five full-screen blocks, presentation only, **importing nothing from `lib/`**. 277 lines |
+
+**Two hooks rather than one, and the seam is not arbitrary.** `useSeasonData` owns what
+the app is looking at and *whether the load that produced it succeeded*; `useSeasonCrud`
+owns a short-lived wizard. Nothing in the second is consulted to decide what renders
+behind an overlay. Keeping them apart is what stops a half-typed season form from ever
+being mistaken for a load state — which, in the other direction, is exactly the
+conflation R-1 spent a day removing.
+
+**A `SeasonProvider` was NOT built, and the PRD asks for one.** A React context earns its
+place when a distant descendant needs the value without prop drilling. Nothing here is
+distant: pages take `seasonId` as an explicit prop, which is better than a context they
+could read implicitly, and the only consumer of all this state is `App.tsx` itself. A
+provider that one component reads is ceremony, and it would add a second way for a page
+to learn which season it is on — two sources of truth for the number every cost figure
+is scoped by. The hooks give the same decomposition with none of that.
+
+**The R-1 rule got a name instead of four copies.** Every farm-switch handler used to
+call `setHasLoadedOnce(false)` inline; it is `beginFullScreenLoad()` now, so the one
+transition that may legitimately replace the whole screen is greppable rather than being
+four scattered setter calls that look like bookkeeping. `handleFarmsUpdated` deliberately
+does not call it — renaming a farm does not change which farm you are looking at.
+
+**Three genuine deletions, and one of them is a small WI-19 result.**
+`loadSeasonsByFarm(farmId, forUserId)` **lost its second parameter**, which had been dead
+since Round 5 made every read farm-scoped: the query filters on `farm_id` and RLS decides
+visibility, exactly as the "do not filter reads by `user_id`" convention requires. ESLint
+had been reporting it the whole time, inside the baseline this remediation spent a week
+learning not to treat as noise. Callers were passing an owner id that scoped nothing,
+which is a false signal about what scopes that query. Also deleted: an unnecessary
+`ownedFarms` dependency on `handleFarmsUpdated`, and a duplicated `!user` gate — two
+consecutive `if`s with different conditions returning the *same* screen, which reads as a
+distinction that does not exist. That last one is recorded rather than silently tidied,
+because R-4 is where the distinction may genuinely belong; `wasAuthenticated` is still
+exported for it.
+
+**THE BASELINES MOVED, AND THIS IS THE ARGUMENT FOR IT.** `npm run baselines:update` was
+run, which `CLAUDE.md` says must be justified. A move relocates existing entries between
+files, and the ratchet compares file-qualified sets, so it cannot tell "moved" from "new".
+The accounting is exact and checkable in the diff:
+
+| | Left `App.tsx` | Reappeared verbatim under a new path | Genuinely deleted |
+|---|---|---|---|
+| TypeScript | 12 | 11 — the `Season.is_active` nullability cluster, WI-19's known block | 1 (`forUserId`) |
+| ESLint | 5 | 3 — two `no-explicit-any` and one `exhaustive-deps`, moved unchanged | 2 (`forUserId`, `ownedFarms`) |
+
+**`App.tsx` now has ZERO lint problems and 3 TypeScript errors, down from 5 and 15.**
+Totals: TypeScript 69 → **68**, ESLint 107/28 → **105/28**. Every line added to the
+baseline is a line removed from it under a different path; every line removed and not
+re-added is one of the three deletions above.
+
+**RENDERED — five screens that had never been on a screen.** This is the point of the
+`AppFullScreens` split, not a side benefit. They lived inside `App.tsx`, which reaches the
+Supabase client at module load and therefore throws on this machine, so in the entire
+remediation not one of them had been looked at. Same cut F-4b made for the season summary,
+V-5 for the plan editor, V-6 for the rate grid and R-6 for the error panel — each of which
+found a real defect the moment the screen was actually rendered.
+
+Checked at desktop and 375 px with a throwaway harness, then deleted: **Failed to Load**,
+**Loading**, **Welcome to Crop Tracker** (with and without a long farm name), **Create New
+Season** (with and without the import option, with and without prior seasons) and **Delete
+Season** (with a long season name). All five render; none scrolls sideways at 375 px
+(`scrollWidth === clientWidth === 375`, `scrollX` 0 after `scrollTo(999,0)`); every button
+measures 48–72 px against the ≥ 44 px rule; console clean.
+
+**Two things seen and deliberately NOT changed**, because this round's value is that
+nothing changed:
+
+- ***Continue to Import*** wraps to two lines at 375 px, which stretches it and its
+  Cancel sibling to 72 px. Ungainly, but the row stays aligned and both remain tappable —
+  unlike F-4b's *"Over contract"*, which broke alignment and was a defect. A shorter label
+  fixes it in one word whenever somebody is editing this file for another reason.
+- **The Delete Season dialog puts the destructive button first**, on the left, which on a
+  phone is the natural thumb position for an irreversible action that cascades to every
+  field, product, program and yield under the season. Pre-existing, and worth the owner's
+  opinion — but swapping button order is a behaviour change and had no business in a move.
+
+**So rendering did not find a defect for the third round in eleven.** Two cosmetic
+observations are not a defect, and calling them one would inflate the streak this document
+has been careful about.
+
+**Floor:** TypeScript **68** · ESLint **105 errors, 28 warnings** · tests **435**,
+unchanged · build succeeds, 40 chunks unchanged. First paint 414.74 → **417.29 kB raw**,
+118.40 → **118.87 kB gzip** — +2.55 kB raw for the extra module boundaries, which is what
+splitting one file into five costs a bundler. Still far inside WI-22's ≤ 300 kB gz target.
+
+**NOT verified, and the owner's check is the same thirty seconds as WI-29a's.** Nothing
+here has run against Supabase. The five screens were rendered with fixtures; the three
+hooks were not, because they reach the database. What would catch a mistake in this move
+is ordinary use: sign in, switch farms, create a season, import into one, delete one. A
+decomposition that broke something would break it there.
 ## Open items and standing notes
 
 **Nothing in this section is open any more.** It is all practice notes and closed records
@@ -2949,11 +3063,11 @@ All figures below are measured, not estimated.
 
 | Metric | Review baseline | After Round 3 | After Round 4 | End of 30 Aug | After Round 6 step 2 | Measured 31 Aug | **Measured 6 Sep** |
 |---|---|---|---|---|---|---|---|
-| TypeScript errors | 103 | 103 (identical set) | 99 | 98 | 76 | 75 | **69** |
-| ESLint | 136 errors, 28 warnings | 134 / 28 | 134 / 28 | 134 / 28 | 109 / 28 | 109 / 28 | **107 / 28** |
+| TypeScript errors | 103 | 103 (identical set) | 99 | 98 | 76 | 75 | **68** |
+| ESLint | 136 errors, 28 warnings | 134 / 28 | 134 / 28 | 134 / 28 | 109 / 28 | 109 / 28 | **105 / 28** |
 | Tests | 0 | 178 passing, 4 files | 206 passing, 5 files | 206 passing, 5 files | 206 passing, 5 files | 282 passing, 7 files | **435 passing, 13 files** |
 | CI | none | none | none | none | none | none | **GitHub Actions on every push — tests, baseline ratchet, build** |
-| First-paint JS | 1,747 kB (465 kB gz) | 1,754.43 kB (467.56 kB gz) | 1,751.97 kB (467.39 kB gz) | 1,751.96 kB (467.50 kB gz) | 1,751.91 kB (467.46 kB gz) | 1,760.80 kB (470.25 gz) | **414.74 kB (118.40 kB gz)** — WI-22 took it to 102.11 gz, WI-29a added 16.29 gz of `react-router-dom` |
+| First-paint JS | 1,747 kB (465 kB gz) | 1,754.43 kB (467.56 kB gz) | 1,751.97 kB (467.39 kB gz) | 1,751.96 kB (467.50 kB gz) | 1,751.91 kB (467.46 kB gz) | 1,760.80 kB (470.25 gz) | **417.29 kB (118.87 kB gz)** — WI-22 took it to 102.11 gz; WI-29a added 16.29 gz of `react-router-dom`, WI-29b 0.47 gz of module boundaries |
 | Lazy chunks | — | — | — | — | — | `FertilizerContractsTab` 25.96, `BookingModal` 20.02 | **those two plus `FieldFertilizerRateGridPanel` 19.83 kB (6.36 gz)** |
 | Migrations | 40 files | 43 | 46 | 52 | 52 | 58 | **63, diffed against the database one-for-one** |
 | Edge function | — | v8 pending | — | v10 | v10 | v13 | **v17, source confirmed in sync by sha256** |
@@ -2965,12 +3079,17 @@ work R-1 / R-5 / R-4 item 2 / R-6, itemised.**
   shopping-list coverage (→ 308), +12 V-0 (→ 320), +20 V-2 (→ 340), +7 V-5 (→ 347), +25 V-6
   (→ 372), +8 `formatRate` (→ 380), +6 V-8 (→ 386), +15 R-1 (→ 401), +21 R-6 (→ 422),
   +13 WI-29a on the route table (→ **435**).
-- **TypeScript 75 → 69**, a strict subset at every step. Two removals are V-8's and four are
+- **TypeScript 75 → 68**, a strict subset at every step. Two removals are V-8's, four are
   the chemical path taking the same `Array.isArray` guards on 6 Sep. The V-8 pair was a
   behaviour fix as much as a type fix; the later four are hardening, since a query filter
-  already made them unreachable.
-- **ESLint 109 → 107**, all V-8: one `prefer-const` and one `no-explicit-any` deleted from
-  the code it rewrote. Diffed by rule and message, not by count. Unmoved by R-1 and R-6.
+  already made them unreachable. The last is WI-29b deleting `loadSeasonsByFarm`'s dead
+  `forUserId` parameter — dead since Round 5 made every read farm-scoped. **11 further
+  entries changed file rather than disappearing** when App.tsx was decomposed; that
+  movement is itemised in the WI-29b section and is why `baselines/` was updated.
+- **ESLint 109 → 105**: V-8 deleted one `prefer-const` and one `no-explicit-any` from
+  the code it rewrote, and WI-29b deleted a dead parameter and an unnecessary dependency.
+  Diffed by rule and message, not by count. Unmoved by R-1, R-6 and WI-29a. **`App.tsx`
+  itself now reports ZERO lint problems**, down from five.
 - **First-paint JS 1,760.80 → 365.89 kB** (470.25 → **102.11 kB gzip**), in two movements
   that go opposite ways. It first *grew* to 1,794.82: +3.71 shopping-list coverage, +0.89
   V-0, +15.85 V-5 (the plan editor is on the then-eager `FieldDetail` path), +1.06 V-6,
@@ -2978,6 +3097,9 @@ work R-1 / R-5 / R-4 item 2 / R-6, itemised.**
   then removed 1,428.93 kB of it in one change** by making 12 of 13 pages `React.lazy`,
   which took `recharts` and `jspdf` out of the first paint entirely. Note this changes what
   the row means: it is now the single `<script>` in `index.html`, not "the main chunk".
+  **WI-29 then put 51.40 kB raw back** — 48.85 of `react-router-dom` (WI-29a) and 2.55 of
+  module boundaries (WI-29b), both eager because `App.tsx` is. 102.11 → **118.87 kB gzip**,
+  still far inside the ≤ 300 kB target.
 - **Migrations 58 → 63:** shopping-list coverage columns, `field_fertilizer_rates`, the save
   RPC, its `applies` flag, and V-6's bulk RPC.
 

@@ -1,4 +1,4 @@
-import { Suspense, lazy, useCallback, useEffect, useRef, useState } from 'react';
+import { Suspense, lazy, useCallback, useEffect } from 'react';
 import {
   HashRouter,
   Navigate,
@@ -44,13 +44,19 @@ const Team = lazy(() => import('./pages/Team').then((m) => ({ default: m.Team })
 import { DashboardLayout } from './components/DashboardLayout';
 import { AppLoadErrorBanner, AppRefreshIndicator, PageLoadFallback } from './components/AppLoadStatus';
 import { ErrorBoundary } from './components/ErrorBoundary';
+import {
+  AppLoadFailedScreen,
+  AppLoadingScreen,
+  CreateSeasonScreen,
+  DeleteSeasonScreen,
+  FirstSeasonScreen,
+} from './components/app/AppFullScreens';
 import { resolveAppLoadPresentation } from './lib/appLoadState';
 import { SeasonImportWizard } from './components/SeasonImportWizard';
-import { supabase } from './lib/supabase';
-import { fetchSharedFarms, SharedFarm } from './lib/teamMembers';
-import { fetchOwnedFarms, createFarm, Farm } from './lib/farms';
-import { Plus } from 'lucide-react';
 import { useCascadeTaskNotifications } from './hooks/useCascadeTaskNotifications';
+import { useSeasonData } from './hooks/useSeasonData';
+import { useSeasonCrud } from './hooks/useSeasonCrud';
+import { useFarmSwitching } from './hooks/useFarmSwitching';
 import {
   DASHBOARD_PAGE,
   FIELD_DETAIL_PATTERN,
@@ -59,27 +65,6 @@ import {
   pageKeyFromPath,
   pathForPage,
 } from './lib/appRoutes';
-// TEMPORARY — the "random reload" investigation. Remove with lib/authDiagnostics.ts.
-import { logAuthDiagnostic } from './lib/authDiagnostics';
-
-interface Season {
-  id: string;
-  year: number;
-  name: string;
-  is_active: boolean;
-  farm_id?: string | null;
-}
-
-/*
- * R-5. Was 10 s. On rural cell data a slow seasons query is a normal event, not a
- * failure, and the old timeout turned it into one. Doubling it costs nothing now that
- * a timeout no longer takes the screen away: after the first load the page stays put
- * and the retry banner appears in the corner, so the user is not staring at a spinner
- * while it runs down. A single automatic retry was considered and left out — it doubles
- * the worst case before the user is told anything, and the banner's Try Again is now
- * available without losing the page.
- */
-const SEASON_LOAD_TIMEOUT_MS = 20000;
 
 /*
  * R-6. Names the failing region in the error panel, so a crash on one screen reads as
@@ -100,12 +85,34 @@ const PAGE_LABELS: Record<string, string> = {
   team: 'the Team page',
 };
 
+/*
+ * WI-29b. What is left in this component after the decomposition, and what is
+ * deliberately still here.
+ *
+ * Gone: season loading and its three-part load state (`useSeasonData`), season create /
+ * import / delete (`useSeasonCrud`), the five farm handlers (`useFarmSwitching`), and
+ * the five full-screen presentational blocks (`components/app/AppFullScreens`).
+ *
+ * Still here on purpose: routing, and the ORDER of the gates below. Which surface a
+ * load state earns is R-1's whole subject, and the sequence — fatal error, first load,
+ * signed out, confirmed-empty seasons, wizard, page — is the thing that was wrong
+ * before R-1 and must stay readable in one place rather than being distributed across
+ * the hooks that produce the states. A hook that decided when to take the screen would
+ * be the amplifier coming back by another route.
+ */
 function AppContent() {
   const { user, loading: authLoading } = useAuth();
   const { addNotification } = useNotifications();
-  const { activeFarm, ownedFarms, setOwnedFarms, setOwnFarm, setOwnFarmById, setSharedFarm, activeFarmId } = useFarm();
-  const wasAuthenticated = useRef(false);
-  const loadedForUserIdRef = useRef<string | null>(null);
+  const {
+    activeFarm,
+    ownedFarms,
+    setOwnedFarms,
+    setOwnFarm,
+    setOwnFarmById,
+    setSharedFarm,
+    activeFarmId,
+  } = useFarm();
+
   /*
    * WI-29a. `activePage` was React state seeded from `sessionStorage`, which meant the
    * browser's history stack had exactly one entry for the whole session: the back
@@ -131,225 +138,71 @@ function AppContent() {
   const selectedFieldId = fieldDetailMatch?.params.fieldId
     ? decodeURIComponent(fieldDetailMatch.params.fieldId)
     : null;
-  const [seasons, setSeasons] = useState<Season[]>([]);
-  const [currentSeason, setCurrentSeason] = useState<Season | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [showSeasonForm, setShowSeasonForm] = useState(false);
-  const [seasonFormData, setSeasonFormData] = useState({
-    year: new Date().getFullYear(),
-    name: '',
-    importFromSeason: '',
+
+  const isOwnFarm = activeFarm?.isOwn !== false;
+  const activeRole = activeFarm?.role ?? 'admin';
+
+  const data = useSeasonData({
+    user,
+    authLoading,
+    activeFarmId,
+    setOwnedFarms,
+    setOwnFarmById,
+    setOwnFarm,
   });
-  const [showImportWizard, setShowImportWizard] = useState(false);
-  const [pendingSeasonId, setPendingSeasonId] = useState<string | null>(null);
-  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
-  const [seasonToDelete, setSeasonToDelete] = useState<Season | null>(null);
-  const [sharedFarms, setSharedFarms] = useState<SharedFarm[]>([]);
-  const [dataLoadError, setDataLoadError] = useState<string | null>(null);
+  const {
+    seasons,
+    currentSeason,
+    loading,
+    dataLoadError,
+    hasLoadedOnce,
+    sharedFarms,
+    wasAuthenticated,
+    loadSharedFarms,
+    retryInitialLoad,
+    beginFullScreenLoad,
+  } = data;
+
   /*
-   * R-1. `loading` says a load is in flight. It does NOT say the screen should be
-   * replaced, and treating the two as the same thing is what made every trigger in the
-   * reload diagnosis feel like the app resetting itself.
+   * WI-29a. This is a `useCallback` where the old one was a plain function, and the
+   * reason is worth recording because it is the lint telling the truth.
    *
-   * Once the app has rendered once there is state worth keeping — an open modal, a
-   * half-typed form, the active tab, the scroll position — so a later load shows an
-   * indicator and leaves the tree mounted. Before that there is nothing to preserve,
-   * so the full-screen spinner is correct.
-   *
-   * A farm switch sets this back to false on purpose: that transition legitimately
-   * replaces everything on screen, and a full-screen load is the honest presentation
-   * of it.
+   * The old body touched only `sessionStorage` and a `setState` setter, both of which
+   * exhaustive-deps knows are stable, so it never asked the farm-switch callbacks to
+   * declare it. `navigate` is a hook return value, so the new body is reactive and
+   * those callbacks genuinely do depend on it. Memoising here keeps them stable —
+   * `navigate` itself does not change between renders — rather than silencing correct
+   * warnings.
    */
-  const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
+  const handleNavigate = useCallback(
+    (page: string) => {
+      navigate(pathForPage(page));
+    },
+    [navigate]
+  );
+
+  const goToDashboard = useCallback(() => handleNavigate(DASHBOARD_PAGE), [handleNavigate]);
+
+  const crud = useSeasonCrud({ user, activeFarmId, isOwnFarm, data });
+  const farms = useFarmSwitching({
+    user,
+    activeFarm,
+    ownedFarms,
+    setOwnedFarms,
+    setOwnFarm,
+    setOwnFarmById,
+    setSharedFarm,
+    addNotification,
+    data,
+    goToDashboard,
+  });
 
   useCascadeTaskNotifications(user?.id ?? null);
 
-  useEffect(() => {
-    if (!authLoading && !loading && user) {
-      setHasLoadedOnce(true);
-    }
-  }, [authLoading, loading, user]);
-
-  const loadSeasonsByFarm = useCallback(async (farmId: string, forUserId: string) => {
-    setLoading(true);
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), SEASON_LOAD_TIMEOUT_MS);
-    try {
-      const { data, error } = await supabase
-        .from('seasons')
-        .select('*')
-        .eq('farm_id', farmId)
-        .order('year', { ascending: false })
-        .abortSignal(controller.signal);
-
-      clearTimeout(timeoutId);
-
-      if (error) throw error;
-
-      setSeasons(data || []);
-
-      if (data && data.length > 0) {
-        const active = data.find((s: Season) => s.is_active) || data[0];
-        setCurrentSeason(active);
-      } else {
-        setCurrentSeason(null);
-      }
-    } catch (error: unknown) {
-      clearTimeout(timeoutId);
-      const isAbort = error instanceof Error && error.name === 'AbortError';
-      if (!isAbort) {
-        console.error('Error loading seasons:', error);
-        setDataLoadError('Could not load seasons. Please check your connection and try again.');
-      } else {
-        setDataLoadError('Loading seasons timed out. Please try again.');
-      }
-      /*
-       * R-5. This used to `setSeasons([])`, which made a FAILED load indistinguishable
-       * from a farm that genuinely has no seasons. Same defect shape as WI-15's "a
-       * failed query is indistinguishable from an empty one", surfacing in the UI
-       * instead of in the cascade.
-       *
-       * A CORRECTION to what the diagnosis doc says about this, and to the comment that
-       * stood here: on THIS path the welcome screen never actually appeared. The catch
-       * above sets dataLoadError, and the "Failed to Load" gate is tested before the
-       * welcome gate, so a failed farm seasons load showed the error card. It was still
-       * a full-screen takeover — R-1's problem — but not the first-run lie. The lie was
-       * reachable on the legacy no-farm branch of loadSeasons below, which cleared the
-       * seasons and reported nothing at all.
-       *
-       * Clearing them was still wrong here, and more wrong after R-1: the error is now
-       * a banner over a live page, so an emptied list would leave the user looking at an
-       * app with no seasons in it while being told a refresh failed.
-       *
-       * The previous seasons are kept instead. Three states, not two: loaded (seasons
-       * replaced), confirmed empty (seasons set to [] on a SUCCESSFUL load), failed
-       * (seasons untouched, dataLoadError set). Only a confirmed empty may reach the
-       * welcome screen, which is what emptySeasonsIsConfirmed gates.
-       *
-       * The diagnostic entry stays until authDiagnostics.ts is removed; it is now a
-       * record of a handled failure rather than a warning about an impending lie.
-       */
-      logAuthDiagnostic('seasons-load-failed', {
-        farmId: farmId.slice(0, 8),
-        reason: isAbort ? 'timeout' : 'error',
-        timeoutMs: SEASON_LOAD_TIMEOUT_MS,
-        note: 'previous seasons kept; retry banner shown',
-      });
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  const loadSeasons = useCallback(async (forUserId: string) => {
-    if (activeFarmId) {
-      await loadSeasonsByFarm(activeFarmId, forUserId);
-    } else {
-      setLoading(true);
-      try {
-        const { data, error } = await supabase
-          .from('seasons')
-          .select('*')
-          .eq('user_id', forUserId)
-          .order('year', { ascending: false });
-
-        if (error) throw error;
-        setSeasons(data || []);
-        if (data && data.length > 0) {
-          const active = data.find((s: Season) => s.is_active) || data[0];
-          setCurrentSeason(active);
-        } else {
-          setCurrentSeason(null);
-        }
-      } catch (error) {
-        /*
-         * R-5, the legacy no-farm path. This one was worse than its sibling above: it
-         * cleared the seasons AND reported nothing at all, so a failure here rendered
-         * the welcome screen with no error anywhere. Keep the seasons and say so.
-         */
-        console.error('Error loading seasons:', error);
-        setDataLoadError('Could not load seasons. Please check your connection and try again.');
-      } finally {
-        setLoading(false);
-      }
-    }
-  }, [activeFarmId, loadSeasonsByFarm]);
-
-  const loadSharedFarms = useCallback(async () => {
-    if (!user) return;
-    const farms = await fetchSharedFarms(user.id);
-    setSharedFarms(farms);
-  }, [user]);
-
-  const loadInitialData = useCallback(async () => {
-    if (!user) return;
-    setLoading(true);
-    setDataLoadError(null);
-    try {
-      const [farmsResult, sharedFarmsResult, profileResult] = await Promise.allSettled([
-        fetchOwnedFarms(user.id),
-        fetchSharedFarms(user.id),
-        supabase.from('user_profiles').select('farm_name').eq('id', user.id).maybeSingle(),
-      ]);
-
-      if (farmsResult.status === 'rejected') {
-        setDataLoadError('Could not load your farms. Please check your connection and try again.');
-        setLoading(false);
-        return;
-      }
-
-      const farms = farmsResult.value;
-      const sharedFarmsData = sharedFarmsResult.status === 'fulfilled' ? sharedFarmsResult.value : [];
-      const profileData = profileResult.status === 'fulfilled' ? profileResult.value : { data: null };
-
-      if (sharedFarmsResult.status === 'rejected') console.error('Error loading shared farms:', sharedFarmsResult.reason);
-      if (profileResult.status === 'rejected') console.error('Error loading profile:', profileResult.reason);
-
-      setSharedFarms(sharedFarmsData);
-
-      let resolvedFarms = farms;
-
-      if (farms.length === 0) {
-        const defaultName = profileData.data?.farm_name || 'My Farm';
-        const { farm: newFarm } = await createFarm(user.id, defaultName);
-        if (newFarm) {
-          resolvedFarms = [newFarm];
-        }
-      }
-
-      setOwnedFarms(resolvedFarms);
-
-      if (resolvedFarms.length > 0) {
-        const firstFarm = resolvedFarms[0];
-        setOwnFarmById(user.id, firstFarm);
-        await loadSeasonsByFarm(firstFarm.id, user.id);
-      } else {
-        setOwnFarm(user.id, null, profileData.data?.farm_name ?? null);
-        setLoading(false);
-      }
-    } catch (error) {
-      console.error('Error loading initial data:', error);
-      setDataLoadError('Something went wrong loading your account. Please try again.');
-      setLoading(false);
-    }
-  }, [user, setOwnedFarms, setOwnFarmById, setOwnFarm, loadSeasonsByFarm]);
-
-  useEffect(() => {
-    if (user) {
-      wasAuthenticated.current = true;
-      if (loadedForUserIdRef.current !== user.id) {
-        loadedForUserIdRef.current = user.id;
-        loadInitialData();
-      }
-    } else if (!authLoading) {
-      loadedForUserIdRef.current = null;
-      setLoading(false);
-    }
-  }, [user?.id, authLoading, loadInitialData]);
-
   /*
-   * R-4, item 2 ONLY. This `sessionStorage.removeItem` used to sit in the render body,
-   * immediately above `return <Auth />`. A mutation during render is a bug independent
-   * of everything else in the reload diagnosis, and StrictMode runs it twice.
+   * R-4, item 2 ONLY. This side effect used to sit in the render body, immediately
+   * above `return <Auth />`. A mutation during render is a bug independent of
+   * everything else in the reload diagnosis, and StrictMode runs it twice.
    *
    * The BEHAVIOUR is deliberately unchanged: losing the page on a sign-out the user did
    * not ask for is the rest of R-4, and the diagnosis says not to implement that until
@@ -372,201 +225,21 @@ function AppContent() {
        * anyone, including a different account — would skip the full-screen load and
        * briefly render the PREVIOUS session's seasons behind a refresh bar.
        */
-      setHasLoadedOnce(false);
+      beginFullScreenLoad();
     }
-  }, [user, navigate]);
+  }, [user, navigate, wasAuthenticated, beginFullScreenLoad]);
 
   /*
-   * WI-29a. This is a `useCallback` where the old one was a plain function, and the
-   * reason is worth recording because it is the lint telling the truth.
-   *
-   * The old body touched only `sessionStorage` and a `setState` setter, both of which
-   * exhaustive-deps knows are stable, so it never asked the four farm-switch callbacks
-   * below to declare it. `navigate` is a hook return value, so the new body is reactive
-   * and those four callbacks genuinely do depend on it. Memoising here and declaring it
-   * there keeps the four stable — `navigate` itself does not change between renders —
-   * rather than silencing four correct warnings.
+   * A block body, not a concise one. `navigate` returns `void | Promise<void>` in
+   * react-router 7, and a concise arrow would make that the handler's return type —
+   * which does not match `Fields`' `onViewFieldDetail: (id: string) => void`.
    */
-  const handleNavigate = useCallback(
-    (page: string) => {
-      navigate(pathForPage(page));
+  const handleViewFieldDetail = useCallback(
+    (fieldId: string) => {
+      navigate(fieldDetailPath(fieldId));
     },
     [navigate]
   );
-
-  const handleSeasonChange = async (seasonId: string) => {
-    const season = seasons.find((s) => s.id === seasonId);
-    if (season) {
-      setCurrentSeason(season);
-
-      if (user && activeFarm?.isOwn !== false) {
-        const { error } = await supabase.rpc('set_active_season', { p_season_id: seasonId });
-        if (error) console.error('set_active_season failed:', error);
-      }
-    }
-  };
-
-  const handleCreateSeason = async (e?: React.FormEvent) => {
-    if (e) e.preventDefault();
-    if (!user) return;
-
-    try {
-      const name = seasonFormData.name || `${seasonFormData.year} Growing Season`;
-
-      const insertData: any = {
-        user_id: user.id,
-        year: seasonFormData.year,
-        name,
-        is_active: seasons.length === 0,
-      };
-
-      if (activeFarmId) {
-        insertData.farm_id = activeFarmId;
-      }
-
-      const { data, error } = await supabase
-        .from('seasons')
-        .insert(insertData)
-        .select()
-        .single();
-
-      if (error) throw error;
-
-      const defaultEquipmentRates = (['corn', 'soybeans', 'wheat'] as const).map((crop, i) => ({
-        season_id: data.id,
-        user_id: user.id,
-        crop_type: crop,
-        rate_per_acre: [185.0, 155.0, 145.0][i],
-        source: 'Iowa Custom Rate Survey 2026',
-        is_overridden: false,
-      }));
-
-      await supabase.from('equipment_rates').insert(defaultEquipmentRates);
-
-      if (seasonFormData.importFromSeason) {
-        setPendingSeasonId(data.id);
-        setShowImportWizard(true);
-        setShowSeasonForm(false);
-      } else {
-        setSeasonFormData({ year: new Date().getFullYear(), name: '', importFromSeason: '' });
-        setShowSeasonForm(false);
-        if (activeFarmId) {
-          await loadSeasonsByFarm(activeFarmId, user.id);
-        } else {
-          await loadSeasons(user.id);
-        }
-        setCurrentSeason(data as Season);
-      }
-    } catch (error) {
-      console.error('Error creating season:', error);
-      alert('Error creating season. Please try again.');
-    }
-  };
-
-  const handleImportComplete = async () => {
-    const importedSeasonId = pendingSeasonId;
-    setShowImportWizard(false);
-    setPendingSeasonId(null);
-    setSeasonFormData({ year: new Date().getFullYear(), name: '', importFromSeason: '' });
-    if (user) {
-      if (activeFarmId) {
-        const timeoutPromise = new Promise<never>((_, reject) =>
-          setTimeout(() => reject(new Error('Request timeout')), 10000)
-        );
-        const controller = new AbortController();
-        const dataPromise = supabase
-          .from('seasons')
-          .select('*')
-          .eq('farm_id', activeFarmId)
-          .order('year', { ascending: false })
-          .abortSignal(controller.signal);
-        const timeoutId = setTimeout(() => controller.abort(), 10000);
-        try {
-          const { data, error } = await Promise.race([dataPromise, timeoutPromise]) as any;
-          clearTimeout(timeoutId);
-          if (!error && data) {
-            setSeasons(data);
-            if (importedSeasonId) {
-              const season = data.find((s: Season) => s.id === importedSeasonId);
-              if (season) setCurrentSeason(season);
-            }
-          }
-        } catch {
-          clearTimeout(timeoutId);
-          controller.abort();
-        }
-      } else {
-        const { data: freshData } = await supabase
-          .from('seasons')
-          .select('*')
-          .eq('user_id', user.id)
-          .order('year', { ascending: false });
-        if (freshData) {
-          setSeasons(freshData);
-          if (importedSeasonId) {
-            const season = freshData.find((s: Season) => s.id === importedSeasonId);
-            if (season) setCurrentSeason(season);
-          } else if (freshData.length > 0) {
-            const active = freshData.find((s: Season) => s.is_active) || freshData[0];
-            setCurrentSeason(active);
-          }
-        }
-      }
-    }
-  };
-
-  const handleImportCancel = () => {
-    setShowImportWizard(false);
-    setPendingSeasonId(null);
-    setSeasonFormData({ year: new Date().getFullYear(), name: '', importFromSeason: '' });
-    if (user) {
-      if (activeFarmId) {
-        loadSeasonsByFarm(activeFarmId, user.id);
-      } else {
-        loadSeasons(user.id);
-      }
-    }
-  };
-
-  const handleDeleteSeason = (season: Season) => {
-    setSeasonToDelete(season);
-    setShowDeleteConfirm(true);
-  };
-
-  const confirmDeleteSeason = async () => {
-    if (!seasonToDelete || !user) return;
-
-    try {
-      const { error } = await supabase.from('seasons').delete().eq('id', seasonToDelete.id).eq('user_id', user.id);
-
-      if (error) throw error;
-
-      setShowDeleteConfirm(false);
-      setSeasonToDelete(null);
-
-      if (currentSeason?.id === seasonToDelete.id) {
-        setCurrentSeason(null);
-      }
-
-      if (activeFarmId) {
-        await loadSeasonsByFarm(activeFarmId, user.id);
-      } else {
-        await loadSeasons(user.id);
-      }
-    } catch (error) {
-      console.error('Error deleting season:', error);
-      alert('Error deleting season. Please try again.');
-    }
-  };
-
-  const cancelDeleteSeason = () => {
-    setShowDeleteConfirm(false);
-    setSeasonToDelete(null);
-  };
-
-  const handleViewFieldDetail = (fieldId: string) => {
-    navigate(fieldDetailPath(fieldId));
-  };
 
   /*
    * WI-29a. An explicit destination rather than `navigate(-1)`. A field screen is now
@@ -574,98 +247,9 @@ function AppContent() {
    * behind it at all — and history.back() with nothing to go back to leaves the app,
    * which is the exact failure this work item exists to remove.
    */
-  const handleBackFromFieldDetail = () => {
+  const handleBackFromFieldDetail = useCallback(() => {
     navigate(PAGE_PATHS.fields);
-  };
-
-  /*
-   * R-1. The four farm-switch handlers below each clear hasLoadedOnce immediately
-   * before their load. A farm switch is the one transition that legitimately replaces
-   * the entire screen — the page you were on belongs to the farm you are leaving — so
-   * the full-screen spinner is right there and only there. Set alongside the load, not
-   * at the top of the handler, so a switch that bails out early (no access) leaves the
-   * current screen alone.
-   */
-  const handleSwitchToOwnedFarm = useCallback(async (farm: Farm) => {
-    if (!user) return;
-    setOwnFarmById(user.id, farm);
-    setHasLoadedOnce(false);
-    await loadSeasonsByFarm(farm.id, user.id);
-    handleNavigate('dashboard');
-  }, [user, setOwnFarmById, loadSeasonsByFarm, handleNavigate]);
-
-  const handleSwitchToSharedFarm = useCallback(async (farm: SharedFarm) => {
-    if (!user) return;
-
-    const { data: accessRecord } = await supabase
-      .from('team_members')
-      .select('id, status')
-      .eq('invited_user_id', user.id)
-      .eq('farm_id', farm.farmId)
-      .eq('status', 'accepted')
-      .maybeSingle();
-
-    if (!accessRecord) {
-      addNotification('Access to this farm is no longer available.', 'error');
-      await loadSharedFarms();
-      return;
-    }
-
-    setSharedFarm({
-      farmId: farm.farmId,
-      ownerId: farm.ownerId,
-      ownerName: farm.ownerName,
-      farmName: farm.farmName,
-      role: farm.role,
-    });
-    setHasLoadedOnce(false);
-    if (farm.farmId) {
-      await loadSeasonsByFarm(farm.farmId, farm.ownerId);
-    } else {
-      await loadSeasons(farm.ownerId);
-    }
-    handleNavigate('dashboard');
-  }, [user, setSharedFarm, addNotification, loadSharedFarms, loadSeasonsByFarm, loadSeasons, handleNavigate]);
-
-  const handleSwitchToOwnFarm = useCallback(async () => {
-    if (!user) return;
-    const farms = ownedFarms.length > 0 ? ownedFarms : await fetchOwnedFarms(user.id);
-    setHasLoadedOnce(false);
-    if (farms.length > 0) {
-      setOwnFarmById(user.id, farms[0]);
-      await loadSeasonsByFarm(farms[0].id, user.id);
-    } else {
-      setOwnFarm(user.id, null, null);
-      await loadSeasons(user.id);
-    }
-    handleNavigate('dashboard');
-  }, [user, ownedFarms, setOwnFarmById, setOwnFarm, loadSeasonsByFarm, loadSeasons, handleNavigate]);
-
-  const handleFarmCreated = useCallback(async (newFarm: Farm) => {
-    if (!user) return;
-    const updatedFarms = [...ownedFarms, newFarm];
-    setOwnedFarms(updatedFarms);
-    setOwnFarmById(user.id, newFarm);
-    setHasLoadedOnce(false);
-    await loadSeasonsByFarm(newFarm.id, user.id);
-    handleNavigate('dashboard');
-  }, [user, ownedFarms, setOwnedFarms, setOwnFarmById, loadSeasonsByFarm, handleNavigate]);
-
-  const handleFarmsUpdated = useCallback(async () => {
-    if (!user) return;
-    const farms = await fetchOwnedFarms(user.id);
-    setOwnedFarms(farms);
-    if (activeFarm?.isOwn && activeFarm.farmId) {
-      const updated = farms.find(f => f.id === activeFarm.farmId);
-      if (updated) {
-        setOwnFarmById(user.id, updated);
-      }
-    }
-  }, [user, ownedFarms, activeFarm, setOwnedFarms, setOwnFarmById]);
-
-  const handleInviteAccepted = useCallback(async () => {
-    await loadSharedFarms();
-  }, [loadSharedFarms]);
+  }, [navigate]);
 
   /*
    * R-1, the amplifier. The gates below used to fire unconditionally, from ABOVE
@@ -680,56 +264,30 @@ function AppContent() {
     hasLoadedOnce,
     loadError: dataLoadError,
   });
-  const retryInitialLoad = () => {
-    setDataLoadError(null);
-    loadInitialData();
-  };
 
   if (chrome.fullScreen === 'error') {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
-        <div className="w-full max-w-md bg-white rounded-2xl shadow-xl p-8 text-center">
-          <div className="bg-red-100 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-6">
-            <svg className="w-8 h-8 text-red-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
-            </svg>
-          </div>
-          <h2 className="text-xl font-bold text-gray-900 mb-3">Failed to Load</h2>
-          <p className="text-gray-600 mb-6">{dataLoadError}</p>
-          <button
-            onClick={retryInitialLoad}
-            className="w-full bg-blue-600 text-white py-3 px-4 rounded-lg font-medium hover:bg-blue-700 transition-colors"
-          >
-            Try Again
-          </button>
-        </div>
-      </div>
-    );
+    return <AppLoadFailedScreen message={dataLoadError} onRetry={retryInitialLoad} />;
   }
 
   if (chrome.fullScreen === 'loading') {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="text-center">
-          <div className="text-gray-600 mb-2">Loading...</div>
-          <div className="text-xs text-gray-400">
-            Auth: {authLoading ? 'checking' : 'ready'} | Data: {loading ? 'loading' : 'ready'} | User: {user ? 'logged in' : 'none'}
-          </div>
-        </div>
-      </div>
-    );
+    return <AppLoadingScreen authLoading={authLoading} dataLoading={loading} signedIn={!!user} />;
   }
 
-  if (!user && !wasAuthenticated.current) {
+  /*
+   * WI-29b. This was two consecutive `if` statements — `!user && !wasAuthenticated` and
+   * `!user && wasAuthenticated` — returning the SAME thing. Two branches that differ in
+   * their condition and not in their result read as a distinction that exists, and there
+   * was none.
+   *
+   * Recorded rather than silently tidied, because R-4 is where the distinction may
+   * genuinely belong: "never signed in" and "signed out unexpectedly" plausibly deserve
+   * different screens, and that is the open question the diagnosis says not to answer
+   * until a real session log arrives. `wasAuthenticated` is still returned by
+   * useSeasonData for exactly that, and is what the effect above reads.
+   */
+  if (!user) {
     return <Auth />;
   }
-
-  if (!user && wasAuthenticated.current) {
-    return <Auth />;
-  }
-
-  const isOwnFarm = activeFarm?.isOwn !== false;
-  const activeRole = activeFarm?.role ?? 'admin';
 
   /*
    * R-5. `emptySeasonsIsConfirmed` is the third state. Seasons being empty now means
@@ -737,165 +295,48 @@ function AppContent() {
    * completed — and only the first may show the first-run welcome screen. Without this
    * test a failed load still reads as "this farm has no seasons", which is the defect.
    */
-  if (isOwnFarm && seasons.length === 0 && !showSeasonForm && chrome.emptySeasonsIsConfirmed) {
+  if (isOwnFarm && seasons.length === 0 && !crud.showSeasonForm && chrome.emptySeasonsIsConfirmed) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-green-50 to-blue-50 flex items-center justify-center p-4">
-        <div className="w-full max-w-md bg-white rounded-2xl shadow-xl p-8 text-center">
-          <div className="bg-green-100 w-16 h-16 rounded-full flex items-center justify-center mx-auto mb-6">
-            <Plus className="w-8 h-8 text-green-600" />
-          </div>
-          <h2 className="text-2xl font-bold text-gray-900 mb-3">Welcome to Crop Tracker!</h2>
-          <p className="text-gray-600 mb-6">
-            {activeFarm?.farmName
-              ? `Let's create the first growing season for ${activeFarm.farmName}`
-              : "Let's create your first growing season to get started tracking costs"}
-          </p>
-
-          <form onSubmit={handleCreateSeason} className="space-y-4 text-left">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Year</label>
-              <input
-                type="number"
-                value={seasonFormData.year}
-                onChange={(e) => setSeasonFormData({ ...seasonFormData, year: parseInt(e.target.value) })}
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                required
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Season Name (Optional)</label>
-              <input
-                type="text"
-                value={seasonFormData.name}
-                onChange={(e) => setSeasonFormData({ ...seasonFormData, name: e.target.value })}
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                placeholder={`${seasonFormData.year} Growing Season`}
-              />
-            </div>
-            <button
-              type="submit"
-              className="w-full bg-green-600 text-white py-3 px-4 rounded-lg font-medium hover:bg-green-700 transition-colors"
-            >
-              Create Season
-            </button>
-          </form>
-        </div>
-      </div>
-    );
-  }
-
-  if (showSeasonForm) {
-    return (
-      <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
-        <div className="w-full max-w-md bg-white rounded-2xl shadow-xl p-8">
-          <h2 className="text-2xl font-bold text-gray-900 mb-6">Create New Season</h2>
-
-          <form onSubmit={handleCreateSeason} className="space-y-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Year</label>
-              <input
-                type="number"
-                value={seasonFormData.year}
-                onChange={(e) => setSeasonFormData({ ...seasonFormData, year: parseInt(e.target.value) })}
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                required
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Season Name (Optional)</label>
-              <input
-                type="text"
-                value={seasonFormData.name}
-                onChange={(e) => setSeasonFormData({ ...seasonFormData, name: e.target.value })}
-                className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                placeholder={`${seasonFormData.year} Growing Season`}
-              />
-            </div>
-            {seasons.length > 0 && (
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">
-                  Import Data from Previous Season (Optional)
-                </label>
-                <select
-                  value={seasonFormData.importFromSeason}
-                  onChange={(e) => setSeasonFormData({ ...seasonFormData, importFromSeason: e.target.value })}
-                  className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                >
-                  <option value="">Start with empty season</option>
-                  {seasons.map((season) => (
-                    <option key={season.id} value={season.id}>
-                      {season.name}
-                    </option>
-                  ))}
-                </select>
-                {seasonFormData.importFromSeason && (
-                  <p className="text-xs text-gray-500 mt-2">
-                    You'll be able to select which items to import and update prices in the next step
-                  </p>
-                )}
-              </div>
-            )}
-            <div className="flex gap-3">
-              <button
-                type="submit"
-                className="flex-1 bg-green-600 text-white py-3 px-4 rounded-lg font-medium hover:bg-green-700 transition-colors"
-              >
-                {seasonFormData.importFromSeason ? 'Continue to Import' : 'Create Season'}
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setShowSeasonForm(false);
-                  setSeasonFormData({ year: new Date().getFullYear(), name: '', importFromSeason: '' });
-                }}
-                className="flex-1 bg-gray-100 text-gray-700 py-3 px-4 rounded-lg font-medium hover:bg-gray-200 transition-colors"
-              >
-                Cancel
-              </button>
-            </div>
-          </form>
-        </div>
-      </div>
-    );
-  }
-
-  if (showImportWizard && pendingSeasonId && seasonFormData.importFromSeason && user) {
-    return (
-      <SeasonImportWizard
-        sourceSeasonId={seasonFormData.importFromSeason}
-        newSeasonId={pendingSeasonId}
-        userId={user.id}
-        onComplete={handleImportComplete}
-        onCancel={handleImportCancel}
+      <FirstSeasonScreen
+        farmName={activeFarm?.farmName}
+        formData={crud.seasonFormData}
+        onChange={crud.setSeasonFormData}
+        onSubmit={crud.handleCreateSeason}
       />
     );
   }
 
-  if (showDeleteConfirm && seasonToDelete) {
+  if (crud.showSeasonForm) {
     return (
-      <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
-        <div className="bg-white rounded-xl shadow-2xl w-full max-w-md p-6">
-          <h2 className="text-xl font-bold text-gray-900 mb-4">Delete Season</h2>
-          <p className="text-gray-600 mb-6">
-            Are you sure you want to delete <strong>{seasonToDelete.name}</strong>? This will permanently delete all
-            associated fields, products, programs, and yields. This action cannot be undone.
-          </p>
-          <div className="flex gap-3">
-            <button
-              onClick={confirmDeleteSeason}
-              className="flex-1 bg-red-600 text-white py-3 px-4 rounded-lg font-medium hover:bg-red-700 transition-colors"
-            >
-              Delete Season
-            </button>
-            <button
-              onClick={cancelDeleteSeason}
-              className="flex-1 bg-gray-100 text-gray-700 py-3 px-4 rounded-lg font-medium hover:bg-gray-200 transition-colors"
-            >
-              Cancel
-            </button>
-          </div>
-        </div>
-      </div>
+      <CreateSeasonScreen
+        formData={crud.seasonFormData}
+        seasons={seasons}
+        onChange={crud.setSeasonFormData}
+        onSubmit={crud.handleCreateSeason}
+        onCancel={crud.closeSeasonForm}
+      />
+    );
+  }
+
+  if (crud.showImportWizard && crud.pendingSeasonId && crud.seasonFormData.importFromSeason) {
+    return (
+      <SeasonImportWizard
+        sourceSeasonId={crud.seasonFormData.importFromSeason}
+        newSeasonId={crud.pendingSeasonId}
+        userId={user.id}
+        onComplete={crud.handleImportComplete}
+        onCancel={crud.handleImportCancel}
+      />
+    );
+  }
+
+  if (crud.showDeleteConfirm && crud.seasonToDelete) {
+    return (
+      <DeleteSeasonScreen
+        seasonName={crud.seasonToDelete.name}
+        onConfirm={crud.confirmDeleteSeason}
+        onCancel={crud.cancelDeleteSeason}
+      />
     );
   }
 
@@ -946,16 +387,16 @@ function AppContent() {
       onNavigate={handleNavigate}
       currentSeason={currentSeason}
       seasons={seasons}
-      onSeasonChange={handleSeasonChange}
-      onCreateSeason={isOwnFarm ? () => setShowSeasonForm(true) : undefined}
-      onDeleteSeason={isOwnFarm ? handleDeleteSeason : undefined}
+      onSeasonChange={crud.handleSeasonChange}
+      onCreateSeason={isOwnFarm ? crud.openSeasonForm : undefined}
+      onDeleteSeason={isOwnFarm ? crud.handleDeleteSeason : undefined}
       activeFarmContext={activeFarm}
       sharedFarms={sharedFarms}
-      onSwitchToOwnedFarm={handleSwitchToOwnedFarm}
-      onSwitchToSharedFarm={handleSwitchToSharedFarm}
-      onSwitchToOwnFarm={handleSwitchToOwnFarm}
-      onFarmCreated={handleFarmCreated}
-      onInviteAccepted={handleInviteAccepted}
+      onSwitchToOwnedFarm={farms.handleSwitchToOwnedFarm}
+      onSwitchToSharedFarm={farms.handleSwitchToSharedFarm}
+      onSwitchToOwnFarm={farms.handleSwitchToOwnFarm}
+      onFarmCreated={farms.handleFarmCreated}
+      onInviteAccepted={farms.handleInviteAccepted}
       activeRole={activeRole}
     >
       {/*
@@ -1039,7 +480,7 @@ function AppContent() {
           path={PAGE_PATHS['farm-settings']}
           element={
             isOwnFarm ? (
-              <FarmSettings onFarmsUpdated={handleFarmsUpdated} />
+              <FarmSettings onFarmsUpdated={farms.handleFarmsUpdated} />
             ) : (
               <Navigate to={PAGE_PATHS.dashboard} replace />
             )
@@ -1050,8 +491,8 @@ function AppContent() {
           element={
             isOwnFarm ? (
               <Team
-                onSwitchToFarm={handleSwitchToSharedFarm}
-                onSwitchToOwnFarm={handleSwitchToOwnFarm}
+                onSwitchToFarm={farms.handleSwitchToSharedFarm}
+                onSwitchToOwnFarm={farms.handleSwitchToOwnFarm}
                 sharedFarms={sharedFarms}
                 onRefreshSharedFarms={loadSharedFarms}
               />

@@ -100,20 +100,24 @@ The status doc is the source of truth for what is done. Update it when a round l
 
 ## Known baseline — do not treat these as regressions you caused
 
-- `npx tsc --noEmit -p tsconfig.app.json` reports **69 errors** (was 103 at review, 98
+- `npx tsc --noEmit -p tsconfig.app.json` reports **68 errors** (was 103 at review, 98
   before WI-19 began; 75 until V-8 replaced two `Json`-to-`ProgramRef[]` casts with real
   `Array.isArray` guards, and 73 until the chemical path got the same four guards on
-  6 Sep). The regeneration of `database.types.ts` briefly took it to 103 —
+  6 Sep, and 69 until WI-29b deleted a dead parameter). The regeneration of
+  `database.types.ts` briefly took it to 103 —
   12 errors resolved, 17 revealed that the stale hand-written file had been hiding —
   before the unused-symbol sweep brought it to 76. See the WI-19 section of the status
   doc for the full accounting; every movement is itemised there.
-- `npx eslint .` reports **107 errors, 28 warnings** (was 136/28 at review; 109 until V-8
-  removed one `prefer-const` and one `no-explicit-any` from the code it rewrote).
+- `npx eslint .` reports **105 errors, 28 warnings** (was 136/28 at review; 109 until V-8
+  removed one `prefer-const` and one `no-explicit-any` from the code it rewrote, and 107
+  until WI-29b deleted a dead parameter and an unnecessary dependency). **`App.tsx` itself
+  now reports zero**, down from five.
 - `npx vite build` succeeds and emits **40 chunks**. The number that matters is **first
-  paint: 414.74 kB raw / 118.40 kB gzip**, which is `dist/index.html`'s single
+  paint: 417.29 kB raw / 118.87 kB gzip**, which is `dist/index.html`'s single
   `<script>` and nothing else — measure it that way, by reading the tags out of
   `index.html`, not by looking for "the main chunk". WI-29a added 48.85 kB raw /
-  16.29 kB gzip to it (`react-router-dom`, which `App.tsx` imports eagerly); WI-22's
+  16.29 kB gzip to it (`react-router-dom`, which `App.tsx` imports eagerly) and WI-29b a
+  further 2.55 kB raw of module boundaries; WI-22's
   target is ≤ 300 kB gzip, so it is still met with room.
 
   **WI-22 landed 6 Sep 2026 and changed what these figures mean.** Until then all thirteen
@@ -121,7 +125,7 @@ The status doc is the source of truth for what is done. Update it when a round l
   round's growth landed in it. Twelve pages are now `React.lazy` (`Auth` stays eager), so
   `recharts` (eleven report sub-pages) and `jspdf` (reached through the `lib/exportUtils`
   barrel) are out of the first paint entirely. **479.30 → 102.11 kB gzip**, against WI-22's
-  ≤ 300 kB target. WI-29a then took it to **118.40 kB gzip**.
+  ≤ 300 kB target. WI-29 then took it to **118.87 kB gzip**.
 
   Consequence for future work: **app-level code is the only thing that still lands in the
   first paint.** R-1's 2.09 kB, R-6's 4.64 kB and WI-29a's 16.29 kB gz did, because they
@@ -254,6 +258,29 @@ These are real mistakes made during this work, not hypotheticals.
    by link and history.back() with nothing behind it leaves the app — the exact failure
    WI-29 exists to remove.
 
+14. **`App.tsx` is routing and the ORDER of the load gates. Everything else moved out
+   (WI-29b, 1,118 → 559 lines).** Where things live now:
+
+   | | |
+   |---|---|
+   | `hooks/useSeasonData.ts` | Season and farm loading, and the R-1 / R-5 load state |
+   | `hooks/useSeasonCrud.ts` | Create / import-into / delete a season |
+   | `hooks/useFarmSwitching.ts` | The five farm handlers |
+   | `components/app/AppFullScreens.tsx` | The five full-screen blocks, presentation only |
+
+   The gate order in `App.tsx` — fatal error, first load, signed out, confirmed-empty
+   seasons, wizard, page — **stays there on purpose**. Which surface a load state earns is
+   R-1's whole subject, and a hook that decided when to take the screen would be the
+   amplifier coming back by another route. Three rules that came with the split:
+   **`useSeasonData` owns three distinct values, not two** — `loading` (a request is in
+   flight), `hasLoadedOnce` (something rendered, so there is state worth keeping) and
+   `dataLoadError`; collapsing the first two is what R-1 fixed. **Declare a legitimate
+   full-screen load with `beginFullScreenLoad()`, alongside the load and never at the top
+   of a handler**, so a switch that bails out early does not blank a screen it never left.
+   And **`AppFullScreens.tsx` must keep importing nothing from `lib/`** — that is what
+   makes those screens renderable on a machine with no Supabase credentials, which is how
+   every screen defect in this project has been found.
+
 ## Verifying your own work
 
 Bolt and Claude both fail the same way here: confident, plausible, incomplete. Prefer
@@ -266,7 +293,7 @@ npm run verify
 ```
 
 That is `npm test` → `npm run baselines` → `npm run build`. The middle step is the
-interesting one. `tsc` reports **69** and `eslint` **107 errors / 28 warnings** on a healthy
+interesting one. `tsc` reports **68** and `eslint` **105 errors / 28 warnings** on a healthy
 tree, so CI cannot require a zero exit; `scripts/check-baselines.mjs` instead compares
 against the committed sets in `baselines/` and fails only on something **new**.
 
@@ -283,9 +310,9 @@ against the committed sets in `baselines/` and fails only on something **new**.
 The individual commands still work when you want one of them:
 
 ```
-npx tsc --noEmit -p tsconfig.app.json   # 69
-npx eslint .                            # 107 errors / 28 warnings
-npx vite build                          # must succeed; first paint 118.40 kB gz
+npx tsc --noEmit -p tsconfig.app.json   # 68
+npx eslint .                            # 105 errors / 28 warnings
+npx vite build                          # must succeed; first paint 118.87 kB gz
 npm test                                # 435 passing, must stay green
 ```
 

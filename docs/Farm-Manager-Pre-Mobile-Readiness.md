@@ -20,10 +20,11 @@
 `App.tsx` imports it eagerly. WI-22's target is ≤ 300 kB gz, so the router did not spend
 the headroom it was given.
 
-**WI-29b, the decomposition, remains and does NOT gate mobile.** `App.tsx` is still
-~1,000 lines. The back button was the deliverable and it is delivered; extracting
-`SeasonProvider` and farm switching is maintainability, and it is worth doing before the
-layout pass touches this file — but nothing is blocked on it.
+**WI-29b, the decomposition, is DONE too, and `App.tsx` is 559 lines rather than 1,118.**
+It never gated mobile — the back button was the deliverable — but it was worth doing before
+the layout pass edits this file, which is why it followed immediately. Season loading, the
+season wizard, farm switching and the five full-screen blocks are now four files of their
+own; `App.tsx` is routing and the order of the load gates. **MNT-4 closes with it.**
 
 **So the structural prerequisites are cleared, and what is left before starting is one
 decision**, not a work item: the `<DataList>` question in §4.
@@ -44,10 +45,13 @@ because of mobile.
 > took a zero-line diff. Full record in the status doc's WI-29a section. **The
 > measurements below are the "before", kept because they are what made the case.**
 >
-> **Two things this section says that are still true.** `App.tsx` has *not* shrunk — the
-> decomposition is WI-29b and is not started. And the sidebar items are still buttons
+> **One thing this section says that is still true.** The sidebar items are still buttons
 > rather than links, so middle-click and open-in-new-tab do not work; that was deliberate,
 > to keep `DashboardLayout` out of the diff.
+>
+> **And one that stopped being true hours later.** It said `App.tsx` had grown to 947
+> lines and so WI-29's decomposition half was larger than the review recorded. Both were
+> right: it was 1,118 by the time it was opened. **WI-29b took it to 559.**
 
 ### As it stood before the fix
 
@@ -207,9 +211,10 @@ real email for invitations, and the collaboration test with a second account.
    diff out of the file carrying R-1's load presentation, R-6's boundaries and WI-22's
    `Suspense` placements. **WI-22 did make it easier**, as predicted: each page was already
    a lazily-loaded unit, so the route boundaries were the boundaries WI-22 had drawn.
-   **WI-29b — extract `SeasonProvider` and farm switching from the ~1,000-line
-   `App.tsx` — is still open, and no longer blocks anything.** Worth doing before the
-   layout pass edits this file, not before starting.
+   **WI-29b is done too** — `App.tsx` 1,118 → 559 lines, into three hooks and one
+   presentational file. Not a `SeasonProvider` as the PRD proposed: nothing here is a
+   distant descendant, pages take `seasonId` as an explicit prop, and a context only
+   `App.tsx` reads would be ceremony plus a second way for a page to learn its season.
 3. **Answer the `<DataList>` question** — one primitive adopted 31 times, or 31 hand
    retrofits. Decide before starting, not during. **This is now the only thing standing
    between here and the mobile effort.**

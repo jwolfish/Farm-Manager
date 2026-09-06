@@ -1,8 +1,3 @@
-src/App.tsx | error | @typescript-eslint/no-explicit-any | Unexpected any. Specify a different type.
-src/App.tsx | error | @typescript-eslint/no-explicit-any | Unexpected any. Specify a different type.
-src/App.tsx | error | @typescript-eslint/no-unused-vars | 'forUserId' is defined but never used.
-src/App.tsx | warning | react-hooks/exhaustive-deps | React Hook useCallback has an unnecessary dependency: 'ownedFarms'. Either exclude it or remove the dependency array.
-src/App.tsx | warning | react-hooks/exhaustive-deps | React Hook useEffect has a missing dependency: 'user'. Either include it or remove the dependency array.
 src/components/CascadeUpdateModal.tsx | warning | react-hooks/exhaustive-deps | React Hook useEffect has a missing dependency: 'loadFieldsData'. Either include it or remove the dependency array.
 src/components/ChemicalPrograms.tsx | warning | react-hooks/exhaustive-deps | React Hook useEffect has missing dependencies: 'loadChemicals', 'loadPrograms', and 'user'. Either include them or remove the dependency array.
 src/components/CrossFarmCopyModal.tsx | error | @typescript-eslint/no-unused-vars | 'currentSeasonId' is defined but never used.
@@ -37,6 +32,9 @@ src/hooks/useDashboardMetrics.ts | warning | react-hooks/exhaustive-deps | React
 src/hooks/useDashboardMetrics.ts | warning | react-hooks/exhaustive-deps | React Hook useEffect has missing dependencies: 'loadAll' and 'user'. Either include them or remove the dependency array.
 src/hooks/useReportData.ts | error | @typescript-eslint/no-explicit-any | Unexpected any. Specify a different type.
 src/hooks/useSalesTracking.ts | warning | react-hooks/exhaustive-deps | React Hook useEffect has missing dependencies: 'loadAll' and 'user'. Either include them or remove the dependency array.
+src/hooks/useSeasonCrud.ts | error | @typescript-eslint/no-explicit-any | Unexpected any. Specify a different type.
+src/hooks/useSeasonCrud.ts | error | @typescript-eslint/no-explicit-any | Unexpected any. Specify a different type.
+src/hooks/useSeasonData.ts | warning | react-hooks/exhaustive-deps | React Hook useEffect has a missing dependency: 'user'. Either include it or remove the dependency array.
 src/hooks/useSprayPlanner.ts | error | @typescript-eslint/no-explicit-any | Unexpected any. Specify a different type.
 src/hooks/useSprayPlanner.ts | error | @typescript-eslint/no-unused-expressions | Expected an assignment or function call and instead saw an expression.
 src/hooks/useSprayPlanner.ts | error | @typescript-eslint/no-unused-expressions | Expected an assignment or function call and instead saw an expression.
