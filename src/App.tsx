@@ -1,23 +1,39 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { Suspense, lazy, useCallback, useEffect, useRef, useState } from 'react';
 import { AuthProvider, useAuth } from './contexts/AuthContext';
 import { NotificationProvider, useNotifications } from './contexts/NotificationContext';
 import { FarmProvider, useFarm } from './contexts/FarmContext';
 import { ToastContainer } from './components/Toast';
 import { Auth } from './pages/Auth';
-import { Dashboard } from './pages/Dashboard';
-import { Fields } from './pages/Fields';
-import { FieldDetail } from './pages/FieldDetail';
-import { Products } from './pages/Products';
-import { CostTemplates } from './pages/CostTemplates';
-import { Yields } from './pages/Yields';
-import { SalesTracking } from './pages/SalesTracking';
-import { Reports } from './pages/Reports';
-import { SprayPlanner } from './pages/SprayPlanner';
-import { AccountSettings } from './pages/AccountSettings';
-import { FarmSettings } from './pages/FarmSettings';
-import { Team } from './pages/Team';
+
+/*
+ * WI-22. Every page below was a static import until 6 Sep 2026, so all thirteen — and
+ * everything they reach — were in the first paint. Two libraries dominated that:
+ * `recharts`, used by eleven report sub-pages and nothing else, and `jspdf`, reached
+ * through the `lib/exportUtils` barrel that every report page and `useSprayPlanner`
+ * import. Neither is needed to render the Dashboard, which is where every session starts.
+ *
+ * `Auth` stays EAGER on purpose. It is the first thing a signed-out visitor sees, and
+ * putting a spinner in front of the login form to save bytes on a screen that has almost
+ * none is the wrong trade.
+ *
+ * The `.then(m => ({ default: m.X }))` shape is because these are named exports, not
+ * default ones. It matches the three lazy boundaries that already existed inside pages.
+ */
+const Dashboard = lazy(() => import('./pages/Dashboard').then((m) => ({ default: m.Dashboard })));
+const Fields = lazy(() => import('./pages/Fields').then((m) => ({ default: m.Fields })));
+const FieldDetail = lazy(() => import('./pages/FieldDetail').then((m) => ({ default: m.FieldDetail })));
+const Products = lazy(() => import('./pages/Products').then((m) => ({ default: m.Products })));
+const CostTemplates = lazy(() => import('./pages/CostTemplates').then((m) => ({ default: m.CostTemplates })));
+const Yields = lazy(() => import('./pages/Yields').then((m) => ({ default: m.Yields })));
+const SalesTracking = lazy(() => import('./pages/SalesTracking').then((m) => ({ default: m.SalesTracking })));
+const Reports = lazy(() => import('./pages/Reports').then((m) => ({ default: m.Reports })));
+const SprayPlanner = lazy(() => import('./pages/SprayPlanner').then((m) => ({ default: m.SprayPlanner })));
+const AccountSettings = lazy(() => import('./pages/AccountSettings').then((m) => ({ default: m.AccountSettings })));
+const FarmSettings = lazy(() => import('./pages/FarmSettings').then((m) => ({ default: m.FarmSettings })));
+const Team = lazy(() => import('./pages/Team').then((m) => ({ default: m.Team })));
+
 import { DashboardLayout } from './components/DashboardLayout';
-import { AppLoadErrorBanner, AppRefreshIndicator } from './components/AppLoadStatus';
+import { AppLoadErrorBanner, AppRefreshIndicator, PageLoadFallback } from './components/AppLoadStatus';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { resolveAppLoadPresentation } from './lib/appLoadState';
 import { SeasonImportWizard } from './components/SeasonImportWizard';
@@ -849,11 +865,13 @@ function AppContent() {
           resetKey={selectedFieldId}
           action={{ label: 'Back to Fields', onClick: handleBackFromFieldDetail }}
         >
-          <FieldDetail
-            fieldId={selectedFieldId}
-            seasonId={currentSeason.id}
-            onBack={handleBackFromFieldDetail}
-          />
+          <Suspense fallback={<PageLoadFallback />}>
+            <FieldDetail
+              fieldId={selectedFieldId}
+              seasonId={currentSeason.id}
+              onBack={handleBackFromFieldDetail}
+            />
+          </Suspense>
         </ErrorBoundary>
         {loadStatusOverlays}
       </>
@@ -886,6 +904,20 @@ function AppContent() {
        * while a page is showing the error panel.
        */}
       <ErrorBoundary label={PAGE_LABELS[activePage]} resetKey={activePage}>
+      {/*
+       * WI-22. The Suspense sits INSIDE the ErrorBoundary and inside DashboardLayout,
+       * which is two deliberate placements rather than one.
+       *
+       * Inside the layout, because a fallback hoisted above it would blank the sidebar
+       * and the season picker every time a page is opened for the first time — the exact
+       * full-screen takeover R-1 removed, reintroduced by a different route.
+       *
+       * Inside the boundary, because a rejected dynamic import() throws where the lazy
+       * component renders, so the boundary must be the outer of the two to catch it.
+       * That is the case R-6's chunk-load classifier was written for, and until now it
+       * could only fire for the three lazy panels; every page is now reachable that way.
+       */}
+      <Suspense fallback={<PageLoadFallback />}>
       {activePage === 'dashboard' && <Dashboard seasonId={currentSeason?.id || null} />}
       {activePage === 'fields' && (
         <Fields
@@ -918,6 +950,7 @@ function AppContent() {
           onRefreshSharedFarms={loadSharedFarms}
         />
       )}
+      </Suspense>
       </ErrorBoundary>
       {loadStatusOverlays}
     </DashboardLayout>

@@ -90,7 +90,7 @@ live cascade, with the two fields that correctly moved by exactly $80 as the con
 | Tests | **422 passing**, 12 files (401 before R-6 added 21; 386 before R-1 added 15; 380 before V-8 added 6; 347 before V-6 added 25) |
 | TypeScript | **69 errors** (103 at review, 98 before WI-19, 75 before V-8 replaced two `Json` casts with `Array.isArray` guards, 73 before the chemical path got the same four). Unmoved by R-1 and R-6; set compared with positions stripped at every step |
 | ESLint | **107 errors, 28 warnings** (from 136/28; 109 before V-8 deleted one `prefer-const` and one `no-explicit-any`). Unmoved by R-1, by the cast guards, or by R-6 |
-| Build | succeeds — **1,794.82 kB** (479.30 kB gz; 1,790.05 before R-6 added 4.64 kB to the eager `main.tsx`/`App.tsx` path, 1,787.96 before R-1 added 2.09), plus lazy `FertilizerContractsTab` 25.96 kB, `BookingModal` 19.63 kB and `FieldFertilizerRateGridPanel` 19.83 kB, all three byte-identical |
+| Build | succeeds — **40 chunks. First paint 365.89 kB raw / 102.11 kB gzip**, which is the single `<script>` in `dist/index.html`. WI-22 landed 6 Sep and took it from 1,794.82 kB / 479.30 gz by making 12 of 13 pages `React.lazy`. Total across all chunks 612 kB gz, up from 593 — chunking overhead, and the correct trade. **Quote first paint, not a "main chunk"** |
 | Migrations | **63 files**, matching the database one-for-one |
 | Edge function | **version 17**, running source confirmed identical to the repo by sha256, re-verified 6 Sep |
 | Security advisors | 14 WARN — 13 are the by-design `authenticated_security_definer_function_executable` lint that fires on every RPC, 1 is `auth_leaked_password_protection` (WI-6). No new class of finding. V-6’s internal `apply_field_fertilizer_rates` is correctly absent, being executable by neither role |
@@ -105,8 +105,12 @@ collaboration defects found by testing, none of which were in the original revie
 choice) · WI-19 (103 → 69; **all 73 read for defects on 6 Sep and none found**, 69 remain,
 86 `no-explicit-any` the substantive group) · WI-20 (422 tests, but nowhere near the
 80 % target) · WI-23 / PERF-2 (V-8 bounded the shopping list's fertilizer override query
-with `.in('field_id', …)`; the chemical one at `shoppingListGeneration.ts:56` still selects
-every visible row and filters in JavaScript).
+with `.in('field_id', …)`; the chemical one at `shoppingListGeneration.ts:57` still selects
+every visible row and filters in JavaScript) · WI-21 (core gate done; the types-drift and
+pgTAP jobs need Supabase credentials in repository secrets).
+
+**Newly closed 6 Sep:** WI-21 core gate · **WI-22 / PERF-1** — first paint 479.30 →
+**102.11 kB gzip**, against a ≤ 300 kB target.
 
 ### The override defect — found and FIXED 31 Aug 2026
 
@@ -271,10 +275,15 @@ The query in *The override defect* above answers it in one shot — every row sh
    Planner, Chemical Work Orders, Seed Bag Requirements and a generated shopping list.
    That is what the seven removed `user_id` filters were about; a collaborator merely
    *viewing* owner-created data looks identical either way.
-4. **Round 6 performance** — PERF-1 … PERF-5, chiefly the bundle: **479 kB gzip** against
-   WI-22's ≤ 300 kB target, and rising — R-1 and R-6 each added to the eager path because
-   `App.tsx` and `main.tsx` are the eager path. This is also the real prerequisite for the
-   mobile ambition, not responsive CSS.
+4. **Round 6 performance — PERF-1 / WI-22 is DONE (6 Sep); PERF-2 … PERF-5 remain.**
+   First paint went **479.30 → 102.11 kB gzip** by making 12 of 13 pages `React.lazy`,
+   which also removes the standing objection to a mobile effort. What is left:
+   **PERF-2** is two lines (the chemical override query at `shoppingListGeneration.ts:57`
+   still selects every visible row); **PERF-3** still aggregates every season, field and
+   sale in the browser; **PERF-4**'s on-hand trigger still re-sums the whole ledger per
+   row; **PERF-5**'s cascade still fans out unbounded and is awaited inside one request.
+   None of those is a mobile blocker, though PERF-3 and PERF-4 will be felt harder on cell
+   data.
 5. **WI-21, CI — the core gate is DONE (6 Sep).** `.github/workflows/ci.yml` runs tests, a
    baseline ratchet and the build on every push and PR; `npm run verify` is the same thing
    locally. **Still to do**, both needing Supabase credentials in repository secrets: the
@@ -2504,6 +2513,77 @@ app, which is the argument for having done R-6 before finishing them.
 **107 / 28**, new files clean · tests 401 → **422** · build succeeds, main chunk
 1,790.05 → **1,794.82 kB** (477.80 → 479.30 gz), the three lazy chunks byte-identical.
 
+### WI-22 / PERF-1 — code-split the bundle — DONE 6 Sep 2026
+
+**First paint: 479.30 → 102.11 kB gzip.** WI-22's acceptance criterion is ≤ 300 kB gzip, so
+it is met with room, and it was met by one change rather than the three the PRD proposed.
+
+**What was actually wrong, which was narrower than "the bundle is big".** Four lazy chunks
+already existed and had been recorded as progress, but all four were *inside* pages — a tab,
+a grid panel, a modal, and html2canvas pulled in by jsPDF. **All thirteen pages were static
+imports in `App.tsx`, and `React.lazy` appeared there zero times.** So the entire app was in
+the first paint, and two libraries dominated it:
+
+- `recharts`, imported by eleven report sub-pages **and nothing else**
+- `jspdf`, reached through the `lib/exportUtils` barrel — which every one of those eleven
+  report pages imports for `exportTableToCSV`, and so does `useSprayPlanner`
+
+Neither is needed to render the Dashboard, which is where every session starts.
+
+**Twelve pages are now `React.lazy`. `Auth` stays eager**, deliberately: it is the first
+thing a signed-out visitor sees, and putting a spinner in front of the login form to save
+bytes on a screen that has almost none is the wrong trade.
+
+| | Before | After |
+|---|---|---|
+| First-paint JS | 1,794.82 kB / 479.30 gz | **365.89 kB / 102.11 gz** |
+| Chunks | 7 | 40 |
+| Total across all chunks | 593.25 kB gz | 612.42 kB gz |
+| `recharts` in first paint | yes | **no** — `Reports` chunk, 561 kB / 146 gz |
+| `jspdf` in first paint | yes | **no** — `jspdf.plugin.autotable`, 436 kB / 142 gz |
+
+The total rose by 19 kB gzip. That is chunking overhead and it is the correct trade — but it
+means **"the bundle" is no longer one number.** Quote first paint, and measure it by reading
+the `<script>` tags out of `dist/index.html` rather than by looking for a main chunk.
+
+**Both acceptance criteria verified, statically rather than by assertion.** `dist/index.html`
+references exactly one JS file. The entry chunk references only the twelve page chunks, all
+dynamically; the `Dashboard` chunk references the entry plus three lucide icon chunks. A
+grep of both for `jspdf|recharts|html2canvas|purify` returns nothing.
+
+**Two placements in `App.tsx` that are load bearing, and both are R-1 and R-6 interacting
+with this change:**
+
+- **`<Suspense>` is inside `DashboardLayout`.** Hoisted above it, the fallback would blank
+  the sidebar and season picker every time a page is opened for the first time — R-1's
+  full-screen takeover reintroduced by a different route. `PageLoadFallback` renders in the
+  page area only, and is deliberately a bare spinner with no text, since on a fast
+  connection it shows for a few frames.
+- **`<Suspense>` is inside the `ErrorBoundary`, not outside.** A rejected dynamic `import()`
+  throws where the lazy component renders, so the boundary has to be the outer of the two.
+  **This is the change that makes R-6's chunk-load classifier genuinely load bearing** —
+  until now it could only fire for three lazy panels; every page is now reachable that way,
+  and a tab left open across a deploy will get "A new version is available" with a reload
+  button rather than a white screen.
+
+**`manualChunks` was NOT added, and that is a decision rather than an omission.** The PRD
+proposes it alongside `React.lazy`. Once the pages are lazy it changes nothing that matters:
+`recharts` and `jsPDF` are already out of the entry, and grouping them differently would
+move bytes between chunks that are only fetched on the screens that need them. Adding
+build config that demonstrably does not move the number is how config becomes folklore.
+The remaining split worth considering later is the eleven report sub-pages, which currently
+share one 561 kB chunk — a second increment inside `Reports.tsx`, not this one.
+
+**NOT verified: the app running.** `App.tsx` reaches the Supabase client at module load, so
+nothing here can be exercised at runtime on this machine. The chunk graph is proven by
+reading the built output, tests are green and the build succeeds — but **no page has been
+observed lazily loading, and no Suspense fallback has been seen on screen.** The owner's
+check is the cheapest possible one: open the app, click through the pages, confirm each
+appears without a visible stall and that the sidebar never blanks.
+
+**Floor:** TypeScript **69**, error set unchanged (0 new, 0 fixed) · ESLint **107 / 28**,
+unchanged · tests **422**, unchanged · build succeeds.
+
 ## Open items and standing notes
 
 **Nothing in this section is open any more.** It is all practice notes and closed records
@@ -2647,7 +2727,10 @@ program list. That is the second time reading this baseline has found a real def
 
 ### 3. Round 6 — performance
 
-PERF-1 … PERF-5. The bundle is the headline: **1,794.82 kB (479.30 kB gz)** against WI-22's
+**PERF-1 / WI-22 is DONE — see the WI-22 section above. First paint is 102.11 kB gzip.**
+What follows described the state before that and is kept for the other four items.
+
+PERF-1 … PERF-5. The bundle was the headline: **1,794.82 kB (479.30 kB gz)** against WI-22's
 ≤ 300 kB gzip target, so it needs `React.lazy` on the pages plus `manualChunks` for
 recharts, jspdf and html2canvas. Four lazy chunks exist now — the two fertilizer ones, the
 V-6 grid panel and html2canvas — which is the pattern to repeat, not the job done.
@@ -2727,7 +2810,7 @@ All figures below are measured, not estimated.
 | ESLint | 136 errors, 28 warnings | 134 / 28 | 134 / 28 | 134 / 28 | 109 / 28 | 109 / 28 | **107 / 28** |
 | Tests | 0 | 178 passing, 4 files | 206 passing, 5 files | 206 passing, 5 files | 206 passing, 5 files | 282 passing, 7 files | **422 passing, 12 files** |
 | CI | none | none | none | none | none | none | **GitHub Actions on every push — tests, baseline ratchet, build** |
-| Main JS chunk | 1,747 kB (465 kB gz) | 1,754.43 kB (467.56 kB gz) | 1,751.97 kB (467.39 kB gz) | 1,751.96 kB (467.50 kB gz) | 1,751.91 kB (467.46 kB gz) | 1,760.80 kB (470.25 gz) | **1,794.82 kB (479.30 kB gz)** |
+| First-paint JS | 1,747 kB (465 kB gz) | 1,754.43 kB (467.56 kB gz) | 1,751.97 kB (467.39 kB gz) | 1,751.96 kB (467.50 kB gz) | 1,751.91 kB (467.46 kB gz) | 1,760.80 kB (470.25 gz) | **365.89 kB (102.11 kB gz)** — WI-22 |
 | Lazy chunks | — | — | — | — | — | `FertilizerContractsTab` 25.96, `BookingModal` 20.02 | **those two plus `FieldFertilizerRateGridPanel` 19.83 kB (6.36 gz)** |
 | Migrations | 40 files | 43 | 46 | 52 | 52 | 58 | **63, diffed against the database one-for-one** |
 | Edge function | — | v8 pending | — | v10 | v10 | v13 | **v17, source confirmed in sync by sha256** |
@@ -2744,11 +2827,13 @@ work R-1 / R-5 / R-4 item 2 / R-6, itemised.**
   already made them unreachable.
 - **ESLint 109 → 107**, all V-8: one `prefer-const` and one `no-explicit-any` deleted from
   the code it rewrote. Diffed by rule and message, not by count. Unmoved by R-1 and R-6.
-- **Main chunk 1,760.80 → 1,794.82 kB.** +3.71 shopping-list coverage, +0.89 V-0, +15.85
-  V-5 (the plan editor is on the eager `FieldDetail` path), +1.06 V-6, +1.11 V-8, +2.09 R-1
-  and +4.64 R-6 — the last two eager because they are `App.tsx` and `main.tsx` — and the
-  rest is the eager share of the Shopping Lists tab. The V-6 grid panel itself is lazy —
-  19.83 kB that never loads unless the screen is opened.
+- **First-paint JS 1,760.80 → 365.89 kB** (470.25 → **102.11 kB gzip**), in two movements
+  that go opposite ways. It first *grew* to 1,794.82: +3.71 shopping-list coverage, +0.89
+  V-0, +15.85 V-5 (the plan editor is on the then-eager `FieldDetail` path), +1.06 V-6,
+  +1.11 V-8, +2.09 R-1, +4.64 R-6, and the eager share of the Shopping Lists tab. **WI-22
+  then removed 1,428.93 kB of it in one change** by making 12 of 13 pages `React.lazy`,
+  which took `recharts` and `jspdf` out of the first paint entirely. Note this changes what
+  the row means: it is now the single `<script>` in `index.html`, not "the main chunk".
 - **Migrations 58 → 63:** shopping-list coverage columns, `field_fertilizer_rates`, the save
   RPC, its `applies` flag, and V-6's bulk RPC.
 

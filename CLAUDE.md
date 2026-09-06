@@ -109,23 +109,23 @@ The status doc is the source of truth for what is done. Update it when a round l
   doc for the full accounting; every movement is itemised there.
 - `npx eslint .` reports **107 errors, 28 warnings** (was 136/28 at review; 109 until V-8
   removed one `prefer-const` and one `no-explicit-any` from the code it rewrote).
-- `npx vite build` succeeds and emits a **1,794.82 kB** main chunk (479.30 kB gz), plus
-  three lazy chunks: **25.96 kB** `FertilizerContractsTab` (7.10 gz), **19.63 kB**
-  `BookingModal` (5.90 gz) — shared by the Contracts tab, the Shopping Lists tab and the
-  plan calculator — and **19.83 kB** `FieldFertilizerRateGridPanel` (6.36 gz).
+- `npx vite build` succeeds and emits **40 chunks**. The number that matters is **first
+  paint: 365.89 kB raw / 102.11 kB gzip**, which is `dist/index.html`'s single
+  `<script>` and nothing else — measure it that way, by reading the tags out of
+  `index.html`, not by looking for "the main chunk".
 
-  It was 1,751.91 kB before fertilizer F-1, which added 2.38 kB for
-  the density bridge, the Liquid checkbox and its help text; F-4a added 0.95 kB to the main
-  chunk and 6.50 kB to the lazy one; F-5 added the Shopping Lists tab's share of the handoff
-  to the main chunk and split `BookingModal` out; F-4b added the season summary to the lazy
-  Contracts chunk only; F-6 added the plan calculator to the lazy chunks and **0.02 kB** to
-  the main one; shopping-list coverage added **3.71 kB** to the main chunk, which is eager;
-  field-rates V-0 added **0.89 kB**, the override read and two badges in
-  `FieldProgramDetails`; V-5 added **15.85 kB** for the per-field plan editor on the eager
-  `FieldDetail` path; V-6 added only **1.06 kB** to the main chunk, putting its grid panel in
-  a lazy chunk of its own; V-8 added **1.11 kB**; the reload work's R-1 added
-  **2.09 kB**, which is eager because it is `App.tsx`; and R-6's error boundary added
-  **4.64 kB**, eager for the same reason — it is `main.tsx` and `App.tsx`.
+  **WI-22 landed 6 Sep 2026 and changed what these figures mean.** Until then all thirteen
+  pages were static imports, so the eager chunk was 1,794.82 kB / 479.30 gz and every
+  round's growth landed in it. Twelve pages are now `React.lazy` (`Auth` stays eager), so
+  `recharts` (eleven report sub-pages) and `jspdf` (reached through the `lib/exportUtils`
+  barrel) are out of the first paint entirely. **479.30 → 102.11 kB gzip**, against WI-22's
+  ≤ 300 kB target.
+
+  Consequence for future work: **app-level code is the only thing that still lands in the
+  first paint.** R-1's 2.09 kB and R-6's 4.64 kB did, because they are `App.tsx` and
+  `main.tsx`; a change confined to one page no longer does. Total across all chunks went
+  593 → 612 kB gzip from chunking overhead, which is the correct trade and not a
+  regression — quote first paint, not the total.
 - `npm test` reports **422 passing** in 12 files (401 before R-6 added 21; 386 before R-1 added 15; 380 before V-8 added 6; 372 before
   `formatRate` added 8; 347 before V-6 added 25; 340 before V-5 added 7; 320 before V-2 added 20; 308 before V-0
   added 12; 295 before shopping-list coverage added 13).
@@ -266,7 +266,7 @@ The individual commands still work when you want one of them:
 ```
 npx tsc --noEmit -p tsconfig.app.json   # 69
 npx eslint .                            # 107 errors / 28 warnings
-npx vite build                          # must succeed
+npx vite build                          # must succeed; first paint 102.11 kB gz
 npm test                                # 422 passing, must stay green
 ```
 

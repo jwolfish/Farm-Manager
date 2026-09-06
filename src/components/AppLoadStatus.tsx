@@ -87,3 +87,27 @@ export function AppLoadErrorBanner({
     </div>
   );
 }
+
+/**
+ * WI-22. Shown while a lazily-loaded page's chunk is in flight.
+ *
+ * It renders INSIDE `DashboardLayout`, in the page area, so the sidebar, the header and
+ * the season picker stay on screen and stay usable while a page arrives. That placement
+ * is the whole point and it is R-1's rule applied to a new cause: a load in flight is not
+ * a reason to replace the screen. A `<Suspense>` fallback hoisted above the layout would
+ * reinstate exactly the full-screen takeover R-1 removed, by a different route.
+ *
+ * Deliberately quiet — no spinner text, no "Loading…" heading. On a fast connection this
+ * is visible for a few frames, and anything louder would flash. It has a min-height so
+ * the layout does not collapse and then jump when the page lands.
+ */
+export function PageLoadFallback() {
+  return (
+    <div className="flex items-center justify-center min-h-[60vh]" role="status" aria-label="Loading page">
+      <div
+        className="w-8 h-8 rounded-full border-2 border-gray-200 border-t-green-600 animate-spin"
+        aria-hidden="true"
+      />
+    </div>
+  );
+}

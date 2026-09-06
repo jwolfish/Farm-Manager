@@ -9,12 +9,12 @@
 
 ## 1. The short answer
 
-**Two items gate a mobile effort. Everything else does not.**
+**Two items gated a mobile effort. One of them is now done. Everything else does not.**
 
-| | | Why it gates mobile |
+| | | State |
 |---|---|---|
-| **WI-22 / PERF-1** | Code-split the bundle | 468 kB gzip on first paint over rural cell data. No amount of responsive CSS repairs a slow first load, and splitting after a responsive pass means restructuring the same components twice |
-| **WI-29** | Adopt a router | **No back button.** Navigation is `sessionStorage` plus a hand-rolled `switch`, so the phone's back gesture leaves the app instead of going back a screen. On a desktop this is an annoyance; on a phone it is the primary navigation control |
+| **WI-22 / PERF-1** | Code-split the bundle | **DONE 6 Sep 2026.** First paint 468 → **102.11 kB gzip** by making 12 of 13 pages `React.lazy`. §3 is kept as the record of what was wrong |
+| **WI-29** | Adopt a router | **Still open, and now the only structural blocker.** **No back button** — navigation is `sessionStorage` plus a hand-rolled `switch`, so the phone's back gesture leaves the app instead of going back a screen. On a desktop this is an annoyance; on a phone it is the primary navigation control |
 
 **One decision to settle before starting**, not a work item: the `<DataList>` question in §4.
 
@@ -45,7 +45,17 @@ regression.
 `App.tsx` has also grown to **947 lines** from the 763 the review recorded, so WI-29's
 decomposition half is larger than it was, not smaller.
 
-## 3. WI-22, measured today
+## 3. WI-22 — the state that prompted this, and what it is now
+
+> **Closed 6 Sep 2026, hours after this section was written.** First paint is now
+> **365.89 kB raw / 102.11 kB gzip** — a single `<script>` in `dist/index.html` — against
+> the ≤ 300 kB target. Twelve of the thirteen pages are `React.lazy`; `Auth` stays eager.
+> `recharts` and `jspdf` are out of the first paint entirely. `manualChunks` was considered
+> and deliberately not added, because once the pages are lazy it moves nothing. Full record
+> in the WI-22 section of the status doc. **The measurements below are the "before", kept
+> because they are what made the case.**
+
+### As measured before the fix
 
 | Chunk | Raw | Gzip |
 |---|---|---|
@@ -164,12 +174,13 @@ real email for invitations, and the collaboration test with a second account.
 
 ## 6. Recommended order
 
-1. **WI-22 — code-split.** `React.lazy` the 13 pages, `manualChunks` for recharts, jsPDF and
-   html2canvas. This is the prerequisite, and CI now exists to catch what it breaks, which
-   makes it a much safer change than it would have been a week ago.
-2. **WI-29 — router.** Adopt React Router, move `activePage` out of `sessionStorage`, and
-   extract season management out of the 947-line `App.tsx` while doing it. The back button
-   is the deliverable; the decomposition is the means.
+1. ~~**WI-22 — code-split.**~~ **Done 6 Sep 2026.** `manualChunks` turned out to be
+   unnecessary once the pages were lazy; see §3.
+2. **WI-29 — router. Now the only structural blocker.** Adopt React Router, move
+   `activePage` out of `sessionStorage`, and extract season management out of the 947-line
+   `App.tsx` while doing it. The back button is the deliverable; the decomposition is the
+   means. **WI-22 makes this easier, not harder** — the page boundaries it introduced are
+   the same boundaries routes will need, and each page is now a lazily-loaded unit already.
 3. **Answer the `<DataList>` question** — one primitive adopted 31 times, or 31 hand
    retrofits. Decide before starting, not during.
 4. **Then the mobile effort proper**, which at that point is layout and input hygiene
