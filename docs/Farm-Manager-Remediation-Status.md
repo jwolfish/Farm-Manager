@@ -43,7 +43,7 @@ the running app — *How to prove the fix*, at the end of that section.
 | Migrations | **59 files**, matching the database one-for-one (diffed, not counted) |
 | Edge function | **version 16**, deployed source confirmed identical to the repo by sha256 (5 Sep) |
 | Security advisors | 12 WARN — 11 are the by-design `authenticated_security_definer_function_executable` lint that fires on every RPC, 1 is `auth_leaked_password_protection` (WI-6). No new class of finding |
-| Cascade tasks | 53 total, **0 failed** |
+| Cascade tasks | **58 total, 0 failed** |
 | SEC-5 policy matrix | **120 assertions, 0 failures** (extended at V-1 and re-run against the live schema; was 101 at F-3) |
 
 **Closed:** SEC-1, SEC-2, SEC-3, SEC-4, SEC-5, SEC-7 · WI-9, WI-10, WI-11, WI-12, WI-13,
@@ -149,9 +149,12 @@ the end-to-end path has still never been observed protecting an override. That i
 test that closes this properly, and it needs the running app — see *How to prove the fix*
 below.
 
-### How to prove the fix — 5 minutes in the app
+### How to prove the fix — 5 minutes in the app — **RUN AND PASSED, 6 Sep 2026**
 
-The check nobody has ever run. Do it once and this defect is genuinely closed:
+**This is closed.** The owner set 2025's hauling to 0, the cascade ran on edge function v16,
+and all nine overrides survived with every total reconciling — including the two fields that
+correctly moved by exactly $80 because their override was on chemical, not hauling. Full
+result in *The override fix is PROVEN END TO END* below. The recipe is kept for reference:
 
 1. Note a field with an override — e.g. **Umek**, whose total should read **663.72**
    (hauling overridden to $60 against the template's $80).
@@ -1717,6 +1720,52 @@ springs back to its un-overridden figure — Umek 683.72, Home West of Bins 689.
 That check closes two things at once: V-3's own acceptance criterion, and the *How to prove
 the fix* item outstanding since 31 Aug, which has never been run.
 
+### The override fix is PROVEN END TO END — 6 Sep 2026, 01:02–01:05 UTC
+
+**The check outstanding since 31 August has been run, and it passes.** Until now the
+override fix was proven by 25 unit tests and by reading; nobody had ever watched the system
+preserve an override through a live cascade. *How to prove the fix* can be deleted from
+*Next up*.
+
+**What the owner did:** set the 2025 season's hauling cost to 0 and let the cascade run.
+Two `cascade_product_update` tasks completed against **edge function v16** — the deploy from
+minutes earlier — plus a client-side template cascade at 01:04:49. All nine overridden
+fields were rewritten, so this is not the empty result a cascade that never ran would give.
+
+**The control is what makes it evidence.** Six fields unchanged proves nothing on its own;
+what proves it is that the *right* two moved, by the right amount:
+
+| Field | Override | Hauling column | Total before → after |
+|---|---|---|---|
+| Umek | hauling **60** | stays 80 | **663.72 → 663.72** |
+| Adkins | hauling 70 | stays 80 | 688.59 → 688.59 |
+| Townline Road | hauling 70 | stays 80 | 673.27 → 673.27 |
+| Home East of Farm South | chemical 105 | → 90 | 711.37 → 711.37 |
+| Home North Slew | chemical 104 | → 90 | 715.39 → 715.39 |
+| Home West of Bins | chemical 105 | → 90 | 713.99 → 713.99 |
+| Home West of Lane | chemical 105 | → 90 | 723.53 → 723.53 |
+| T & L Back 40 and Middle | chemical 105 | **→ 0** | 715.24 → **635.24** |
+| Vandemeer NE | chemical 105 | **→ 0** | 709.63 → **629.63** |
+
+The three fields with a **hauling** override kept their hauling column at 80 — the cascade
+skips writing a column it has an override for — and their totals did not move. The two
+fields whose hauling went to 0 have **chemical** overrides, not hauling ones, so their
+hauling correctly followed the template and their totals fell by exactly $80.00, while their
+chemical override of 105 was still honoured in the new total.
+
+**All nine reconcile:** `expected_total` computed independently in SQL equals the stored
+`total_cost_per_acre` on every row. That is the same query that found the defect on 31 Aug,
+now returning `correct` after a cascade rather than before one.
+
+**Cascade tasks: 58 total, 0 failed.** Both post-deploy tasks completed with empty warnings.
+
+**What this does NOT prove, and must not be claimed.** `refreshProgramOverridesInSeason` —
+the V-0 fix this deploy was for — **did not run**, because it only fires on array-shaped
+overrides and production still has zero of them. What ran was the numeric-override path,
+which was already correct. So v16 is now confirmed healthy under a real JWT against real
+data, and the *new* code in it is still exercised only by unit tests. The first real
+exercise will be the first custom-rated field, at V-5.
+
 ## Open items and standing notes
 
 **Nothing in this section is open any more.** It is all practice notes and closed records
@@ -1811,12 +1860,11 @@ manual look if a product is ever given a unit outside its class.
 
 ## Next up
 
-### 1. Prove the override fix in the running app — 5 minutes
+### 1. ~~Prove the override fix in the running app~~ — **DONE 6 Sep 2026**
 
-Everything else about that defect is closed and deployed (v14, verified byte-for-byte).
-What has never once been observed is a cascade actually preserving an override end to end.
-The recipe is *How to prove the fix* at the end of *The override defect*. Until it is run,
-the fix is proven by unit tests and reading, not by the system doing it.
+Run and passed on edge function v16. See *The override fix is PROVEN END TO END*. The
+override defect is now closed in every sense: code, tests, data, deploy, and the system
+observed doing it.
 
 ### 2. The random reload
 
