@@ -83,8 +83,8 @@ The status doc is the source of truth for what is done. Update it when a round l
   the main one; shopping-list coverage added **3.71 kB** to the main chunk, which is eager;
   field-rates V-0 added **0.89 kB**, the override read and two badges in
   `FieldProgramDetails`.
-- `npm test` reports **320 passing** in 7 files (308 before field-rates V-0 added 12; 295
-  before shopping-list coverage added 13).
+- `npm test` reports **340 passing** in 8 files (320 before field-rates V-2 added 20; 308
+  before V-0 added 12; 295 before shopping-list coverage added 13).
 - There is **no CI**. Adding it is WI-21 in the PRD.
 - Tests arrived with Round 3: `npm test` (Vitest). Test files are excluded from
   `tsconfig.app.json` so they do not move the 103-error baseline.

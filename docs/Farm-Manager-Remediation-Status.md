@@ -36,13 +36,13 @@ the running app — *How to prove the fix*, at the end of that section.
 
 | Measured 4 Sep 2026 | |
 |---|---|
-| Tests | **320 passing**, 7 files (308 before field-rates V-0 added 12) |
+| Tests | **340 passing**, 8 files (320 before V-2 added 20) |
 | TypeScript | **75 errors** (103 at review, 98 before WI-19) |
 | ESLint | **109 errors, 28 warnings** (from 136/28) |
 | Build | succeeds — **1,768.55 kB** (472.56 kB gz), plus lazy `FertilizerContractsTab` 25.96 kB and `BookingModal` 20.07 kB |
-| Migrations | **59 files**, matching the database one-for-one (diffed, not counted) |
+| Migrations | **61 files**, matching the database one-for-one |
 | Edge function | **version 16**, deployed source confirmed identical to the repo by sha256 (5 Sep) |
-| Security advisors | 12 WARN — 11 are the by-design `authenticated_security_definer_function_executable` lint that fires on every RPC, 1 is `auth_leaked_password_protection` (WI-6). No new class of finding |
+| Security advisors | 13 WARN — 12 are the by-design `authenticated_security_definer_function_executable` lint that fires on every RPC, 1 is `auth_leaked_password_protection` (WI-6). No new class of finding |
 | Cascade tasks | **58 total, 0 failed** |
 | SEC-5 policy matrix | **120 assertions, 0 failures** (extended at V-1 and re-run against the live schema; was 101 at F-3) |
 
@@ -1765,6 +1765,69 @@ overrides and production still has zero of them. What ran was the numeric-overri
 which was already correct. So v16 is now confirmed healthy under a real JWT against real
 data, and the *new* code in it is still exercised only by unit tests. The first real
 exercise will be the first custom-rated field, at V-5.
+
+### Field-level fertilizer rates — V-2 and V-4 — 5–6 Sep 2026
+
+**V-2** — `src/lib/fieldFertilizerRates.ts`, pure and unit-tested: `resolveFieldFertilizerItems`
+(replace-wholly resolution), `costResolvedItems` (WI-11 rules, one issue per distinct
+failure), `contributionsFromItems` (the seam into `accumulateNeed`) and the §7.1
+`rateFromTotal` / `totalFromRate` pair. **20 tests, 320 → 340.** Nothing imports it yet —
+wiring the shopping list and plan calculator is V-8 — and the build being byte-identical is
+what confirms that.
+
+**V-4** — `save_field_fertilizer_rates(jsonb)`, applied as **`20260906011521`**.
+
+**The design decision worth keeping.** The RPC was specified as "delete, insert, recompute
+override, recompute total". It does the first three and **not the fourth**, and it does not
+compute the cost either:
+
+| | Where it happens | Why |
+|---|---|---|
+| rates → `$/ac` | **Client**, `costResolvedItems` | Needs the unit table and the density bridge. In SQL that is a third copy in a third language, computing the number that drives every field cost — what F-3 refused when it dropped `fertilizer_contracts.unit_type` |
+| the override array | **RPC**, atomically with the rates | List maintenance, not cost math |
+| `total_cost_per_acre` | **Client**, existing `recalculateFieldTotal` | A flat sum, but already implemented twice; a SQL copy would be a third language for it too |
+
+The honest cost: if the client dies between the RPC and the recalculation, the field's total
+is stale until the next override edit or cascade. That is a crash window, and self-healing.
+It is **not** the 31 Aug defect, which was systematic — every cascade reverted the total,
+every time. Atomicity is spent where a half-write would leave data *inconsistent* (rates
+without their override), not merely *stale*. It is also exactly what `createOrUpdateOverride`
+has always done for a numeric override, so this is not a new pattern.
+
+**Seeding is the subtle part.** The override array is the field's whole fertilizer program
+list, so saving one program must update that entry and leave its siblings alone. When the
+field has no override yet it is seeded **from the template** — which is what the field was
+inheriting a moment ago. Seeding from empty would silently drop every other pass, and the
+field's fertilizer cost would collapse to one program.
+
+**Reset semantics:** an empty `rates` array clears that program's rows and the caller
+supplies the *program's own* cost, so the entry reverts to it. The override row is
+deliberately not deleted — its value then equals what the template would give, the total
+resolves identically, and per guardrail 9 the skipped column write is harmless.
+
+**Rehearsed before applying — 14 assertions, 0 failures**, rollback confirmed (no function,
+no rate rows, the nine numeric overrides untouched), then applied for real. The ones that
+earn their keep: the override is seeded from the template with **siblings preserved** and
+only this program replaced; two programs coexist holding both costs; a re-save **replaces**
+rather than appends; **a bad later rate leaves no partial set**; cross-season program and
+cross-season product both refused; stranger and anonymous both refused; `SECURITY DEFINER`
+with `search_path` pinned, executable by `authenticated` and not by `anon`.
+
+**Post-apply:** function present, SECURITY DEFINER, `search_path=public, pg_catalog`,
+`authenticated` may execute and `anon` may not, 0 rate rows and 0 array-shaped overrides —
+nothing in production changed. Security advisor **13 WARN**: the documented 12 plus exactly
+one more of the same by-design `authenticated_security_definer_function_executable`, which
+is what adding an RPC does. No new class of finding.
+
+`database.types.ts` regenerated: **1 insertion, 0 deletions**, purely the new function
+signature. Floor unchanged — TypeScript 75 identical set, ESLint 109/28, tests 340, build
+byte-identical at 1,768.55 kB. Migrations **60 → 61**.
+
+**A splice hazard worth recording.** Regenerating `database.types.ts` and re-appending the
+hand-maintained tail by *line number* clipped a line off that block twice in this session —
+`} as const` once and `WorkOrderStatus` once. Both were caught by checking the diff was
+purely additive, which is the check to keep. Splice on the `// ---` marker, not on a line
+count.
 
 ## Open items and standing notes
 

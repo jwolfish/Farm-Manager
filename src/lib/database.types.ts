@@ -1924,6 +1924,7 @@ export type Database = {
       }
       save_fertilizer_contract: { Args: { p_payload: Json }; Returns: Json }
       save_fertilizer_load: { Args: { p_payload: Json }; Returns: Json }
+      save_field_fertilizer_rates: { Args: { p_payload: Json }; Returns: Json }
       save_work_order: { Args: { p_payload: Json }; Returns: string }
       set_active_season: { Args: { p_season_id: string }; Returns: undefined }
       sync_fertilizer_blended_price: {

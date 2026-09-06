@@ -1,6 +1,9 @@
 # Field-Level Fertilizer Rates — Options and Plan
 
-**Status:** Options paper. Nothing implemented, nothing agreed. Written 3 Sep 2026.
+**Status:** Design agreed 3 Sep 2026 (§7). **V-0 … V-4 built and verified, 4–6 Sep** — the
+latent override defects, the `field_fertilizer_rates` schema, the pure resolver and cost
+math, the edge-function deploy, and the save RPC. **V-5 onward — all of the UI — is not
+started**, so nothing here is reachable by a user yet. See §8 for the state of each step.
 **Companion docs:** `Fertilizer-Contract-Tracking-Design.md`,
 `Farm-Manager-Remediation-Status.md`
 
@@ -376,7 +379,7 @@ Each step independently verifiable, per the standing practice.
 | **V-1** | **DONE 4 Sep 2026** — migration `20260905040540` applied. The two dead application tables were **not** dropped; see §6 | Rehearsed 12/0 then rolled back, applied, rollback confirmed. SEC-5 matrix extended 101 → **120 assertions, 0 failures**. Advisor at the documented 12 WARN baseline |
 | **V-2** | **DONE 4 Sep 2026** — `src/lib/fieldFertilizerRates.ts`: the resolver, the cost math, and the §7.1 rate/total round trip. Not yet wired to anything | 20 tests (320 → **340**), including the control that a farm with no custom rates accumulates identically to the program-only path. Build byte-identical, which confirms nothing imports it yet |
 | **V-3** | **Deployed 5 Sep 2026 — edge function v16.** Code landed in V-0; the cascade has not yet been observed running | `sha256` of the downloaded function against the repo copy; a real price change observed leaving a custom-rated field correct |
-| **V-4** | `save_field_fertilizer_rates` RPC — write rates, override and total in one transaction. **It does not compute the cost; see §5.2a** | Rehearsed; a bad line leaves no partial rate set; stranger and `anon` refused |
+| **V-4** | **DONE 6 Sep 2026** — `save_field_fertilizer_rates`, migration `20260906011521`. Writes rates + override atomically; computes neither the cost nor the total (§5.2a) | Rehearsed; a bad line leaves no partial rate set; stranger and `anon` refused |
 | **V-5** | Field-level entry UI: which programs run (§7.2), then rates, entered as totals (§7.1) | Rendered in a browser at 1280 px and 375 px before it is called done; a test that editing rates preserves the program list and vice versa |
 | **V-6** | Bulk grid — fields down, products across, one program at a time. **Also the import review surface** (§10) | Same. Must stand on its own, because V-7 depends on it |
 | **V-7** | **Optional** CSV import of the FieldAlytics per-field export into that grid (§10) | Parsed against the real exported file; a `--Multiple--` row refused by name, not approximated; the imported total round-trips through the shopping list exactly; nothing written until the review is committed |
