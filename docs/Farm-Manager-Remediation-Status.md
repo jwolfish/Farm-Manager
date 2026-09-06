@@ -57,10 +57,10 @@ the running app — *How to prove the fix*, at the end of that section.
 
 | Measured 6 Sep 2026 | |
 |---|---|
-| Tests | **400 passing**, 11 files (386 before R-1 added 14; 380 before V-8 added 6; 347 before V-6 added 25) |
+| Tests | **401 passing**, 11 files (386 before R-1 added 15; 380 before V-8 added 6; 347 before V-6 added 25) |
 | TypeScript | **73 errors** (103 at review, 98 before WI-19, 75 before V-8 replaced two `Json` casts with `Array.isArray` guards). Unmoved by R-1, set compared with positions stripped |
 | ESLint | **107 errors, 28 warnings** (from 136/28; 109 before V-8 deleted one `prefer-const` and one `no-explicit-any`). Unmoved by R-1 |
-| Build | succeeds — **1,790.04 kB** (477.80 kB gz; 1,787.96 before R-1 added 2.08 kB to the eager `App.tsx` path), plus lazy `FertilizerContractsTab` 25.96 kB, `BookingModal` 19.63 kB and `FieldFertilizerRateGridPanel` 19.83 kB, all three byte-identical |
+| Build | succeeds — **1,790.05 kB** (477.80 kB gz; 1,787.96 before R-1 added 2.09 kB to the eager `App.tsx` path), plus lazy `FertilizerContractsTab` 25.96 kB, `BookingModal` 19.63 kB and `FieldFertilizerRateGridPanel` 19.83 kB, all three byte-identical |
 | Migrations | **63 files**, matching the database one-for-one |
 | Edge function | **version 17**, running source confirmed identical to the repo by sha256, re-verified 6 Sep |
 | Security advisors | 14 WARN — 13 are the by-design `authenticated_security_definer_function_executable` lint that fires on every RPC, 1 is `auth_leaked_password_protection` (WI-6). No new class of finding. V-6’s internal `apply_field_fertilizer_rates` is correctly absent, being executable by neither role |
@@ -213,7 +213,7 @@ The query in *The override defect* above answers it in one shot — every row sh
 
    **One check outstanding, and it is the owner's**: open a modal on Products, force a
    token refresh, confirm the modal and its fields survive. Nothing on this machine can
-   reach `App.tsx` at runtime, so the behaviour is proven by 14 tests over the extracted
+   reach `App.tsx` at runtime, so the behaviour is proven by 15 tests over the extracted
    decision and by rendering the two indicators — not by watching a modal live through a
    refresh.
 2. **Finish WI-19.** **73** errors left (75 until V-8 replaced two `Json` casts with
@@ -2315,11 +2315,11 @@ effect; **its behaviour is deliberately unchanged**, because whether an unexpect
 should keep the page is the rest of R-4 and still wants the log.
 
 **The decision is a pure function**, `resolveAppLoadPresentation` in `lib/appLoadState.ts`,
-with **14 tests**. That is the `accumulateNeed` / `planLineDraw` pattern, and here it is
+with **15 tests**. That is the `accumulateNeed` / `planLineDraw` pattern, and here it is
 what makes the change checkable at all: `App.tsx` imports the Supabase client at module
 load, so a rule left inline in it can only ever be verified by reading on this machine.
 **Proved to be a regression guard rather than merely green** — with `hasLoadedOnce` forced
-back out of the decision, exactly the four R-1 assertions fail and the other ten pass.
+back out of the decision, exactly the four R-1 assertions fail and the other eleven pass.
 
 **Rendering found a defect for the eighth round running, and this time it was in the fix.**
 The refresh indicator started as a centred pill at `top-3`. At 375 px the header owns the
@@ -2347,7 +2347,7 @@ real modal mounted. That needs `App.tsx` against Supabase and is the owner's che
 modal on Products, force a token refresh, confirm the modal and its fields survive.
 
 **Floor:** TypeScript **73**, set byte-identical with positions stripped · ESLint
-**107 / 28** · tests 386 → **400** · build succeeds, main chunk 1,787.96 → **1,790.04 kB**
+**107 / 28** · tests 386 → **401** · build succeeds, main chunk 1,787.96 → **1,790.05 kB**
 (477.27 → 477.80 gz), the three lazy chunks byte-identical. The seasons timeout also went
 10 s → 20 s, which costs nothing now that a slow load no longer blanks the page.
 

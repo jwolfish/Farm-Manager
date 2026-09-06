@@ -108,7 +108,7 @@ The status doc is the source of truth for what is done. Update it when a round l
   doc for the full accounting; every movement is itemised there.
 - `npx eslint .` reports **107 errors, 28 warnings** (was 136/28 at review; 109 until V-8
   removed one `prefer-const` and one `no-explicit-any` from the code it rewrote).
-- `npx vite build` succeeds and emits a **1,790.04 kB** main chunk (477.80 kB gz), plus
+- `npx vite build` succeeds and emits a **1,790.05 kB** main chunk (477.80 kB gz), plus
   three lazy chunks: **25.96 kB** `FertilizerContractsTab` (7.10 gz), **19.63 kB**
   `BookingModal` (5.90 gz) — shared by the Contracts tab, the Shopping Lists tab and the
   plan calculator — and **19.83 kB** `FieldFertilizerRateGridPanel` (6.36 gz).
@@ -123,8 +123,8 @@ The status doc is the source of truth for what is done. Update it when a round l
   `FieldProgramDetails`; V-5 added **15.85 kB** for the per-field plan editor on the eager
   `FieldDetail` path; V-6 added only **1.06 kB** to the main chunk, putting its grid panel in
   a lazy chunk of its own; V-8 added **1.11 kB**; and the reload work's R-1 added
-  **2.08 kB**, which is eager because it is `App.tsx`.
-- `npm test` reports **400 passing** in 11 files (386 before R-1 added 14; 380 before V-8 added 6; 372 before
+  **2.09 kB**, which is eager because it is `App.tsx`.
+- `npm test` reports **401 passing** in 11 files (386 before R-1 added 15; 380 before V-8 added 6; 372 before
   `formatRate` added 8; 347 before V-6 added 25; 340 before V-5 added 7; 320 before V-2 added 20; 308 before V-0
   added 12; 295 before shopping-list coverage added 13).
 - There is **no CI**. Adding it is WI-21 in the PRD.

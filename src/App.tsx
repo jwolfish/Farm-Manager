@@ -285,6 +285,13 @@ function AppContent() {
   useEffect(() => {
     if (!user && wasAuthenticated.current) {
       sessionStorage.removeItem('activePage');
+      /*
+       * R-1. A sign-out ends the session that made the loaded state worth keeping, so
+       * the next sign-in is a first load again. Without this, signing back in — as
+       * anyone, including a different account — would skip the full-screen load and
+       * briefly render the PREVIOUS session's seasons behind a refresh bar.
+       */
+      setHasLoadedOnce(false);
     }
   }, [user]);
 

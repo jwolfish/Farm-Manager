@@ -431,7 +431,7 @@ about causes. R-5 and the render-phase mutation are independent defects in the s
 
 **The one decision, made pure.** Which surface a load state earns now lives in
 `src/lib/appLoadState.ts` — `resolveAppLoadPresentation({authLoading, loading, hasLoadedOnce,
-loadError})` → `{fullScreen, overlay, emptySeasonsIsConfirmed}` — with 14 tests under it.
+loadError})` → `{fullScreen, overlay, emptySeasonsIsConfirmed}` — with 15 tests under it.
 This is the `accumulateNeed` / `planLineDraw` pattern, and here it is what makes the change
 checkable at all: `App.tsx` reaches the Supabase client at module load, so a rule left
 inline in it can only ever be verified by reading, on a machine that has never had
@@ -439,7 +439,7 @@ credentials.
 
 **Proved to be a regression guard, not just green.** With `hasLoadedOnce` forced back out
 of the decision — the pre-R-1 behaviour — exactly the four R-1 assertions fail and the other
-ten pass. So the tests fail if someone reinstates the takeover.
+eleven pass. So the tests fail if someone reinstates the takeover.
 
 | | Before | After |
 |---|---|---|
@@ -486,8 +486,8 @@ force a `TOKEN_REFRESHED`, confirm the modal and its fields survive. Run it befo
 if possible, so the fix is shown to change the behaviour rather than assumed to.
 
 **Floor:** TypeScript **73**, error set byte-identical to the baseline with positions
-stripped · ESLint **107 / 28**, unchanged · tests **386 → 400** · build succeeds, main chunk
-1,787.96 → **1,790.04 kB** (477.27 → 477.80 gz), the three lazy chunks byte-identical.
+stripped · ESLint **107 / 28**, unchanged · tests **386 → 401** · build succeeds, main chunk
+1,787.96 → **1,790.05 kB** (477.27 → 477.80 gz), the three lazy chunks byte-identical.
 
 ## 6. What this is not
 

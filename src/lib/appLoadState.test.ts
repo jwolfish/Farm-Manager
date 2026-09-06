@@ -73,6 +73,16 @@ describe('resolveAppLoadPresentation — R-1, after the first render', () => {
   it('takes the screen again for a farm switch, which resets hasLoadedOnce', () => {
     expect(resolve({ hasLoadedOnce: false, loading: true }).fullScreen).toBe('loading');
   });
+
+  /*
+   * Same shape, different caller: a sign-out clears hasLoadedOnce too, so signing back
+   * in is a first load again rather than a refresh over the previous session's data.
+   */
+  it('takes the screen again after a sign-out, which also resets hasLoadedOnce', () => {
+    const r = resolve({ hasLoadedOnce: false, loading: true });
+    expect(r.fullScreen).toBe('loading');
+    expect(r.overlay).toBeNull();
+  });
 });
 
 describe('resolveAppLoadPresentation — R-5, empty seasons vs failed seasons', () => {
