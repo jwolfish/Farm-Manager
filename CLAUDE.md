@@ -129,7 +129,10 @@ The status doc is the source of truth for what is done. Update it when a round l
 - `npm test` reports **422 passing** in 12 files (401 before R-6 added 21; 386 before R-1 added 15; 380 before V-8 added 6; 372 before
   `formatRate` added 8; 347 before V-6 added 25; 340 before V-5 added 7; 320 before V-2 added 20; 308 before V-0
   added 12; 295 before shopping-list coverage added 13).
-- There is **no CI**. Adding it is WI-21 in the PRD.
+- **CI exists as of 6 Sep 2026** — `.github/workflows/ci.yml`, WI-21's core gate. It runs
+  tests, the baseline ratchet and the build on every push and PR. The scheduled
+  types-drift job and the pgTAP policy-matrix job the PRD also asks for are **not** built;
+  both need Supabase credentials in repository secrets.
 - Tests arrived with Round 3: `npm test` (Vitest). Test files are excluded from
   `tsconfig.app.json` so they do not move the 103-error baseline.
 
@@ -235,13 +238,36 @@ These are real mistakes made during this work, not hypotheticals.
 ## Verifying your own work
 
 Bolt and Claude both fail the same way here: confident, plausible, incomplete. Prefer
-checks that can return "no" over judgement:
+checks that can return "no" over judgement.
+
+**One command runs the whole floor, and CI runs the same one on every push (WI-21):**
 
 ```
-npx tsc --noEmit -p tsconfig.app.json   # must stay at 69 or drop
-npx eslint .                            # must stay at 107 errors / 28 warnings, or drop
+npm run verify
+```
+
+That is `npm test` → `npm run baselines` → `npm run build`. The middle step is the
+interesting one. `tsc` reports **69** and `eslint` **107 errors / 28 warnings** on a healthy
+tree, so CI cannot require a zero exit; `scripts/check-baselines.mjs` instead compares
+against the committed sets in `baselines/` and fails only on something **new**.
+
+- **Sets, not counts** — one error fixed and one introduced leaves the total unchanged, and
+  this document has said since Round 3 that a matching total is not evidence.
+- **Line and column are stripped**, so adding a line above an error is not a new error.
+- **Fixing something never fails the build.** It prints how many entries disappeared and
+  asks you to run `npm run baselines:update` and commit `baselines/` to lock the
+  improvement in. Do that in the same commit as the fix.
+- **Moving a baseline the wrong way is possible but must be argued.** `--update` will
+  happily record new problems; if you use it that way, say why in the commit message.
+- Tests have **no** baseline. Green is the standard.
+
+The individual commands still work when you want one of them:
+
+```
+npx tsc --noEmit -p tsconfig.app.json   # 69
+npx eslint .                            # 107 errors / 28 warnings
 npx vite build                          # must succeed
-npm test                                # must stay green
+npm test                                # 422 passing, must stay green
 ```
 
 **The Supabase CLI is installed as a dev dependency** (`supabase` 2.116.0, added 31 Aug

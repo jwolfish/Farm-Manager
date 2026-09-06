@@ -1,0 +1,62 @@
+name: CI
+
+# WI-21. Every figure in docs/Farm-Manager-Remediation-Status.md was measured by hand
+# until now, which is exactly how several of them went stale — the edge-function version
+# was wrong four times and the repo line twice. This runs the same four checks the status
+# doc calls "the floor", on every push, so nobody has to trust a sentence about them.
+
+on:
+  push:
+    branches: ['**']
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  verify:
+    name: Floor — tests, baselines, build
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      # Tests must be GREEN. Unlike tsc and eslint there is no baseline here: 422 passing
+      # and 0 failing is the standard, and a failing test is never acceptable.
+      - name: Tests
+        run: npm test
+
+      # tsc and eslint are NOT zero on a healthy tree (69 and 107/28), so this compares
+      # against committed baselines and fails only on something NEW. Sets, not counts —
+      # one error fixed and one introduced leaves the total unchanged.
+      - name: Baselines — no new type or lint problems
+        run: node scripts/check-baselines.mjs
+
+      - name: Build
+        run: npx vite build
+
+      # The bundle is PERF-1/WI-22's headline number and the one most often quoted stale.
+      # Printed rather than gated: a size ceiling would fail honest work, and the target
+      # (300 kB gz) is far below where the app actually is.
+      - name: Report bundle size
+        run: |
+          {
+            echo "### Bundle"
+            echo ''
+            echo '| Chunk | Raw | Gzip |'
+            echo '|---|---|---|'
+            for f in dist/assets/*.js; do
+              raw=$(stat -c %s "$f")
+              gz=$(gzip -c "$f" | wc -c)
+              printf '| `%s` | %s kB | %s kB |\n' \
+                "$(basename "$f")" \
+                "$(awk "BEGIN{printf \"%.2f\", $raw/1024}")" \
+                "$(awk "BEGIN{printf \"%.2f\", $gz/1024}")"
+            done
+          } >> "$GITHUB_STEP_SUMMARY"

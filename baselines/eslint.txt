@@ -1,0 +1,135 @@
+src/App.tsx | error | @typescript-eslint/no-explicit-any | Unexpected any. Specify a different type.
+src/App.tsx | error | @typescript-eslint/no-explicit-any | Unexpected any. Specify a different type.
+src/App.tsx | error | @typescript-eslint/no-unused-vars | 'forUserId' is defined but never used.
+src/App.tsx | warning | react-hooks/exhaustive-deps | React Hook useCallback has an unnecessary dependency: 'ownedFarms'. Either exclude it or remove the dependency array.
+src/App.tsx | warning | react-hooks/exhaustive-deps | React Hook useEffect has a missing dependency: 'user'. Either include it or remove the dependency array.
+src/components/CascadeUpdateModal.tsx | warning | react-hooks/exhaustive-deps | React Hook useEffect has a missing dependency: 'loadFieldsData'. Either include it or remove the dependency array.
+src/components/ChemicalPrograms.tsx | warning | react-hooks/exhaustive-deps | React Hook useEffect has missing dependencies: 'loadChemicals', 'loadPrograms', and 'user'. Either include them or remove the dependency array.
+src/components/CrossFarmCopyModal.tsx | error | @typescript-eslint/no-unused-vars | 'currentSeasonId' is defined but never used.
+src/components/FertilizerPrograms.tsx | warning | react-hooks/exhaustive-deps | React Hook useEffect has missing dependencies: 'loadProducts', 'loadPrograms', and 'user'. Either include them or remove the dependency array.
+src/components/NotificationBell.tsx | warning | react-hooks/exhaustive-deps | React Hook useEffect has a missing dependency: 'load'. Either include it or remove the dependency array.
+src/components/SeedVarietyAssignment.tsx | error | @typescript-eslint/no-unused-vars | 'acreage' is defined but never used.
+src/components/SeedVarietyAssignment.tsx | warning | react-hooks/exhaustive-deps | React Hook useEffect has a missing dependency: 'selectedFields'. Either include it or remove the dependency array.
+src/components/TemplateApplicationPreview.tsx | error | @typescript-eslint/no-explicit-any | Unexpected any. Specify a different type.
+src/components/TemplateApplicationPreview.tsx | error | @typescript-eslint/no-explicit-any | Unexpected any. Specify a different type.
+src/components/TemplateApplicationPreview.tsx | error | @typescript-eslint/no-explicit-any | Unexpected any. Specify a different type.
+src/components/TemplateApplicationPreview.tsx | error | @typescript-eslint/no-explicit-any | Unexpected any. Specify a different type.
+src/components/TemplateApplicationPreview.tsx | error | @typescript-eslint/no-explicit-any | Unexpected any. Specify a different type.
+src/components/TemplateApplicationPreview.tsx | warning | react-hooks/exhaustive-deps | React Hook useEffect has a missing dependency: 'selectedFields'. Either include it or remove the dependency array.
+src/components/TemplateSelector.tsx | error | @typescript-eslint/no-explicit-any | Unexpected any. Specify a different type.
+src/components/TemplateSelector.tsx | error | @typescript-eslint/no-explicit-any | Unexpected any. Specify a different type.
+src/components/TemplateSelector.tsx | error | @typescript-eslint/no-explicit-any | Unexpected any. Specify a different type.
+src/components/TemplateSelector.tsx | error | @typescript-eslint/no-explicit-any | Unexpected any. Specify a different type.
+src/components/TemplateSelector.tsx | warning | react-hooks/exhaustive-deps | React Hook useEffect has a missing dependency: 'loadTemplates'. Either include it or remove the dependency array.
+src/components/fields/FieldApplicationHistory.tsx | error | @typescript-eslint/no-explicit-any | Unexpected any. Specify a different type.
+src/components/fields/FieldApplicationHistory.tsx | error | @typescript-eslint/no-explicit-any | Unexpected any. Specify a different type.
+src/components/fields/FieldApplicationHistory.tsx | error | @typescript-eslint/no-explicit-any | Unexpected any. Specify a different type.
+src/components/fields/FieldApplicationHistory.tsx | error | @typescript-eslint/no-explicit-any | Unexpected any. Specify a different type.
+src/components/fields/FieldApplicationHistory.tsx | warning | react-hooks/exhaustive-deps | React Hook useEffect has a missing dependency: 'loadApplicationHistory'. Either include it or remove the dependency array.
+src/components/fields/FieldProgramDetails.tsx | error | @typescript-eslint/no-explicit-any | Unexpected any. Specify a different type.
+src/components/fields/FieldProgramDetails.tsx | error | @typescript-eslint/no-explicit-any | Unexpected any. Specify a different type.
+src/components/fields/FieldProgramDetails.tsx | warning | react-hooks/exhaustive-deps | React Hook useEffect has a missing dependency: 'loadProgramDetails'. Either include it or remove the dependency array.
+src/contexts/AuthContext.tsx | warning | react-refresh/only-export-components | Fast refresh only works when a file only exports components. Use a new file to share constants or functions between components.
+src/contexts/FarmContext.tsx | warning | react-refresh/only-export-components | Fast refresh only works when a file only exports components. Use a new file to share constants or functions between components.
+src/contexts/NotificationContext.tsx | warning | react-refresh/only-export-components | Fast refresh only works when a file only exports components. Use a new file to share constants or functions between components.
+src/contexts/NotificationContext.tsx | warning | react-refresh/only-export-components | Fast refresh only works when a file only exports components. Use a new file to share constants or functions between components.
+src/hooks/useDashboardMetrics.ts | warning | react-hooks/exhaustive-deps | React Hook useEffect has missing dependencies: 'loadAll' and 'user'. Either include them or remove the dependency array.
+src/hooks/useDashboardMetrics.ts | warning | react-hooks/exhaustive-deps | React Hook useEffect has missing dependencies: 'loadAll' and 'user'. Either include them or remove the dependency array.
+src/hooks/useReportData.ts | error | @typescript-eslint/no-explicit-any | Unexpected any. Specify a different type.
+src/hooks/useSalesTracking.ts | warning | react-hooks/exhaustive-deps | React Hook useEffect has missing dependencies: 'loadAll' and 'user'. Either include them or remove the dependency array.
+src/hooks/useSprayPlanner.ts | error | @typescript-eslint/no-explicit-any | Unexpected any. Specify a different type.
+src/hooks/useSprayPlanner.ts | error | @typescript-eslint/no-unused-expressions | Expected an assignment or function call and instead saw an expression.
+src/hooks/useSprayPlanner.ts | error | @typescript-eslint/no-unused-expressions | Expected an assignment or function call and instead saw an expression.
+src/hooks/useSprayPlanner.ts | error | @typescript-eslint/no-unused-expressions | Expected an assignment or function call and instead saw an expression.
+src/hooks/useSprayPlanner.ts | warning | react-hooks/exhaustive-deps | React Hook useEffect has a missing dependency: 'loadData'. Either include it or remove the dependency array.
+src/hooks/useSprayPlanner.ts | warning | react-hooks/exhaustive-deps | React Hook useEffect has a missing dependency: 'loadSavedWorkOrders'. Either include it or remove the dependency array.
+src/hooks/useTemplateForm.ts | error | @typescript-eslint/no-unused-expressions | Expected an assignment or function call and instead saw an expression.
+src/hooks/useTemplateForm.ts | error | @typescript-eslint/no-unused-expressions | Expected an assignment or function call and instead saw an expression.
+src/hooks/useYieldEntry.ts | warning | react-hooks/exhaustive-deps | React Hook useCallback has a missing dependency: 'user'. Either include it or remove the dependency array.
+src/hooks/useYieldEntry.ts | warning | react-hooks/exhaustive-deps | The ref value 'autosaveTimers.current' will likely have changed by the time this effect cleanup function runs. If this ref points to a node rendered by React, copy 'autosaveTimers.current' to a variable inside the effect, and use that variable in the cleanup function.
+src/lib/exports/chemicalWorkOrderPdfExport.ts | error | @typescript-eslint/no-explicit-any | Unexpected any. Specify a different type.
+src/lib/exports/savedWorkOrderAdapter.ts | error | prefer-const | 'epaMap' is never reassigned. Use 'const' instead.
+src/lib/exports/seedBagPdfExport.ts | error | @typescript-eslint/no-explicit-any | Unexpected any. Specify a different type.
+src/lib/exports/shoppingListPdfExport.ts | error | @typescript-eslint/no-explicit-any | Unexpected any. Specify a different type.
+src/lib/exports/shoppingListPdfExport.ts | error | @typescript-eslint/no-explicit-any | Unexpected any. Specify a different type.
+src/lib/exports/sprayLogPdfExport.ts | error | @typescript-eslint/no-explicit-any | Unexpected any. Specify a different type.
+src/lib/exports/sprayPlannerPdfExport.ts | error | @typescript-eslint/no-explicit-any | Unexpected any. Specify a different type.
+src/lib/seasonImport.ts | error | @typescript-eslint/no-unused-vars | '_' is defined but never used.
+src/lib/seasonImport.ts | error | @typescript-eslint/no-unused-vars | '_' is defined but never used.
+src/lib/seasonImport.ts | error | @typescript-eslint/no-unused-vars | 'index' is defined but never used.
+src/lib/seasonImport.ts | error | @typescript-eslint/no-unused-vars | 'userId' is defined but never used.
+src/lib/shoppingListGeneration.ts | error | @typescript-eslint/no-explicit-any | Unexpected any. Specify a different type.
+src/lib/shoppingListGeneration.ts | error | @typescript-eslint/no-explicit-any | Unexpected any. Specify a different type.
+src/lib/shoppingListGeneration.ts | error | @typescript-eslint/no-explicit-any | Unexpected any. Specify a different type.
+src/lib/shoppingListGeneration.ts | error | @typescript-eslint/no-explicit-any | Unexpected any. Specify a different type.
+src/lib/shoppingListGeneration.ts | error | @typescript-eslint/no-explicit-any | Unexpected any. Specify a different type.
+src/lib/shoppingListGeneration.ts | error | @typescript-eslint/no-explicit-any | Unexpected any. Specify a different type.
+src/lib/shoppingListGeneration.ts | error | @typescript-eslint/no-explicit-any | Unexpected any. Specify a different type.
+src/lib/shoppingListGeneration.ts | error | @typescript-eslint/no-explicit-any | Unexpected any. Specify a different type.
+src/lib/shoppingListGeneration.ts | error | @typescript-eslint/no-explicit-any | Unexpected any. Specify a different type.
+src/lib/shoppingListGeneration.ts | error | @typescript-eslint/no-explicit-any | Unexpected any. Specify a different type.
+src/lib/shoppingListGeneration.ts | error | @typescript-eslint/no-explicit-any | Unexpected any. Specify a different type.
+src/lib/shoppingListGeneration.ts | error | @typescript-eslint/no-explicit-any | Unexpected any. Specify a different type.
+src/lib/shoppingListGeneration.ts | error | @typescript-eslint/no-unused-vars | '_farmId' is defined but never used.
+src/lib/shoppingListGeneration.ts | error | @typescript-eslint/no-unused-vars | 'farmId' is defined but never used.
+src/lib/shoppingListGeneration.ts | error | @typescript-eslint/no-unused-vars | 'farmId' is defined but never used.
+src/lib/shoppingListGeneration.ts | error | prefer-const | 'templateMap' is never reassigned. Use 'const' instead.
+src/lib/templateLib/cascadeUpdates.ts | error | @typescript-eslint/no-unused-vars | 'taskId' is defined but never used.
+src/lib/templateLib/programCosts.ts | error | @typescript-eslint/no-explicit-any | Unexpected any. Specify a different type.
+src/lib/templateLib/programCosts.ts | error | @typescript-eslint/no-explicit-any | Unexpected any. Specify a different type.
+src/lib/templateLib/templateApplication.ts | error | @typescript-eslint/no-explicit-any | Unexpected any. Specify a different type.
+src/lib/transactionUtils.ts | error | @typescript-eslint/no-explicit-any | Unexpected any. Specify a different type.
+src/lib/workOrderCrud.ts | error | @typescript-eslint/no-explicit-any | Unexpected any. Specify a different type.
+src/lib/workOrderCrud.ts | error | @typescript-eslint/no-explicit-any | Unexpected any. Specify a different type.
+src/lib/workOrderCrud.ts | error | @typescript-eslint/no-explicit-any | Unexpected any. Specify a different type.
+src/lib/workOrderCrud.ts | error | @typescript-eslint/no-explicit-any | Unexpected any. Specify a different type.
+src/lib/workOrderCrud.ts | error | @typescript-eslint/no-explicit-any | Unexpected any. Specify a different type.
+src/lib/workOrderCrud.ts | error | no-fallthrough | Expected a 'break' statement before 'case'.
+src/pages/AccountSettings.tsx | error | @typescript-eslint/no-explicit-any | Unexpected any. Specify a different type.
+src/pages/AccountSettings.tsx | warning | react-hooks/exhaustive-deps | React Hook useEffect has missing dependencies: 'loadProfile' and 'user'. Either include them or remove the dependency array.
+src/pages/CostTemplates.tsx | error | @typescript-eslint/no-unused-vars | 'onTemplateSelect' is defined but never used.
+src/pages/CostTemplates.tsx | warning | react-hooks/exhaustive-deps | React Hook useEffect has missing dependencies: 'loadTemplates' and 'user'. Either include them or remove the dependency array.
+src/pages/FarmSettings.tsx | warning | react-hooks/exhaustive-deps | React Hook useEffect has missing dependencies: 'loadFarms' and 'user'. Either include them or remove the dependency array.
+src/pages/FieldDetail.tsx | error | @typescript-eslint/no-explicit-any | Unexpected any. Specify a different type.
+src/pages/FieldDetail.tsx | warning | react-hooks/exhaustive-deps | React Hook useEffect has a missing dependency: 'loadFieldData'. Either include it or remove the dependency array.
+src/pages/Fields.tsx | error | prefer-const | 'fieldsWithOverridesSet' is never reassigned. Use 'const' instead.
+src/pages/Products.tsx | error | @typescript-eslint/no-explicit-any | Unexpected any. Specify a different type.
+src/pages/Products.tsx | error | @typescript-eslint/no-explicit-any | Unexpected any. Specify a different type.
+src/pages/Reports.tsx | warning | react-hooks/exhaustive-deps | React Hook useEffect has a missing dependency: 'user'. Either include it or remove the dependency array.
+src/pages/Team.tsx | warning | react-hooks/exhaustive-deps | React Hook useEffect has missing dependencies: 'loadData' and 'user'. Either include them or remove the dependency array.
+src/pages/Yields.tsx | error | @typescript-eslint/no-explicit-any | Unexpected any. Specify a different type.
+src/pages/reports/chemicals/ChemicalWorkOrders.tsx | error | @typescript-eslint/no-explicit-any | Unexpected any. Specify a different type.
+src/pages/reports/chemicals/ChemicalWorkOrders.tsx | error | @typescript-eslint/no-explicit-any | Unexpected any. Specify a different type.
+src/pages/reports/chemicals/ChemicalWorkOrders.tsx | error | @typescript-eslint/no-explicit-any | Unexpected any. Specify a different type.
+src/pages/reports/chemicals/ChemicalWorkOrders.tsx | error | @typescript-eslint/no-explicit-any | Unexpected any. Specify a different type.
+src/pages/reports/chemicals/ChemicalWorkOrders.tsx | error | @typescript-eslint/no-explicit-any | Unexpected any. Specify a different type.
+src/pages/reports/chemicals/ChemicalWorkOrders.tsx | error | @typescript-eslint/no-explicit-any | Unexpected any. Specify a different type.
+src/pages/reports/chemicals/ChemicalWorkOrders.tsx | error | @typescript-eslint/no-explicit-any | Unexpected any. Specify a different type.
+src/pages/reports/chemicals/ChemicalWorkOrders.tsx | error | @typescript-eslint/no-explicit-any | Unexpected any. Specify a different type.
+src/pages/reports/chemicals/ChemicalWorkOrders.tsx | error | @typescript-eslint/no-explicit-any | Unexpected any. Specify a different type.
+src/pages/reports/costs/BreakEvenAnalysis.tsx | error | @typescript-eslint/no-explicit-any | Unexpected any. Specify a different type.
+src/pages/reports/costs/BreakEvenAnalysis.tsx | error | @typescript-eslint/no-explicit-any | Unexpected any. Specify a different type.
+src/pages/reports/costs/BreakEvenAnalysis.tsx | error | @typescript-eslint/no-explicit-any | Unexpected any. Specify a different type.
+src/pages/reports/costs/BreakEvenAnalysis.tsx | error | @typescript-eslint/no-explicit-any | Unexpected any. Specify a different type.
+src/pages/reports/costs/BreakEvenAnalysis.tsx | error | @typescript-eslint/no-explicit-any | Unexpected any. Specify a different type.
+src/pages/reports/costs/BreakEvenAnalysis.tsx | error | @typescript-eslint/no-explicit-any | Unexpected any. Specify a different type.
+src/pages/reports/costs/CostPerBushel.tsx | error | @typescript-eslint/no-explicit-any | Unexpected any. Specify a different type.
+src/pages/reports/costs/CostPerBushel.tsx | error | @typescript-eslint/no-explicit-any | Unexpected any. Specify a different type.
+src/pages/reports/costs/CostPerBushel.tsx | error | @typescript-eslint/no-explicit-any | Unexpected any. Specify a different type.
+src/pages/reports/costs/InputEfficiency.tsx | error | @typescript-eslint/no-explicit-any | Unexpected any. Specify a different type.
+src/pages/reports/field/FieldCostComparison.tsx | error | @typescript-eslint/no-explicit-any | Unexpected any. Specify a different type.
+src/pages/reports/field/FieldCostComparison.tsx | error | @typescript-eslint/no-explicit-any | Unexpected any. Specify a different type.
+src/pages/reports/field/FieldROI.tsx | error | @typescript-eslint/no-explicit-any | Unexpected any. Specify a different type.
+src/pages/reports/field/FieldYieldRanking.tsx | error | @typescript-eslint/no-explicit-any | Unexpected any. Specify a different type.
+src/pages/reports/field/FieldYieldRanking.tsx | error | @typescript-eslint/no-explicit-any | Unexpected any. Specify a different type.
+src/pages/reports/profitability/CostBreakdownComparison.tsx | error | @typescript-eslint/no-explicit-any | Unexpected any. Specify a different type.
+src/pages/reports/profitability/CostBreakdownComparison.tsx | error | @typescript-eslint/no-explicit-any | Unexpected any. Specify a different type.
+src/pages/reports/profitability/YearOverYearProfit.tsx | error | @typescript-eslint/no-explicit-any | Unexpected any. Specify a different type.
+src/pages/reports/profitability/YearOverYearProfit.tsx | error | @typescript-eslint/no-explicit-any | Unexpected any. Specify a different type.
+src/pages/reports/sales/BuyerBreakdown.tsx | error | @typescript-eslint/no-explicit-any | Unexpected any. Specify a different type.
+src/pages/reports/sales/BuyerBreakdown.tsx | error | @typescript-eslint/no-explicit-any | Unexpected any. Specify a different type.
+src/pages/reports/sales/BuyerBreakdown.tsx | error | @typescript-eslint/no-explicit-any | Unexpected any. Specify a different type.
+src/pages/reports/sales/BuyerBreakdown.tsx | error | @typescript-eslint/no-explicit-any | Unexpected any. Specify a different type.
+src/pages/reports/sales/SalesByMonth.tsx | error | @typescript-eslint/no-explicit-any | Unexpected any. Specify a different type.
+src/pages/reports/sales/SalesByMonth.tsx | error | @typescript-eslint/no-explicit-any | Unexpected any. Specify a different type.
+src/pages/reports/seeds/SeedBagRequirements.tsx | error | @typescript-eslint/no-explicit-any | Unexpected any. Specify a different type.

@@ -272,8 +272,11 @@ The query in *The override defect* above answers it in one shot — every row sh
    WI-22's ≤ 300 kB target, and rising — R-1 and R-6 each added to the eager path because
    `App.tsx` and `main.tsx` are the eager path. This is also the real prerequisite for the
    mobile ambition, not responsive CSS.
-5. **WI-21, CI.** There is still none. Every figure in the table above was measured by hand
-   this session, which is exactly how they went stale.
+5. **WI-21, CI — the core gate is DONE (6 Sep).** `.github/workflows/ci.yml` runs tests, a
+   baseline ratchet and the build on every push and PR; `npm run verify` is the same thing
+   locally. **Still to do**, both needing Supabase credentials in repository secrets: the
+   scheduled `database.types.ts` drift check, and a job that applies migrations to a
+   scratch database and runs the SEC-5 matrix.
 
 **Two loose ends deliberately left:** set the `ALLOWED_ORIGIN` secret when there is a
 stable production URL, and exercise the `viewer` role in the app (`team_members` still has
@@ -2651,11 +2654,40 @@ PERF-4's O(n²) on-hand trigger now matters more than it did, since Round 4 rout
 work-order and purchase write through it. Note the reload diagnosis's point: this, not
 responsive CSS, is the real prerequisite for calling the app mobile-ready.
 
-### 4. WI-21 — CI
+### 4. WI-21 — CI — **core gate DONE 6 Sep 2026**
 
-Still none. Every figure in this document was measured by hand, which is precisely how the
+Every figure in this document was measured by hand until now, which is precisely how the
 figures that were wrong at the top of this file got that way, and how a 9-row table came to
 be recorded as empty.
+
+`.github/workflows/ci.yml` runs on every push and pull request: `npm ci` → `npm test` →
+`node scripts/check-baselines.mjs` → `npx vite build`, then writes a per-chunk bundle table
+to the run summary. `npm run verify` is the same sequence locally.
+
+**The design decision worth keeping.** `tsc` reports 69 and `eslint` 107/28 on a healthy
+tree, so requiring a zero exit would have meant a permanently red build, which is the same
+as no CI. The gate is a **ratchet** instead: `baselines/tsc.txt` and `baselines/eslint.txt`
+hold the known set, and the run fails only on an entry that is not in them.
+
+- **Sets, not counts.** This document has said since Round 3 that a matching total is not
+  evidence — one fixed and one introduced nets to zero. The script compares multisets, so
+  five identical `no-unused-expressions` in one file stay five.
+- **Positions stripped**, so inserting a line above an existing error is not a new error.
+  That is the same normalisation every manual comparison in this document has used.
+- **Fixing something never fails the build.** It reports what disappeared and asks for
+  `npm run baselines:update`, committed alongside the fix.
+- **Tests have no baseline.** Green is the standard; a baseline for failing tests would be
+  the WI-15 lie in a new place.
+
+**Proved to fail, not merely to pass.** A deliberate `const x: number = "string"` and an
+`any` were added to `mathUtils.ts`; the gate named both, one per tool, and exited 1. It
+exits 0 on the restored tree. A check that has never returned "no" is worth nothing here —
+the same reasoning the RLS work applies to policies.
+
+**Not built, and both need repository secrets:** the PRD also asks for a scheduled job
+regenerating `database.types.ts` and failing on drift, and a job that applies migrations to
+a scratch database and runs the SEC-5 policy matrix. Neither can run without Supabase
+credentials, so they are deliberately left rather than half-wired.
 
 ### Deliberately deferred, with reasons
 
@@ -2691,7 +2723,7 @@ All figures below are measured, not estimated.
 | TypeScript errors | 103 | 103 (identical set) | 99 | 98 | 76 | 75 | **69** |
 | ESLint | 136 errors, 28 warnings | 134 / 28 | 134 / 28 | 134 / 28 | 109 / 28 | 109 / 28 | **107 / 28** |
 | Tests | 0 | 178 passing, 4 files | 206 passing, 5 files | 206 passing, 5 files | 206 passing, 5 files | 282 passing, 7 files | **422 passing, 12 files** |
-| CI | none | none | none | none | none | none | **none — still WI-21** |
+| CI | none | none | none | none | none | none | **GitHub Actions on every push — tests, baseline ratchet, build** |
 | Main JS chunk | 1,747 kB (465 kB gz) | 1,754.43 kB (467.56 kB gz) | 1,751.97 kB (467.39 kB gz) | 1,751.96 kB (467.50 kB gz) | 1,751.91 kB (467.46 kB gz) | 1,760.80 kB (470.25 gz) | **1,794.82 kB (479.30 kB gz)** |
 | Lazy chunks | — | — | — | — | — | `FertilizerContractsTab` 25.96, `BookingModal` 20.02 | **those two plus `FieldFertilizerRateGridPanel` 19.83 kB (6.36 gz)** |
 | Migrations | 40 files | 43 | 46 | 52 | 52 | 58 | **63, diffed against the database one-for-one** |
