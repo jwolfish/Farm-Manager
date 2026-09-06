@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Sprout, Beaker, FlaskConical, Loader2, Pencil } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
+import { formatRate } from '../../lib/mathUtils';
 import {
   resolveFieldFertilizerItems,
   type FertilizerProductMeta,
@@ -449,7 +450,7 @@ export function FieldProgramDetails({
                             <tr key={idx} className="text-gray-700">
                               <td className="py-0.5">{item.product_name}</td>
                               <td className="py-0.5 text-right whitespace-nowrap">
-                                {item.application_rate} {item.application_rate_unit}/ac
+                                {formatRate(Number(item.application_rate))} {item.application_rate_unit}/ac
                               </td>
                               <td className="py-0.5 text-right whitespace-nowrap">
                                 ${Number(item.price_per_unit).toFixed(2)}/{item.unit_type}
@@ -520,7 +521,7 @@ export function FieldProgramDetails({
                             <tr key={idx} className="text-gray-700">
                               <td className="py-0.5">{item.chemical_name}</td>
                               <td className="py-0.5 text-right whitespace-nowrap">
-                                {item.application_rate} {item.application_rate_unit}/ac
+                                {formatRate(Number(item.application_rate))} {item.application_rate_unit}/ac
                               </td>
                               <td className="py-0.5 text-right whitespace-nowrap">
                                 ${Number(item.price_per_unit).toFixed(2)}/{item.unit_type}

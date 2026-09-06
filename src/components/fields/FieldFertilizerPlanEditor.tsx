@@ -79,6 +79,15 @@ function toDraftRow(row: PlanEditorRow, acreage: number): DraftRow {
   return {
     product: row.product,
     rateUnit: row.rateUnit,
+    /*
+     * DO NOT shorten this to `formatRate`, however untidy 57.1429 looks beside the V-6
+     * grid's 57.14. `handleSave` below emits `parseNumberField(r.rateText)` — the text in
+     * the box IS what gets stored — so rounding the display here rounds the stored rate
+     * every time the plan is re-saved, whether or not this row was touched.
+     *
+     * The grid can shorten its display because it saves the exact `cell.rate` it holds in
+     * state and never re-reads the box. The asymmetry is deliberate.
+     */
     rateText: fmt(row.rate, 4),
     totalText: total.ok ? fmt(total.value, 3) : '',
     issue: total.ok ? null : total.issue,

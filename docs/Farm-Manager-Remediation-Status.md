@@ -36,10 +36,10 @@ the running app — *How to prove the fix*, at the end of that section.
 
 | Measured 6 Sep 2026 | |
 |---|---|
-| Tests | **372 passing**, 9 files (347 before V-6 added 25) |
+| Tests | **380 passing**, 10 files (347 before V-6 added 25, then 8 on `formatRate`) |
 | TypeScript | **75 errors** (103 at review, 98 before WI-19) |
 | ESLint | **109 errors, 28 warnings** (from 136/28) |
-| Build | succeeds — **1,786.66 kB** (476.95 kB gz), plus lazy `FertilizerContractsTab` 25.96 kB, `BookingModal` 20.07 kB and `FieldFertilizerRateGridPanel` 19.82 kB |
+| Build | succeeds — **1,786.85 kB** (477.04 kB gz), plus lazy `FertilizerContractsTab` 25.96 kB, `BookingModal` 20.07 kB and `FieldFertilizerRateGridPanel` 19.82 kB |
 | Migrations | **63 files**, matching the database one-for-one |
 | Edge function | **version 16**, deployed source confirmed identical to the repo by sha256 (5 Sep) |
 | Security advisors | 14 WARN — 13 are the by-design `authenticated_security_definer_function_executable` lint that fires on every RPC, 1 is `auth_leaked_password_protection` (WI-6). No new class of finding. V-6’s internal `apply_field_fertilizer_rates` is correctly absent, being executable by neither role |
@@ -2067,6 +2067,63 @@ machine has no Supabase credentials and production still holds **0 rate rows**. 
 trip — save a grid, reload, see the same numbers, watch the field costs move — is the
 outstanding check, and it is the one that found both V-5 defects.
 
+
+
+### V-6 confirmed end to end, and the decimal places — 6 Sep 2026
+
+**The first per-field rate written against real data, and every figure reconciles.** The
+owner set Prairie Stream 2's *Prairie Stream P & K* pass to **2 tons of Rhizosorb P**. What
+landed, checked in SQL independently of the client:
+
+| | |
+|---|---|
+| `field_fertilizer_rates` | Rhizosorb **57.142857142857146 lb/ac** — 2 ton ÷ 70 ac, exactly — and **Potash 75 lb/ac**, carried over untouched |
+| The pass's cost | 0.0285714 t × $1399 + 0.0375 t × $450 + $4 = **$60.846428571** |
+| The override array | that figure, in the P&K entry, siblings preserved at 39.4625 / 82.75 / 53.9 |
+| `total_cost_per_acre` | 653.94 − 224.97 + 236.958929 = **665.93**, which is what is stored |
+
+**The controls are what make it evidence.** Potash was *not* touched and is still 75 lb/ac,
+so replace-wholly kept the sibling product rather than dropping it. The program itself is
+still 40 lb/ac of Rhizosorb, so nothing leaked back into the shared program. Prairie Stream1
+sits on the same template at **$653.94** and did not move. And the delta is exactly right:
+the program's own P&K is $48.855/ac, the field's is $60.846, and the field total rose by
+**$11.99** — the same number, to the cent.
+
+That closes the check V-6 shipped without: `loadRateGridContext` and `saveRateGrid` had
+never run, and now the whole chain — grid → bulk RPC → rates + override → recalculated
+total — has been observed working on real data. It is also the first time
+`field_fertilizer_rates` has held a row in production.
+
+**And it produced the reason a rate is stored rather than a total.** 57.142857142857146 is
+the honest value; §7.1 stores it precisely so the prescription survives a re-measured field.
+
+**The owner's report: too many decimal places in the Field display.** New pure `formatRate`
+in `mathUtils.ts` — two decimal places, trailing zeros dropped so 75 stays `75` — used by
+both rate tables in `FieldProgramDetails`. 8 tests.
+
+**The guard is the point.** A rate below 0.005 would round to `0`, and `0` reads as *none of
+this product on this field* — a different statement entirely, and the exact class of
+plausible-wrong number this remediation keeps deleting. When two places would erase a
+non-zero rate, `formatRate` keeps enough significant digits to show it is not zero.
+
+**Where it may and may not be used, which is not symmetric:**
+
+| | |
+|---|---|
+| `FieldProgramDetails` | Pure display. Safe |
+| The V-6 grid's Rate/acre box | Safe — the grid saves `cell.rate`, the exact number held in state, and never re-reads the box. Confirmed on screen: the rate reads **57.14** while $/acre stays **$60.85**, which is the figure from 57.142857; rounding the value would have given $60.84 |
+| The V-5 single-field editor | **NOT safe, and left at 4 dp.** Its `handleSave` emits `parseNumberField(rateText)` — the text in the box *is* what gets stored — so shortening the display there would round the stored rate on every re-save, touched row or not |
+
+Both files now carry a comment saying so, because 57.1429 sitting beside the grid's 57.14
+looks exactly like an inconsistency somebody should tidy up.
+
+**Not rendered: `FieldProgramDetails` itself.** It imports the Supabase client at module
+load, so it throws on a machine with no credentials — the same reason F-4b had to split
+components before anything in this feature could be looked at. The change there is a
+one-line substitution covered by `formatRate`'s tests; the grid's half was rendered.
+
+**Floor:** TypeScript 75 (identical set), ESLint 109/28, tests 372 → **380**, build
+1,786.66 → **1,786.85 kB**. No migration.
 
 ## Open items and standing notes
 

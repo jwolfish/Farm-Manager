@@ -85,6 +85,11 @@ already cost defects:
   (`apply_field_fertilizer_rates`, executable by neither role). Do not fork it.
 - **A field with no `field_costs` row cannot be given rates.** Applying a cost template
   calls `deleteAllOverrides`, which clears rates too, so they would be destroyed later.
+- **`formatRate` is for display and the V-6 grid only — never the V-5 editor.** A derived
+  rate is long on purpose (2 ton over 70 ac is 57.142857142857146 lb/ac). The grid saves the
+  exact number it holds in state, so it may show `57.14`; the editor saves whatever its box
+  *says*, so shortening its display would round the stored rate on every re-save. The two
+  looking inconsistent is the correct state.
 
 @docs/Field-Level-Fertilizer-Rates-Design.md
 
@@ -98,7 +103,7 @@ The status doc is the source of truth for what is done. Update it when a round l
   before the unused-symbol sweep brought it to 76. See the WI-19 section of the status
   doc for the full accounting; every movement is itemised there.
 - `npx eslint .` reports **109 errors, 28 warnings** (was 136/28 at review).
-- `npx vite build` succeeds and emits a **1,786.66 kB** main chunk (476.95 kB gz), plus two
+- `npx vite build` succeeds and emits a **1,786.85 kB** main chunk (477.04 kB gz), plus two
   lazy fertilizer chunks: **25.96 kB** `FertilizerContractsTab` (7.10 gz) and **20.07 kB**
   `BookingModal` (6.03 gz), the latter shared by the Contracts tab, the Shopping Lists tab
   and the plan calculator. It was 1,751.91 kB before fertilizer F-1, which added 2.38 kB for
@@ -111,9 +116,9 @@ The status doc is the source of truth for what is done. Update it when a round l
   `FieldProgramDetails`; V-5 added **15.85 kB** for the per-field plan editor on the eager
   `FieldDetail` path; and V-6 added only **1.06 kB** to the main chunk plus a third lazy
   chunk, **19.82 kB** `FieldFertilizerRateGridPanel` (6.35 gz).
-- `npm test` reports **372 passing** in 9 files (347 before V-6 added 25; 340 before V-5
-  added 7; 320 before V-2 added 20; 308 before V-0 added 12; 295 before shopping-list
-  coverage added 13).
+- `npm test` reports **380 passing** in 10 files (372 before `formatRate` added 8; 347
+  before V-6 added 25; 340 before V-5 added 7; 320 before V-2 added 20; 308 before V-0
+  added 12; 295 before shopping-list coverage added 13).
 - There is **no CI**. Adding it is WI-21 in the PRD.
 - Tests arrived with Round 3: `npm test` (Vitest). Test files are excluded from
   `tsconfig.app.json` so they do not move the 103-error baseline.

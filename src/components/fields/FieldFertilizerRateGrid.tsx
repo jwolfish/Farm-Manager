@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { AlertTriangle, Loader2, Lock, RotateCcw } from 'lucide-react';
-import { parseNumberField } from '../../lib/mathUtils';
+import { formatRate, parseNumberField } from '../../lib/mathUtils';
 import {
   fieldTotalFromRate,
   rateFromFieldTotal,
@@ -86,7 +86,17 @@ function cellText(
   mode: EntryMode
 ): { text: string; issue: string | null } {
   if (rate === null) return { text: '', issue: null };
-  if (mode === 'rate') return { text: fmt(rate, 4), issue: null };
+  /*
+   * Safe to shorten here, and only here. This grid saves `cell.rate` — the exact stored
+   * number — not the text in the box, so a rounded display never reaches the database. An
+   * untouched cell keeps 57.142857142857146 while showing 57.14; a touched one is being
+   * retyped anyway.
+   *
+   * The V-5 single-field editor is the opposite and must NOT be "made consistent" with
+   * this: its save parses the box's text, so shortening the display there would round the
+   * stored rate on every re-save.
+   */
+  if (mode === 'rate') return { text: formatRate(rate), issue: null };
   const total = fieldTotalFromRate(rate, rateUnit, product.unitType, acreage, product.density);
   return total.ok ? { text: fmt(total.value, 3), issue: null } : { text: '', issue: total.issue };
 }
