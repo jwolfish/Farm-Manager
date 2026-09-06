@@ -27,7 +27,7 @@ export function SalesTracking({ seasonId }: SalesTrackingProps) {
 
   if (!seasonId) {
     return (
-      <div className="p-8">
+      <div className="p-4 sm:p-8">
         <div className="bg-blue-50 border border-blue-200 rounded-lg p-6 text-center">
           <p className="text-blue-800 font-medium">Please create or select a season to get started</p>
         </div>
@@ -44,7 +44,7 @@ export function SalesTracking({ seasonId }: SalesTrackingProps) {
   }
 
   return (
-    <div className="p-8 space-y-6">
+    <div className="p-4 sm:p-8 space-y-6">
       <div className="flex items-center gap-3">
         {activeTab === 'sales' ? (
           <TrendingUp className="w-7 h-7 text-green-600" />

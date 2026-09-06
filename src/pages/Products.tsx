@@ -167,7 +167,7 @@ export function Products({ seasonId, readOnly = false }: ProductsProps) {
 
   if (!seasonId) {
     return (
-      <div className="p-8">
+      <div className="p-4 sm:p-8">
         <div className="bg-blue-50 border border-blue-200 rounded-lg p-6 text-center">
           <p className="text-blue-800 font-medium">Please create or select a season to manage products</p>
         </div>
@@ -176,19 +176,36 @@ export function Products({ seasonId, readOnly = false }: ProductsProps) {
   }
 
   return (
-    <div className="p-8">
+    <div className="p-4 sm:p-8">
       <div className="mb-8">
         <h1 className="text-3xl font-bold text-gray-900">Products, Contracts, and Shopping Lists</h1>
       </div>
 
-      <div className="mb-6 flex items-center gap-2 border-b border-gray-200">
+      {/*
+       * MOB-2. Six tabs with icons and full labels are about 1,000 px of row. In a plain
+       * flex container with no overflow that made the WHOLE PAGE scroll sideways to reach
+       * Fertilizer Contracts — reported by the owner from a phone, and the reason the page
+       * felt broken rather than merely cramped.
+       *
+       * The strip scrolls inside itself now, which is the normal answer for tabs. It
+       * depends on the buttons refusing to shrink — otherwise flex compresses six tabs
+       * into 358 px instead of overflowing, and every label wraps to three lines.
+       *
+       * That refusal is `md:`-scoped, and the reason is a desktop regression this nearly
+       * shipped with. The strip wants 1,044 px and a 1280 px window gives it 960, so
+       * pinning the buttons at their natural width would have made the DESKTOP strip
+       * scroll too — where today the labels simply wrap and all six stay visible. Below
+       * `md:` they hold their width and the strip scrolls; from `md:` up they shrink
+       * exactly as they always have.
+       */}
+      <div className="mb-6 flex items-center gap-2 border-b border-gray-200 overflow-x-auto">
         {tabs.map((tab) => {
           const Icon = tab.icon;
           return (
             <button
               key={tab.id}
               onClick={() => { setActiveTab(tab.id); setShowForm(false); }}
-              className={`flex items-center gap-2 px-4 py-3 font-medium border-b-2 transition-colors ${
+              className={`flex flex-shrink-0 md:flex-shrink items-center gap-2 whitespace-nowrap md:whitespace-normal px-4 py-3 font-medium border-b-2 transition-colors ${
                 activeTab === tab.id
                   ? 'border-green-600 text-green-600'
                   : 'border-transparent text-gray-600 hover:text-gray-900'

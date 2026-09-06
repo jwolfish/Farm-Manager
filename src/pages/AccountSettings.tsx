@@ -59,14 +59,14 @@ export function AccountSettings() {
 
   if (loading) {
     return (
-      <div className="p-8 flex items-center justify-center min-h-64">
+      <div className="p-4 sm:p-8 flex items-center justify-center min-h-64">
         <div className="text-gray-500">Loading...</div>
       </div>
     );
   }
 
   return (
-    <div className="p-8 max-w-2xl">
+    <div className="p-4 sm:p-8 max-w-2xl">
       <div className="mb-8">
         <h1 className="text-2xl font-bold text-gray-900">Account Settings</h1>
         <p className="text-gray-500 mt-1">Manage your personal account information</p>

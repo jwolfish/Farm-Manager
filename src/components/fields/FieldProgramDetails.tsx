@@ -429,7 +429,7 @@ export function FieldProgramDetails({
                     <span className="text-sm text-gray-600">${prog.cost_per_acre.toFixed(2)}/acre</span>
                   </div>
                   {prog.items.length > 0 && (
-                    <div className="bg-gray-50 rounded px-3 py-2">
+                    <div className="bg-gray-50 rounded px-3 py-2 overflow-x-auto">
                       <table className="w-full text-sm">
                         <thead>
                           <tr className="text-gray-500 text-xs">
@@ -507,7 +507,7 @@ export function FieldProgramDetails({
                     <span className="text-sm text-gray-600">${prog.cost_per_acre.toFixed(2)}/acre</span>
                   </div>
                   {prog.items.length > 0 && (
-                    <div className="bg-gray-50 rounded px-3 py-2">
+                    <div className="bg-gray-50 rounded px-3 py-2 overflow-x-auto">
                       <table className="w-full text-sm">
                         <thead>
                           <tr className="text-gray-500 text-xs">

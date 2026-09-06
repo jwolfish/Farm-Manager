@@ -150,7 +150,7 @@ export function FieldApplicationHistory({ fieldId }: FieldApplicationHistoryProp
               </div>
 
               {wo.lines.length > 0 && (
-                <div className="mt-2 bg-gray-50 rounded-md px-3 py-2">
+                <div className="mt-2 bg-gray-50 rounded-md px-3 py-2 overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead>
                       <tr className="text-gray-500 text-xs">

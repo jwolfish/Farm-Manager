@@ -335,7 +335,7 @@ export function Fields({ seasonId, onViewFieldDetail }: FieldsProps) {
 
   if (!seasonId) {
     return (
-      <div className="p-8">
+      <div className="p-4 sm:p-8">
         <div className="bg-blue-50 border border-blue-200 rounded-lg p-6 text-center">
           <p className="text-blue-800 font-medium">Please create or select a season to manage fields</p>
         </div>
@@ -344,7 +344,7 @@ export function Fields({ seasonId, onViewFieldDetail }: FieldsProps) {
   }
 
   return (
-    <div className="p-8">
+    <div className="p-4 sm:p-8">
       <div className="mb-8 flex items-center justify-between">
         <div>
           <h1 className="text-3xl font-bold text-gray-900">Fields</h1>

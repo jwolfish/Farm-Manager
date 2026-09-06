@@ -392,7 +392,7 @@ export function WorkOrderEditModal({
 
             {/* Totals preview */}
             {draft.chemicals.length > 0 && (
-              <div className="mt-3 bg-gray-50 rounded-xl px-4 py-3">
+              <div className="mt-3 bg-gray-50 rounded-xl px-4 py-3 overflow-x-auto">
                 <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-2">
                   Totals Preview — {fmtAcres(previewAcres)} ac
                 </p>

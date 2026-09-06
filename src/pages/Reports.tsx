@@ -121,7 +121,7 @@ export function Reports({ currentSeasonId }: ReportsProps) {
 
   if (activeCategory && activecat) {
     return (
-      <div className="p-8">
+      <div className="p-4 sm:p-8">
         <div className="mb-6">
           <button
             onClick={() => setActiveCategory(null)}
@@ -162,7 +162,7 @@ export function Reports({ currentSeasonId }: ReportsProps) {
   }
 
   return (
-    <div className="p-8">
+    <div className="p-4 sm:p-8">
       <div className="mb-8">
         <h1 className="text-2xl font-bold text-gray-900">Reports</h1>
         {farmName && <p className="text-sm text-green-600 font-medium mt-0.5">{farmName}</p>}

@@ -111,7 +111,7 @@ export function SprayPlanner({ currentSeasonId, effectiveUserId, farmId }: Props
 
   if (!currentSeasonId) {
     return (
-      <div className="p-8 text-center text-gray-400">
+      <div className="p-4 sm:p-8 text-center text-gray-400">
         <Droplets className="w-12 h-12 mx-auto mb-3 opacity-20" />
         <p>No active season selected.</p>
       </div>
@@ -120,7 +120,7 @@ export function SprayPlanner({ currentSeasonId, effectiveUserId, farmId }: Props
 
   if (loading) {
     return (
-      <div className="p-8 space-y-4">
+      <div className="p-4 sm:p-8 space-y-4">
         {[1, 2].map((i) => (
           <div key={i} className="bg-white rounded-xl border border-gray-200 p-6 animate-pulse">
             <div className="h-4 bg-gray-200 rounded w-40 mb-4" />
@@ -135,14 +135,14 @@ export function SprayPlanner({ currentSeasonId, effectiveUserId, farmId }: Props
 
   if (error) {
     return (
-      <div className="p-8">
+      <div className="p-4 sm:p-8">
         <div className="bg-red-50 border border-red-200 rounded-xl p-6 text-red-700">{error}</div>
       </div>
     );
   }
 
   return (
-    <div className="p-6 max-w-5xl mx-auto space-y-6">
+    <div className="p-4 sm:p-6 max-w-5xl mx-auto space-y-6">
       {/* Apply/unapply failures — inventory was not changed */}
       {actionError && (
         <div className="flex items-start gap-3 bg-red-50 border border-red-200 rounded-xl px-4 py-3 text-sm text-red-800">
@@ -579,7 +579,8 @@ export function SprayPlanner({ currentSeasonId, effectiveUserId, farmId }: Props
                     </p>
                   </div>
 
-                  <table className="w-full text-sm">
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
                     <thead>
                       <tr className="border-b border-gray-100">
                         <th className="text-left py-2 font-semibold text-gray-600 text-xs">Chemical</th>
@@ -616,6 +617,7 @@ export function SprayPlanner({ currentSeasonId, effectiveUserId, farmId }: Props
                       })}
                     </tbody>
                   </table>
+                  </div>
                 </div>
 
                 {wo.fields.length > 1 && (
@@ -636,7 +638,8 @@ export function SprayPlanner({ currentSeasonId, effectiveUserId, farmId }: Props
                               {fe.fieldName}{' '}
                               <span className="font-normal text-gray-400">({fmtAcres(fe.acreage)} ac)</span>
                             </p>
-                            <table className="w-full text-xs">
+                            <div className="overflow-x-auto">
+                              <table className="w-full text-xs">
                               <tbody>
                                 {fe.chemicals.map((ch) => (
                                   <tr key={ch.chemicalId} className="border-b border-gray-100 last:border-0">
@@ -649,6 +652,7 @@ export function SprayPlanner({ currentSeasonId, effectiveUserId, farmId }: Props
                                 ))}
                               </tbody>
                             </table>
+                            </div>
                           </div>
                         ))}
                       </div>

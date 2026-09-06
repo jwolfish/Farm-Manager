@@ -248,7 +248,7 @@ export function SeedsTab({ seeds, seasonId, onReload, showForm, onHideForm, read
           <p className="text-gray-600">Add your first seed variety to get started</p>
         </div>
       ) : (
-        <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+        <div className="bg-white rounded-xl shadow-sm border border-gray-200 overflow-x-auto">
           <table className="w-full">
             <thead className="bg-gray-50 border-b border-gray-200">
               <tr>
