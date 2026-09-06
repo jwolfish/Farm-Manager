@@ -2117,10 +2117,15 @@ non-zero rate, `formatRate` keeps enough significant digits to show it is not ze
 Both files now carry a comment saying so, because 57.1429 sitting beside the grid's 57.14
 looks exactly like an inconsistency somebody should tidy up.
 
-**Not rendered: `FieldProgramDetails` itself.** It imports the Supabase client at module
-load, so it throws on a machine with no credentials — the same reason F-4b had to split
-components before anything in this feature could be looked at. The change there is a
-one-line substitution covered by `formatRate`'s tests; the grid's half was rendered.
+**`FieldProgramDetails` could not be rendered here — CONFIRMED BY THE OWNER instead.** It
+imports the Supabase client at module load, so it throws on a machine with no credentials —
+the same reason F-4b had to split components before anything in this feature could be
+looked at. The grid's half was rendered; the field page's half was checked in the running
+app and reads the shortened rate. Both halves of the change are now seen working.
+
+That leaves **nothing outstanding on V-6**: the arithmetic has tests, the RPC was attacked
+in a rehearsal, the grid was rendered, the save was proven against real data, and the
+display was confirmed on screen.
 
 **Floor:** TypeScript 75 (identical set), ESLint 109/28, tests 372 → **380**, build
 1,786.66 → **1,786.85 kB**. No migration.
