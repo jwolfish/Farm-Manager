@@ -41,6 +41,9 @@ like a drifted deploy and is not. Compare with `diff --strip-trailing-cr`, and h
 local file through `tr -d '\r'`. The same thing makes a regenerated `database.types.ts`
 look wholly rewritten.)*
 **Supabase project:** `wvccxjakqwqfmyewclue` (bolt-native-database-63401892)
+**Before starting mobile:** `Farm-Manager-Pre-Mobile-Readiness.md` — what is left across the
+whole PRD, measured against the tree rather than against this document, and which two items
+actually gate a mobile effort (WI-22 and WI-29; nothing else does).
 **Companion docs:** `Farm-Manager-Code-Review-Summary.md`,
 `Farm-Manager-Remediation-PRD.md`, `Farm-Manager-Random-Reload-Diagnosis.md`,
 `Fertilizer-Contract-Tracking-Design.md`, `Field-Level-Fertilizer-Rates-Design.md`,
