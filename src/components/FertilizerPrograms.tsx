@@ -134,7 +134,7 @@ export function FertilizerPrograms({ seasonId }: FertilizerProgramsProps) {
   const addProgramItem = () => {
     setProgramItems([
       ...programItems,
-      { fertilizer_product_id: '', application_rate: 0, application_rate_unit: 'gallon' },
+      { fertilizer_product_id: '', application_rate: 0, application_rate_unit: 'pound' },
     ]);
   };
 

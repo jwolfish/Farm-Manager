@@ -177,8 +177,7 @@ export function Products({ seasonId, readOnly = false }: ProductsProps) {
   return (
     <div className="p-8">
       <div className="mb-8">
-        <h1 className="text-3xl font-bold text-gray-900">Product Master Lists</h1>
-        <p className="text-gray-600 mt-2">Manage your reusable product libraries</p>
+        <h1 className="text-3xl font-bold text-gray-900">Products, Contracts, and Shopping Lists</h1>
       </div>
 
       <div className="mb-6 flex items-center gap-2 border-b border-gray-200">
