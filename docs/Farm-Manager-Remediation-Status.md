@@ -4,12 +4,14 @@
 complete, shopping-list coverage complete, and **field-level fertilizer rates V-0 … V-6 and
 V-8 complete, confirmed in the running app**. Only V-7, the optional CSV import, remains,
 and it is **deferred by the owner's decision** until the grid has been used for a season.
-**The random reload is acted on at last: R-1, R-5, R-4 item 2 and R-6 landed 6 Sep** — the
-full-screen amplifier is gone, a failed seasons load no longer reads as an empty farm, and
-the render-phase mutation is in an effect. R-2, R-3, the rest of R-4 and R-7 still wait on
-an auth-diagnostics dump the owner has not been able to catch. **R-6 needed no dump and
-landed the same day** — the app has error boundaries at last, so a render crash degrades one
-region instead of blanking everything.
+**The random reload is acted on at last: R-1, R-5, R-4 item 2 and R-6 all landed 6 Sep** —
+the full-screen amplifier is gone, a failed seasons load no longer reads as an empty farm,
+the render-phase mutation is in an effect, and the app has error boundaries at last, so a
+render crash degrades one region instead of blanking everything. Those four are exactly the
+items that needed no auth-diagnostics dump; R-2, R-3, the rest of R-4 and R-7 do, and the
+owner has not been able to catch one. **WI-19 also moved**: all 73 TypeScript errors were
+read for defects, none was a third `fetchSharedFarms`, and four cast guards were taken
+(73 → **69**).
 **Repo:** `jwolfish/Farm-Manager` — everything through the reload work R-1 / R-5 / R-4 item 2
 / R-6 is merged on `main` and pushed to origin. The seven older branches still exist locally
 and are all 0 commits ahead.
@@ -48,20 +50,37 @@ look wholly rewritten.)*
 
 ## Start here
 
-**Rounds 1–6 (steps 1–3), fertilizer F-1 … F-6, shopping-list coverage, and field-level
-fertilizer rates V-0 … V-6 and V-8 are complete, merged and pushed.** Every migration is
-applied to the live database. Nothing is half-finished and nothing is waiting to be merged.
+**Rounds 1–6 (steps 1–3), fertilizer F-1 … F-6, shopping-list coverage, field-level
+fertilizer rates V-0 … V-6 and V-8, and the reload work R-1 / R-5 / R-4 item 2 / R-6 are
+complete, merged and pushed.** Every migration is applied to the live database. Nothing is
+half-finished and nothing is waiting to be merged.
 
-**The two open threads are both pre-existing, and neither is a feature.** The random reload
-is diagnosed and untouched; WI-19, performance and CI are where the remaining value is. The
-one *feature* step outstanding — V-7, the CSV import — is deferred by the owner's decision,
-not blocked: the V-6 grid it would feed is built, and whether the import is worth building
-depends on how the grid feels after a season of real entry.
+**The random reload is no longer untouched — that sentence stood here until today and is
+now wrong.** Three whole items and one half have landed, and they are precisely the ones
+that did not need the auth-diagnostics dump: the full-screen amplifier is gone (R-1), a
+failed seasons
+load no longer reads as an empty farm (R-5), the render-phase mutation is in an effect
+(R-4 item 2), and the app has error boundaries at last (R-6). **What remains — R-2, R-3,
+the rest of R-4, R-7 — is genuinely blocked on a dump the owner has not been able to
+catch**, not merely unstarted. That is a real change in the shape of this thread: it used
+to be "nobody has started"; it is now "the log is the bottleneck."
 
-**A live money defect was found and fixed on 31 Aug — see *The override defect* below.**
-Code fixed in both copies, 13 tests added, nine production rows repaired, edge function
-deployed as **v14** and verified byte-for-byte. The one thing left is a 5-minute check in
-the running app — *How to prove the fix*, at the end of that section.
+**So the remaining value sits in WI-19, performance and CI**, and one of those moved today
+too — see the WI-19 section below. All 73 TypeScript errors were **read** for defects,
+which is what that work item is actually for, and none was a third `fetchSharedFarms`. The
+triage is recorded so it need not be repeated; what is left is 86 `no-explicit-any` and the
+nullability block.
+
+The one *feature* step outstanding — V-7, the CSV import — is deferred by the owner's
+decision, not blocked: the V-6 grid it would feed is built, and whether the import is worth
+building depends on how the grid feels after a season of real entry.
+
+**A live money defect was found and fixed on 31 Aug, and PROVEN END TO END on 6 Sep — see
+*The override defect* and *The override fix is PROVEN END TO END* below.** Code fixed in
+both copies, 13 tests added, nine production rows repaired, edge function deployed and
+verified byte-for-byte. *(This paragraph used to end "the one thing left is a 5-minute check
+in the running app." That check has been run and it passed — all nine overrides survived a
+live cascade, with the two fields that correctly moved by exactly $80 as the control.)*
 
 | Measured 6 Sep 2026 | |
 |---|---|
@@ -210,8 +229,11 @@ The query in *The override defect* above answers it in one shot — every row sh
 
 ### Then, in order
 
-1. **The random reload — R-1, R-5 and R-4 item 2 landed 6 Sep; R-2, R-3, R-4, R-6, R-7
-   remain.** `Farm-Manager-Random-Reload-Diagnosis.md` §5a has the detail. The amplifier is
+1. **The random reload — R-1, R-5, R-4 item 2 and R-6 landed 6 Sep; R-2, R-3, the rest of
+   R-4 and R-7 remain.** `Farm-Manager-Random-Reload-Diagnosis.md` §5a and §5b have the
+   detail. Four of seven items are done, and **both of the two that needed no
+   auth-diagnostics log are now among them** — so what is left is genuinely blocked on the
+   dump rather than merely unstarted. The amplifier is
    gone: a transient load or a load error no longer unmounts the app, a failed seasons load
    no longer presents as an empty farm, and the render-phase `sessionStorage.removeItem` is
    in an effect. **Still true and still waiting on the auth log:** `tokenChanged` gating
@@ -221,11 +243,17 @@ The query in *The override defect* above answers it in one shot — every row sh
    boundaries at four scopes, with the chunk-load distinction as a tested pure function.
    See §5b of the diagnosis.
 
-   **One check outstanding, and it is the owner's**: open a modal on Products, force a
-   token refresh, confirm the modal and its fields survive. Nothing on this machine can
-   reach `App.tsx` at runtime, so the behaviour is proven by 15 tests over the extracted
-   decision and by rendering the two indicators — not by watching a modal live through a
-   refresh.
+   **Two checks outstanding, and both are the owner's**, because nothing on this machine
+   can reach `App.tsx` at runtime:
+
+   - *R-1* — open a modal on Products, force a token refresh, confirm the modal and its
+     fields survive. Proven so far by 15 tests over the extracted decision and by rendering
+     the two indicators, not by watching a modal live through a refresh.
+   - *R-6* — no boundary has yet caught a **real** fault. A deliberately-thrown component
+     was caught in a harness; a genuine crash against live data has not occurred. If a red
+     *"Something went wrong here"* panel ever appears instead of a white page, that is the
+     fix working, and the collapsed **Technical detail** block under it is the thing worth
+     capturing.
 2. **Finish WI-19 — but the reading is done, and that was the valuable half.** **69** errors
    left. All 73 were read for defects on 6 Sep and **none was a third `fetchSharedFarms`**;
    the full triage is in the WI-19 section above, so nobody need repeat it. Four cast guards
@@ -240,9 +268,10 @@ The query in *The override defect* above answers it in one shot — every row sh
    Planner, Chemical Work Orders, Seed Bag Requirements and a generated shopping list.
    That is what the seven removed `user_id` filters were about; a collaborator merely
    *viewing* owner-created data looks identical either way.
-4. **Round 6 performance** — PERF-1 … PERF-5, chiefly the bundle: **477 kB gzip** against
-   WI-22's ≤ 300 kB target. This is also the real prerequisite for the mobile ambition, not
-   responsive CSS.
+4. **Round 6 performance** — PERF-1 … PERF-5, chiefly the bundle: **479 kB gzip** against
+   WI-22's ≤ 300 kB target, and rising — R-1 and R-6 each added to the eager path because
+   `App.tsx` and `main.tsx` are the eager path. This is also the real prerequisite for the
+   mobile ambition, not responsive CSS.
 5. **WI-21, CI.** There is still none. Every figure in the table above was measured by hand
    this session, which is exactly how they went stale.
 
