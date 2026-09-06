@@ -64,6 +64,27 @@ export async function createOrUpdateOverride(
   return data;
 }
 
+/*
+ * A field's custom values live in TWO tables, and resetting has to clear both.
+ *
+ * `field_cost_overrides` holds the numbers and the program list; `field_fertilizer_rates`
+ * holds the per-field rates behind a program-shaped override. Clearing only the first left
+ * the rates orphaned — the cost reverted to the template while every screen that resolves
+ * through `resolveFieldFertilizerItems` still showed the field's own rate. Money saying one
+ * thing and the screen another is the exact defect class this feature keeps producing, and
+ * this was the inverse of the one fixed hours earlier.
+ *
+ * Reported by the owner on the first real use of Reset All Custom Values, 6 Sep.
+ */
+async function deleteFieldFertilizerRates(fieldId: string): Promise<void> {
+  const { error } = await supabase
+    .from('field_fertilizer_rates')
+    .delete()
+    .eq('field_id', fieldId);
+
+  if (error) throw error;
+}
+
 export async function deleteOverride(fieldId: string, costItemName: string): Promise<void> {
   const { error } = await supabase
     .from('field_cost_overrides')
@@ -72,6 +93,13 @@ export async function deleteOverride(fieldId: string, costItemName: string): Pro
     .eq('cost_item_name', costItemName);
 
   if (error) throw error;
+
+  // Only the fertilizer program override has rates behind it. Clearing rates when a
+  // hauling override is reset would delete work the user never asked to touch.
+  if (costItemName === 'fertilizer_programs') {
+    await deleteFieldFertilizerRates(fieldId);
+  }
+
   await recalculateFieldTotal(fieldId);
 }
 
@@ -82,6 +110,8 @@ export async function deleteAllOverrides(fieldId: string): Promise<void> {
     .eq('field_id', fieldId);
 
   if (error) throw error;
+
+  await deleteFieldFertilizerRates(fieldId);
   await recalculateFieldTotal(fieldId);
 }
 
