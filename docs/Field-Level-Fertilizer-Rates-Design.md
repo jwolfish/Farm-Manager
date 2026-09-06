@@ -1,9 +1,11 @@
 # Field-Level Fertilizer Rates — Options and Plan
 
-**Status:** Design agreed 3 Sep 2026 (§7). **V-0 … V-4 built and verified, 4–6 Sep** — the
-latent override defects, the `field_fertilizer_rates` schema, the pure resolver and cost
-math, the edge-function deploy, and the save RPC. **V-5 onward — all of the UI — is not
-started**, so nothing here is reachable by a user yet. See §8 for the state of each step.
+**Status:** Design agreed 3 Sep 2026 (§7). **V-0 … V-6 and V-8 built, verified and confirmed
+in the running app, 4–6 Sep** — the latent override defects, the `field_fertilizer_rates`
+schema, the pure resolver and cost math, the edge-function deploy, the save RPC, the
+per-field plan editor, the bulk grid and its one-transaction save, and finally every reader
+resolving per field. The feature is usable and its numbers have been checked against real
+data end to end. **Only V-7, the optional CSV import, remains.** See §8 for each step.
 **Companion docs:** `Fertilizer-Contract-Tracking-Design.md`,
 `Farm-Manager-Remediation-Status.md`
 
@@ -383,7 +385,7 @@ Each step independently verifiable, per the standing practice.
 | **V-5** | **DONE 6 Sep 2026** — the plan editor, its container, the `applies:false` RPC branch, and the *Edit plan* button on `FieldDetail`. Defect 4's warning included | Rendered at 1280 px and 375 px, which found a real defect (see below) and a 38 px tap target. Arithmetic checked on screen against hand figures |
 | **V-6** | **DONE 6 Sep 2026** — the bulk grid, reached from a *Fertilizer Rates* button on the Fields page, plus migration `20260906023514`: the V-4 body moved into an internal `apply_field_fertilizer_rates` so a new `save_field_fertilizer_rates_bulk` can write a whole grid in ONE transaction. §10.7 needs that for V-7 | Rehearsed 13/0 then rolled back and applied; the assertion that earns its keep is a bad later entry rolling back the whole batch. 25 tests (347 → **372**). Rendered at 1280 px and 375 px, which found two defects — see the status doc |
 | **V-7** | **Optional** CSV import of the FieldAlytics per-field export into that grid (§10) | Parsed against the real exported file; a `--Multiple--` row refused by name, not approximated; the imported total round-trips through the shopping list exactly; nothing written until the review is committed |
-| **V-8** | **DONE 6 Sep 2026** — `computeFertilizerNeedByProduct` (the shopping list *and* the Contracts tab) and `computePlanNeed` both resolve per field through `resolveFieldFertilizerItems`. `custom` is a **required** argument rather than optional, so no caller can silently get the pre-V-8 answer. No migration | The 2027 resolution recomputed in SQL: **Rhizosorb 1.90 → 2.50 ton**, every other product **delta 0**, and Urea reproducing the 4 Sep list's 63.2025 exactly. 6 new tests (380 → **386**). Rendering caught the footnote still claiming rates come from the programs as written |
+| **V-8** | **DONE 6 Sep 2026** — `computeFertilizerNeedByProduct` (the shopping list *and* the Contracts tab) and `computePlanNeed` both resolve per field through `resolveFieldFertilizerItems`. `custom` is a **required** argument rather than optional, so no caller can silently get the pre-V-8 answer. No migration | The 2027 resolution recomputed in SQL: **Rhizosorb 1.90 → 2.50 ton**, every other product **delta 0**, and Urea reproducing the 4 Sep list's 63.2025 exactly. 6 new tests (380 → **386**). Rendering caught the footnote still claiming rates come from the programs as written. **Confirmed in the app**: a generated 2027 list reads Rhizosorb 2.5 t, Urea unchanged at 63.2025/30/33.2025, every line reconciling to 0.000000 |
 
 **V-3 must land before V-5.** Until it does, a custom-rated field is protected from being
 stomped by a template cascade but goes stale on a price change — and a fertilizer booking

@@ -2220,11 +2220,34 @@ plan and under-orders — the quiet direction, and the WI-15 lie in its purest f
 **Floor:** tests 380 → **386**, build 1,786.85 → **1,787.96 kB** (477.04 → 477.27 gz). No
 migration.
 
-**Not yet exercised: a shopping list generated since the change.** The arithmetic is proven
-by tests, the resolution by SQL against real rows, and the calculator on screen — but no
-list has been generated through the running app, so the one number that matters to a
-supplier has not been read off the screen. Generating a 2027 fertilizer list and seeing
-**Rhizosorb 2.5 ton** is the check that closes it.
+**CONFIRMED END TO END by the owner, 6 Sep.** A 2027 fertilizer list generated in the
+running app reads **Rhizosorb 2.5 ton**. The stored row proves more than the screen:
+
+| Product | Plan | Contracted | Needed |
+|---|---|---|---|
+| **Rhizosorb P** | **2.5** | 0 | **2.5** |
+| Urea | 63.2025 | **30** | 33.2025 |
+| AMS | 23.373 | 0 | 23.373 |
+| Potash | 3.5625 | 0 | 3.5625 |
+| 6-24-6 | 15.5025 | 0 | 15.5025 |
+| Provant Stability | 16.695 gal | 0 | 16.695 |
+| ProveN 40 | 95.4 gal | 0 | 95.4 |
+
+`plan − covered − needed = 0.000000` on **every** line. Four things this establishes that
+neither the unit tests nor the SQL check could:
+
+- **Rhizosorb's 2.5 is the figure the SQL predicted**, produced by the real code path against
+  real rows rather than by a query written to model it.
+- **Urea is still 63.2025 / 30 / 33.2025 — unchanged from the 4 Sep list.** So V-8 is inert
+  where nothing is customised, *and* the F-2…F-6 contract coverage still works underneath it.
+  A regression in either would have shown here.
+- **AMS, Potash and 6-24-6 match the SQL to the digit**, which is the control repeated three
+  more times.
+- **Provant Stability and ProveN 40 arrive in gallons.** Both were outside the SQL check,
+  which only compared pound-rated products — so this is the first evidence that the
+  quart-to-gallon path through `accumulateNeed` survived the rewrite.
+
+**With that, every reader is confirmed, not merely changed.**
 
 **With this, every reader of a field's fertilizer plan resolves through one function.**
 `FieldProgramDetails`, `FieldDetail`'s cost math, the V-5 editor, the V-6 grid, the shopping
