@@ -1,33 +1,51 @@
 # Farm Manager Remediation — Status
 
-**Last updated:** 4 Sep 2026 — Rounds 1–6 (steps 1–3) complete, fertilizer F-1 … F-6
-complete, **shopping-list coverage built** (4 Sep), random-reload diagnosis written and
-**not yet acted on**.
-**Repo:** `jwolfish/Farm-Manager` — everything through F-6 is merged on `main` and pushed
-to origin (`83bf040`). **Shopping-list coverage sits on `field-fertilizer-rates-design`
-and is not yet merged**; its migration `20260904183110` **is** applied to the live
-database. The four `f-4a` / `f-4b` / `f-5` / `f-6` branches still exist locally but are
-0 commits ahead.
-**Edge function:** `process-cascade-task` **version 16** — deployed 5 Sep at the V-3 step.
-Carries WI-15, SEC-3, the F-1 density bridge, the override-total fix, and V-0's
-`refreshProgramOverridesInSeason`. **Verified byte-for-byte against the repository copy**
-by `supabase functions download` plus a sha256 comparison — not by markers, as every round
-before 31 Aug did. *(This line has now been stale three times: it said 10 when the platform
-was at 11, 12 when it was at 13, and 14 when it was at 15. Confirm with
-`list_edge_functions` rather than trusting the number written here. The 5 Sep deploy also
-downloaded the running source **before** replacing it and diffed it against the repo — it
-matched, so every one of those discrepancies was in this document, never in the code.)*
+**Last updated:** 6 Sep 2026 — Rounds 1–6 (steps 1–3) complete, fertilizer F-1 … F-6
+complete, shopping-list coverage complete, and **field-level fertilizer rates V-0 … V-6 and
+V-8 complete, confirmed in the running app**. Only V-7, the optional CSV import, remains,
+and it is **deferred by the owner's decision** until the grid has been used for a season.
+The random-reload diagnosis is written and **still not acted on**.
+**Repo:** `jwolfish/Farm-Manager` — **everything is merged on `main` and pushed to origin
+(`9711bf6`)**. Nothing is half-finished and no branch is ahead: `git branch --no-merged
+main` is empty. The seven older branches still exist locally and are all 0 commits ahead.
+Every migration in `supabase/migrations/` is applied to the live database.
+**Edge function:** `process-cascade-task` **version 17** — the V-3 deploy, last updated
+2026-09-06 01:24 UTC. Carries WI-15, SEC-3, the F-1 density bridge, the override-total fix,
+and V-0's `refreshProgramOverridesInSeason`. **Re-verified byte-for-byte on 6 Sep**:
+downloaded and diffed against the repository copy, `sha256
+30908b5946d5f712e2e21adeaed582143f2d9cbdd5cebe2b274713dbb8e4fe06` on both sides, 1,151
+lines, diff clean.
+
+*(**This number has now been wrong four times** — 10 when the platform was at 11, 12 at 13,
+14 at 15, and 16 at 17. Every single time the **source** was correct and only the number
+written here was wrong, which is the useful part: the deploy has never actually drifted.
+Confirm with `list_edge_functions`, never with this line.)*
+
+*(**A trap when re-verifying on this machine.** The repo copy is CRLF, because git has
+`core.autocrlf=true`; the downloaded copy is LF. A plain `sha256sum` therefore reports two
+different hashes and a plain `diff` reports **every line changed** — which looks exactly
+like a drifted deploy and is not. Compare with `diff --strip-trailing-cr`, and hash the
+local file through `tr -d '\r'`. The same thing makes a regenerated `database.types.ts`
+look wholly rewritten.)*
 **Supabase project:** `wvccxjakqwqfmyewclue` (bolt-native-database-63401892)
 **Companion docs:** `Farm-Manager-Code-Review-Summary.md`,
-`Farm-Manager-Remediation-PRD.md`, `Farm-Manager-Random-Reload-Diagnosis.md`
+`Farm-Manager-Remediation-PRD.md`, `Farm-Manager-Random-Reload-Diagnosis.md`,
+`Fertilizer-Contract-Tracking-Design.md`, `Field-Level-Fertilizer-Rates-Design.md`,
+`Shopping-List-Coverage-Design.md`
 
 ---
 
 ## Start here
 
-**Rounds 1–6 (steps 1–3) and fertilizer F-1 … F-6 are complete, merged and pushed.** Every
-migration is applied to the live database. Nothing is half-finished and nothing is waiting
-to be merged.
+**Rounds 1–6 (steps 1–3), fertilizer F-1 … F-6, shopping-list coverage, and field-level
+fertilizer rates V-0 … V-6 and V-8 are complete, merged and pushed.** Every migration is
+applied to the live database. Nothing is half-finished and nothing is waiting to be merged.
+
+**The two open threads are both pre-existing, and neither is a feature.** The random reload
+is diagnosed and untouched; WI-19, performance and CI are where the remaining value is. The
+one *feature* step outstanding — V-7, the CSV import — is deferred by the owner's decision,
+not blocked: the V-6 grid it would feed is built, and whether the import is worth building
+depends on how the grid feels after a season of real entry.
 
 **A live money defect was found and fixed on 31 Aug — see *The override defect* below.**
 Code fixed in both copies, 13 tests added, nine production rows repaired, edge function
@@ -39,20 +57,22 @@ the running app — *How to prove the fix*, at the end of that section.
 | Tests | **386 passing**, 10 files (380 before V-8 added 6; 347 before V-6 added 25) |
 | TypeScript | **73 errors** (103 at review, 98 before WI-19, 75 before V-8 replaced two `Json` casts with `Array.isArray` guards) |
 | ESLint | **107 errors, 28 warnings** (from 136/28; 109 before V-8 deleted one `prefer-const` and one `no-explicit-any`) |
-| Build | succeeds — **1,787.96 kB** (477.27 kB gz), plus lazy `FertilizerContractsTab` 25.96 kB, `BookingModal` 20.07 kB and `FieldFertilizerRateGridPanel` 19.82 kB |
+| Build | succeeds — **1,787.96 kB** (477.27 kB gz), plus lazy `FertilizerContractsTab` 25.96 kB, `BookingModal` 19.63 kB and `FieldFertilizerRateGridPanel` 19.83 kB |
 | Migrations | **63 files**, matching the database one-for-one |
-| Edge function | **version 16**, deployed source confirmed identical to the repo by sha256 (5 Sep) |
+| Edge function | **version 17**, running source confirmed identical to the repo by sha256, re-verified 6 Sep |
 | Security advisors | 14 WARN — 13 are the by-design `authenticated_security_definer_function_executable` lint that fires on every RPC, 1 is `auth_leaked_password_protection` (WI-6). No new class of finding. V-6’s internal `apply_field_fertilizer_rates` is correctly absent, being executable by neither role |
 | Cascade tasks | **58 total, 0 failed** |
-| SEC-5 policy matrix | **120 assertions, 0 failures** (extended at V-1 and re-run against the live schema; was 101 at F-3) |
+| SEC-5 policy matrix | **120 assertions, 0 failures** (extended at V-1 and re-run against the live schema; was 101 at F-3). **Not re-run since V-1** — V-4 and V-6 changed function bodies and grants, not tables or policies, so the matrix has nothing new to exercise; each was attacked directly in its own rehearsal instead |
 
 **Closed:** SEC-1, SEC-2, SEC-3, SEC-4, SEC-5, SEC-7 · WI-9, WI-10, WI-11, WI-12, WI-13,
 WI-14, WI-15, WI-16 · LOG-1, LOG-2, LOG-3, LOG-4, LOG-5, LOG-7, LOG-8, LOG-10 · plus four
 collaboration defects found by testing, none of which were in the original review.
 
 **Partial:** SEC-6 (WI-6 untouched) · SEC-8 (mechanism in place, `ALLOWED_ORIGIN` unset by
-choice) · WI-19 (103 → 75, triage done, 75 remain) · WI-20 (295 tests, but nowhere near the
-80 % target).
+choice) · WI-19 (103 → 73, triage done, 73 remain) · WI-20 (386 tests, but nowhere near the
+80 % target) · WI-23 / PERF-2 (V-8 bounded the shopping list's fertilizer override query
+with `.in('field_id', …)`; the chemical one at `shoppingListGeneration.ts:56` still selects
+every visible row and filters in JavaScript).
 
 ### The override defect — found and FIXED 31 Aug 2026
 
@@ -185,8 +205,9 @@ The query in *The override defect* above answers it in one shot — every row sh
    render-phase `sessionStorage.removeItem` at `App.tsx:510`, no error boundary anywhere,
    24 `exhaustive-deps` warnings. Start with that document's own advice: the one-line auth
    log in section 4, *before* fixing anything, then R-1.
-2. **Finish WI-19.** 75 errors left: 32 nullability, ~14 unguarded `Json` casts, 10
-   recharts formatter signatures, 15 unused parameters, and the residue. The nullability
+2. **Finish WI-19.** **73** errors left (75 until V-8 replaced two `Json` casts with
+   `Array.isArray` guards): nullability, the remaining unguarded `Json` casts, recharts
+   formatter signatures, unused parameters, and the residue. The nullability
    block is the one with real value left in it — it means reconciling the app's
    hand-written interfaces against the schema. Note it also makes R-6 (error boundary)
    worth more, since those nullability bugs are what would blank the app.
@@ -196,7 +217,7 @@ The query in *The override defect* above answers it in one shot — every row sh
    Planner, Chemical Work Orders, Seed Bag Requirements and a generated shopping list.
    That is what the seven removed `user_id` filters were about; a collaborator merely
    *viewing* owner-created data looks identical either way.
-4. **Round 6 performance** — PERF-1 … PERF-5, chiefly the bundle: 470 kB gzip against
+4. **Round 6 performance** — PERF-1 … PERF-5, chiefly the bundle: **477 kB gzip** against
    WI-22's ≤ 300 kB target. This is also the real prerequisite for the mobile ambition, not
    responsive CSS.
 5. **WI-21, CI.** There is still none. Every figure in the table above was measured by hand
@@ -1670,9 +1691,11 @@ feature's way. Left for an explicit decision.
 
 ### Field-level fertilizer rates — V-3, the deploy — 5 Sep 2026
 
-**`process-cascade-task` is now version 16**, carrying V-0's
-`refreshProgramOverridesInSeason` and its `recalculateFieldTotal` helper. Deployed with
-`npm run deploy:cascade`, which reads the file from disk.
+**`process-cascade-task` is version 17** — recorded here as 16 at the time, while the
+platform reports 17. The *source* was verified in both directions, so the number was the
+only thing wrong, for the fourth time. It carries V-0's `refreshProgramOverridesInSeason`
+and its `recalculateFieldTotal` helper. Deployed with `npm run deploy:cascade`, which reads
+the file from disk.
 
 **Verified byte-for-byte, both directions.**
 
@@ -2052,7 +2075,7 @@ to be, but there is no reason for two TypeScript readers to disagree.
 | TypeScript | 75 | **75** — set byte-identical, positions stripped |
 | ESLint | 109 errors, 28 warnings | **109 / 28** |
 | Build — main | 1,785.60 kB (476.72 gz) | **1,786.66 kB (476.95 gz)** — +1.06 kB |
-| Build — lazy | — | **`FieldFertilizerRateGridPanel` 19.82 kB (6.35 gz)** |
+| Build — lazy | — | **`FieldFertilizerRateGridPanel` 19.83 kB (6.35 gz)** |
 | Migrations | 62 | **63**, matching the database one-for-one |
 
 The panel is lazy, like the Contracts tab: ~20 kB on every first paint of the Fields page,
@@ -2348,13 +2371,11 @@ manual look if a product is ever given a unit outside its class.
 
 ## Next up
 
-### 1. ~~Prove the override fix in the running app~~ — **DONE 6 Sep 2026**
+*Two items that used to head this list are done and have been removed: proving the override
+fix in the running app (6 Sep, on edge function v16 — see* The override fix is PROVEN END TO
+END*), and field-level fertilizer rates V-0 … V-8 bar the import.*
 
-Run and passed on edge function v16. See *The override fix is PROVEN END TO END*. The
-override defect is now closed in every sense: code, tests, data, deploy, and the system
-observed doing it.
-
-### 2. The random reload
+### 1. The random reload
 
 `Farm-Manager-Random-Reload-Diagnosis.md`, R-1 … R-7. Diagnosis only; **nothing has been
 implemented**, re-verified 31 Aug. Follow that document's own sequencing:
@@ -2368,7 +2389,7 @@ implemented**, re-verified 31 Aug. Follow that document's own sequencing:
 This is also the owner's loudest day-to-day complaint, and the only item in any of these
 documents that the person using the app actually feels every day.
 
-### 3. WI-19 — the type and lint baseline
+### 2. WI-19 — the type and lint baseline
 
 The PRD sequences this as maintainability, after the security work. **That ordering is
 wrong and this session proved it.** `fetchSharedFarms` had been broken since it was
@@ -2382,22 +2403,31 @@ It sat inside the 103 errors this document itself taught everyone to treat as ba
 noise. A whole feature — shared farms — never worked, and the compiler said so on every
 run. There is no reason to assume it is the only one.
 
-**Triage the remaining 75 for defects rather than fixing them in bulk.** The 88
+**Triage the remaining 73 for defects rather than fixing them in bulk.** The 86
 `no-explicit-any` lint errors matter for the same reason: `any` suppresses exactly this
-class of message. Getting to zero is the goal, but reading them is the value. The 32
-nullability errors are the block with real value left, and they are also the argument for
-R-6 — an uncaught null is what blanks the whole app when there is no error boundary.
+class of message. Getting to zero is the goal, but reading them is the value. The
+nullability block is the one with real value left, and it is also the argument for R-6 — an
+uncaught null is what blanks the whole app when there is no error boundary.
 
-### 4. Round 6 — performance
+**V-8 is a small worked example of why.** Two of the errors it removed were casts of a
+`Json` column to `ProgramRef[]`. Replacing them with `Array.isArray` guards was a behaviour
+fix as well as a type fix, because a non-array value had been iterated as if it were a
+program list. That is the second time reading this baseline has found a real defect, after
+`fetchSharedFarms`.
 
-PERF-1 … PERF-5. The bundle is the headline: **1,760.80 kB (470.25 kB gz)** against WI-22's
+### 3. Round 6 — performance
+
+PERF-1 … PERF-5. The bundle is the headline: **1,787.96 kB (477.27 kB gz)** against WI-22's
 ≤ 300 kB gzip target, so it needs `React.lazy` on the pages plus `manualChunks` for
-recharts, jspdf and html2canvas. PERF-2 (the unbounded override query) is a two-line fix.
+recharts, jspdf and html2canvas. Four lazy chunks exist now — the two fertilizer ones, the
+V-6 grid panel and html2canvas — which is the pattern to repeat, not the job done.
+PERF-2 is half fixed: V-8 bounded the fertilizer override query with `.in('field_id', …)`;
+the chemical one at `shoppingListGeneration.ts:56` is the same two-line change.
 PERF-4's O(n²) on-hand trigger now matters more than it did, since Round 4 routes every
 work-order and purchase write through it. Note the reload diagnosis's point: this, not
 responsive CSS, is the real prerequisite for calling the app mobile-ready.
 
-### 5. WI-21 — CI
+### 4. WI-21 — CI
 
 Still none. Every figure in this document was measured by hand, which is precisely how the
 figures that were wrong at the top of this file got that way, and how a 9-row table came to
@@ -2405,6 +2435,15 @@ be recorded as empty.
 
 ### Deliberately deferred, with reasons
 
+- **V-7, the FieldAlytics CSV import** — deferred by the owner on 6 Sep 2026, and correctly
+  so. It exists to make the annual entry burden survivable (~100 numbers a season), and the
+  V-6 grid it would populate is now built and confirmed working. **Whether the import is
+  worth building is a question only a season of real entry answers**, and building it first
+  would be guessing at that answer. Nothing is blocked: §10 of
+  `Field-Level-Fertilizer-Rates-Design.md` holds the settled column mapping (`Product Total`
+  + `Units`; acreage, `Avg Rate` and all three cost columns ignored), the requirement that a
+  `--Multiple--` row be refused by name rather than approximated, and §10.7's rule that the
+  grid is the review surface and nothing is written until the review is committed.
 - **`ALLOWED_ORIGIN`** — SEC-8's mechanism is deployed but falls back to `*`. Left
   permissive because the app has no stable production URL, Bolt preview origins rotate, and
   a wrong value breaks every cascade with an opaque CORS error. Set it when there is a real
@@ -2423,16 +2462,33 @@ be recorded as empty.
 
 All figures below are measured, not estimated.
 
-| Metric | Review baseline | After Round 3 | After Round 4 | End of 30 Aug | After Round 6 step 2 | **Measured 31 Aug** |
-|---|---|---|---|---|---|---|
-| TypeScript errors | 103 | 103 (identical set) | 99 | 98 | 76 | **75** |
-| ESLint | 136 errors, 28 warnings | 134 / 28 | 134 / 28 | 134 / 28 | 109 / 28 | **109 / 28** |
-| Tests | 0 | 178 passing, 4 files | 206 passing, 5 files | 206 passing, 5 files | 206 passing, 5 files | **282 passing, 7 files** |
-| CI | none | none | none | none | none | **none — still WI-21** |
-| Main JS chunk | 1,747 kB (465 kB gz) | 1,754.43 kB (467.56 kB gz) | 1,751.97 kB (467.39 kB gz) | 1,751.96 kB (467.50 kB gz) | 1,751.91 kB (467.46 kB gz) | **1,760.80 kB (470.25 kB gz)** |
-| Lazy chunks | — | — | — | — | — | **`FertilizerContractsTab` 25.96 kB (7.10 gz), `BookingModal` 20.02 kB (6.02 gz)** |
-| Migrations | 40 files | 43 | 46 | 52 | 52 | **58, diffed against the database one-for-one** |
-| Edge function | — | v8 pending | — | v10 | v10 | **v13, source confirmed in sync** |
+| Metric | Review baseline | After Round 3 | After Round 4 | End of 30 Aug | After Round 6 step 2 | Measured 31 Aug | **Measured 6 Sep** |
+|---|---|---|---|---|---|---|---|
+| TypeScript errors | 103 | 103 (identical set) | 99 | 98 | 76 | 75 | **73** |
+| ESLint | 136 errors, 28 warnings | 134 / 28 | 134 / 28 | 134 / 28 | 109 / 28 | 109 / 28 | **107 / 28** |
+| Tests | 0 | 178 passing, 4 files | 206 passing, 5 files | 206 passing, 5 files | 206 passing, 5 files | 282 passing, 7 files | **386 passing, 10 files** |
+| CI | none | none | none | none | none | none | **none — still WI-21** |
+| Main JS chunk | 1,747 kB (465 kB gz) | 1,754.43 kB (467.56 kB gz) | 1,751.97 kB (467.39 kB gz) | 1,751.96 kB (467.50 kB gz) | 1,751.91 kB (467.46 kB gz) | 1,760.80 kB (470.25 gz) | **1,787.96 kB (477.27 kB gz)** |
+| Lazy chunks | — | — | — | — | — | `FertilizerContractsTab` 25.96, `BookingModal` 20.02 | **those two plus `FieldFertilizerRateGridPanel` 19.83 kB (6.36 gz)** |
+| Migrations | 40 files | 43 | 46 | 52 | 52 | 58 | **63, diffed against the database one-for-one** |
+| Edge function | — | v8 pending | — | v10 | v10 | v13 | **v17, source confirmed in sync by sha256** |
+
+**The 6 Sep column is shopping-list coverage plus field-level rates V-0 … V-8, itemised.**
+
+- **Tests 282 → 386**, every step accounted for: +13 pre-coverage work (282 → 295), +13
+  shopping-list coverage (→ 308), +12 V-0 (→ 320), +20 V-2 (→ 340), +7 V-5 (→ 347), +25 V-6
+  (→ 372), +8 `formatRate` (→ 380), +6 V-8 (→ **386**).
+- **TypeScript 75 → 73**, a strict subset. Both removals are V-8's, where a `Json` column
+  was cast to `ProgramRef[]` and is now guarded with `Array.isArray` — a behaviour fix as
+  much as a type fix.
+- **ESLint 109 → 107**, also V-8: one `prefer-const` and one `no-explicit-any` deleted from
+  the code it rewrote. Diffed by rule and message, not by count.
+- **Main chunk 1,760.80 → 1,787.96 kB.** +3.71 shopping-list coverage, +0.89 V-0, +15.85
+  V-5 (the plan editor is on the eager `FieldDetail` path), +1.06 V-6, +1.11 V-8, and the
+  rest is the eager share of the Shopping Lists tab. The V-6 grid panel itself is lazy —
+  19.83 kB that never loads unless the screen is opened.
+- **Migrations 58 → 63:** shopping-list coverage columns, `field_fertilizer_rates`, the save
+  RPC, its `applies` flag, and V-6's bulk RPC.
 
 **The 31 Aug column is the fertilizer feature landing.** 76 → 75 TypeScript and 206 → 282
 tests are F-4 … F-6; the main chunk grew 8.89 kB across F-1 (density bridge, +2.38),

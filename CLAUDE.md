@@ -29,9 +29,11 @@ the reasoning behind decisions that look arbitrary otherwise: why a spot buy is 
 a contract, why load lines carry no price, why the plan calculator's field selection is a
 note rather than a record.
 
-Not yet exercised: a second user, the `viewer` role, and a browser look at the load ticket,
-the booking form and the shopping-list handoff. Rendering screens found real defects three
-rounds running, so start there if something misbehaves.
+Not yet exercised: a second user, the `viewer` role, and a browser look at the load ticket
+and the booking form. **Rendering a screen has now found a real defect seven rounds
+running**, across both this feature and field-level rates — so if something misbehaves,
+open the screen before reading the code. Splitting presentation from the Supabase-importing
+container is what makes that possible on a machine with no credentials.
 
 Rules this feature keeps re-learning the hard way:
 
@@ -106,10 +108,12 @@ The status doc is the source of truth for what is done. Update it when a round l
   doc for the full accounting; every movement is itemised there.
 - `npx eslint .` reports **107 errors, 28 warnings** (was 136/28 at review; 109 until V-8
   removed one `prefer-const` and one `no-explicit-any` from the code it rewrote).
-- `npx vite build` succeeds and emits a **1,787.96 kB** main chunk (477.27 kB gz), plus two
-  lazy fertilizer chunks: **25.96 kB** `FertilizerContractsTab` (7.10 gz) and **20.07 kB**
-  `BookingModal` (6.03 gz), the latter shared by the Contracts tab, the Shopping Lists tab
-  and the plan calculator. It was 1,751.91 kB before fertilizer F-1, which added 2.38 kB for
+- `npx vite build` succeeds and emits a **1,787.96 kB** main chunk (477.27 kB gz), plus
+  three lazy chunks: **25.96 kB** `FertilizerContractsTab` (7.10 gz), **19.63 kB**
+  `BookingModal` (5.90 gz) — shared by the Contracts tab, the Shopping Lists tab and the
+  plan calculator — and **19.83 kB** `FieldFertilizerRateGridPanel` (6.36 gz).
+
+  It was 1,751.91 kB before fertilizer F-1, which added 2.38 kB for
   the density bridge, the Liquid checkbox and its help text; F-4a added 0.95 kB to the main
   chunk and 6.50 kB to the lazy one; F-5 added the Shopping Lists tab's share of the handoff
   to the main chunk and split `BookingModal` out; F-4b added the season summary to the lazy
@@ -117,10 +121,10 @@ The status doc is the source of truth for what is done. Update it when a round l
   the main one; shopping-list coverage added **3.71 kB** to the main chunk, which is eager;
   field-rates V-0 added **0.89 kB**, the override read and two badges in
   `FieldProgramDetails`; V-5 added **15.85 kB** for the per-field plan editor on the eager
-  `FieldDetail` path; and V-6 added only **1.06 kB** to the main chunk plus a third lazy
-  chunk, **19.82 kB** `FieldFertilizerRateGridPanel` (6.35 gz).
-- `npm test` reports **386 passing** in 10 files (380 before V-8 added 6; 372 before `formatRate` added 8; 347
-  before V-6 added 25; 340 before V-5 added 7; 320 before V-2 added 20; 308 before V-0
+  `FieldDetail` path; V-6 added only **1.06 kB** to the main chunk, putting its grid panel in
+  a lazy chunk of its own; and V-8 added **1.11 kB**.
+- `npm test` reports **386 passing** in 10 files (380 before V-8 added 6; 372 before
+  `formatRate` added 8; 347 before V-6 added 25; 340 before V-5 added 7; 320 before V-2 added 20; 308 before V-0
   added 12; 295 before shopping-list coverage added 13).
 - There is **no CI**. Adding it is WI-21 in the PRD.
 - Tests arrived with Round 3: `npm test` (Vitest). Test files are excluded from
@@ -238,10 +242,19 @@ markers:
 supabase functions download process-cascade-task --project-ref wvccxjakqwqfmyewclue --use-api
 ```
 
-into a scratch directory, then `sha256sum` / `diff` it against
-`supabase/functions/process-cascade-task/index.ts`. v14 was confirmed this way. Earlier
-rounds could only compare a handful of distinctive strings, and the recorded version number
-was wrong twice.
+into a scratch directory, then compare it against
+`supabase/functions/process-cascade-task/index.ts`. Earlier rounds could only compare a
+handful of distinctive strings.
+
+**Normalise line endings or the check lies to you.** The repo copy is CRLF (git
+`core.autocrlf=true`); the download is LF. A plain `sha256sum` gives two different hashes
+and a plain `diff` reports *every* line changed — indistinguishable from a drifted deploy.
+Use `diff --strip-trailing-cr`, and hash the local file through `tr -d '\r'`. The same
+thing makes a regenerated `database.types.ts` look wholly rewritten when it is not.
+
+**The recorded version number has been wrong four times** (10/11, 12/13, 14/15, 16/17) and
+the *source* was correct every time. Read the version from `list_edge_functions`, never
+from a document.
 
 For anything touching RLS, policies, or `SECURITY DEFINER` functions, a change is not
 verified until the attack it prevents has actually been attempted against the database
