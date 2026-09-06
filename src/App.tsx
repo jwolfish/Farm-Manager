@@ -17,6 +17,8 @@ import { AccountSettings } from './pages/AccountSettings';
 import { FarmSettings } from './pages/FarmSettings';
 import { Team } from './pages/Team';
 import { DashboardLayout } from './components/DashboardLayout';
+import { AppLoadErrorBanner, AppRefreshIndicator } from './components/AppLoadStatus';
+import { resolveAppLoadPresentation } from './lib/appLoadState';
 import { SeasonImportWizard } from './components/SeasonImportWizard';
 import { supabase } from './lib/supabase';
 import { fetchSharedFarms, SharedFarm } from './lib/teamMembers';
@@ -34,7 +36,16 @@ interface Season {
   farm_id?: string | null;
 }
 
-const SEASON_LOAD_TIMEOUT_MS = 10000;
+/*
+ * R-5. Was 10 s. On rural cell data a slow seasons query is a normal event, not a
+ * failure, and the old timeout turned it into one. Doubling it costs nothing now that
+ * a timeout no longer takes the screen away: after the first load the page stays put
+ * and the retry banner appears in the corner, so the user is not staring at a spinner
+ * while it runs down. A single automatic retry was considered and left out — it doubles
+ * the worst case before the user is told anything, and the banner's Try Again is now
+ * available without losing the page.
+ */
+const SEASON_LOAD_TIMEOUT_MS = 20000;
 
 function AppContent() {
   const { user, loading: authLoading } = useAuth();
@@ -61,8 +72,29 @@ function AppContent() {
   const [selectedFieldId, setSelectedFieldId] = useState<string | null>(null);
   const [sharedFarms, setSharedFarms] = useState<SharedFarm[]>([]);
   const [dataLoadError, setDataLoadError] = useState<string | null>(null);
+  /*
+   * R-1. `loading` says a load is in flight. It does NOT say the screen should be
+   * replaced, and treating the two as the same thing is what made every trigger in the
+   * reload diagnosis feel like the app resetting itself.
+   *
+   * Once the app has rendered once there is state worth keeping — an open modal, a
+   * half-typed form, the active tab, the scroll position — so a later load shows an
+   * indicator and leaves the tree mounted. Before that there is nothing to preserve,
+   * so the full-screen spinner is correct.
+   *
+   * A farm switch sets this back to false on purpose: that transition legitimately
+   * replaces everything on screen, and a full-screen load is the honest presentation
+   * of it.
+   */
+  const [hasLoadedOnce, setHasLoadedOnce] = useState(false);
 
   useCascadeTaskNotifications(user?.id ?? null);
+
+  useEffect(() => {
+    if (!authLoading && !loading && user) {
+      setHasLoadedOnce(true);
+    }
+  }, [authLoading, loading, user]);
 
   const loadSeasonsByFarm = useCallback(async (farmId: string, forUserId: string) => {
     setLoading(true);
@@ -98,22 +130,37 @@ function AppContent() {
         setDataLoadError('Loading seasons timed out. Please try again.');
       }
       /*
-       * TEMPORARY — the "random reload" investigation, trigger T-4.
+       * R-5. This used to `setSeasons([])`, which made a FAILED load indistinguishable
+       * from a farm that genuinely has no seasons. Same defect shape as WI-15's "a
+       * failed query is indistinguishable from an empty one", surfacing in the UI
+       * instead of in the cascade.
        *
-       * setSeasons([]) below makes a FAILED load indistinguishable from a farm that
-       * genuinely has no seasons, and App.tsx then renders "Welcome to Crop Tracker!
-       * Let's create your first growing season." On rural cell data that reads as the
-       * app resetting itself to first-run state. R-5 fixes it properly; this line just
-       * makes it self-reporting in the meantime, so it does not need the Network tab
-       * to be caught. Remove with authDiagnostics.ts.
+       * A CORRECTION to what the diagnosis doc says about this, and to the comment that
+       * stood here: on THIS path the welcome screen never actually appeared. The catch
+       * above sets dataLoadError, and the "Failed to Load" gate is tested before the
+       * welcome gate, so a failed farm seasons load showed the error card. It was still
+       * a full-screen takeover — R-1's problem — but not the first-run lie. The lie was
+       * reachable on the legacy no-farm branch of loadSeasons below, which cleared the
+       * seasons and reported nothing at all.
+       *
+       * Clearing them was still wrong here, and more wrong after R-1: the error is now
+       * a banner over a live page, so an emptied list would leave the user looking at an
+       * app with no seasons in it while being told a refresh failed.
+       *
+       * The previous seasons are kept instead. Three states, not two: loaded (seasons
+       * replaced), confirmed empty (seasons set to [] on a SUCCESSFUL load), failed
+       * (seasons untouched, dataLoadError set). Only a confirmed empty may reach the
+       * welcome screen, which is what emptySeasonsIsConfirmed gates.
+       *
+       * The diagnostic entry stays until authDiagnostics.ts is removed; it is now a
+       * record of a handled failure rather than a warning about an impending lie.
        */
       logAuthDiagnostic('seasons-load-failed', {
         farmId: farmId.slice(0, 8),
         reason: isAbort ? 'timeout' : 'error',
         timeoutMs: SEASON_LOAD_TIMEOUT_MS,
-        note: 'welcome screen may now render as if this farm had no seasons',
+        note: 'previous seasons kept; retry banner shown',
       });
-      setSeasons([]);
     } finally {
       setLoading(false);
     }
@@ -140,8 +187,13 @@ function AppContent() {
           setCurrentSeason(null);
         }
       } catch (error) {
+        /*
+         * R-5, the legacy no-farm path. This one was worse than its sibling above: it
+         * cleared the seasons AND reported nothing at all, so a failure here rendered
+         * the welcome screen with no error anywhere. Keep the seasons and say so.
+         */
         console.error('Error loading seasons:', error);
-        setSeasons([]);
+        setDataLoadError('Could not load seasons. Please check your connection and try again.');
       } finally {
         setLoading(false);
       }
@@ -219,6 +271,22 @@ function AppContent() {
       setLoading(false);
     }
   }, [user?.id, authLoading, loadInitialData]);
+
+  /*
+   * R-4, item 2 ONLY. This `sessionStorage.removeItem` used to sit in the render body,
+   * immediately above `return <Auth />`. A mutation during render is a bug independent
+   * of everything else in the reload diagnosis, and StrictMode runs it twice.
+   *
+   * The BEHAVIOUR is deliberately unchanged: losing the page on a sign-out the user did
+   * not ask for is the rest of R-4, and the diagnosis says not to implement that until
+   * a real session log shows which sign-out is actually firing. This moves the side
+   * effect somewhere legal without deciding that question.
+   */
+  useEffect(() => {
+    if (!user && wasAuthenticated.current) {
+      sessionStorage.removeItem('activePage');
+    }
+  }, [user]);
 
   const handleNavigate = (page: string) => {
     sessionStorage.setItem('activePage', page);
@@ -405,9 +473,18 @@ function AppContent() {
     handleNavigate('fields');
   };
 
+  /*
+   * R-1. The four farm-switch handlers below each clear hasLoadedOnce immediately
+   * before their load. A farm switch is the one transition that legitimately replaces
+   * the entire screen — the page you were on belongs to the farm you are leaving — so
+   * the full-screen spinner is right there and only there. Set alongside the load, not
+   * at the top of the handler, so a switch that bails out early (no access) leaves the
+   * current screen alone.
+   */
   const handleSwitchToOwnedFarm = useCallback(async (farm: Farm) => {
     if (!user) return;
     setOwnFarmById(user.id, farm);
+    setHasLoadedOnce(false);
     await loadSeasonsByFarm(farm.id, user.id);
     handleNavigate('dashboard');
   }, [user, setOwnFarmById, loadSeasonsByFarm]);
@@ -436,6 +513,7 @@ function AppContent() {
       farmName: farm.farmName,
       role: farm.role,
     });
+    setHasLoadedOnce(false);
     if (farm.farmId) {
       await loadSeasonsByFarm(farm.farmId, farm.ownerId);
     } else {
@@ -447,6 +525,7 @@ function AppContent() {
   const handleSwitchToOwnFarm = useCallback(async () => {
     if (!user) return;
     const farms = ownedFarms.length > 0 ? ownedFarms : await fetchOwnedFarms(user.id);
+    setHasLoadedOnce(false);
     if (farms.length > 0) {
       setOwnFarmById(user.id, farms[0]);
       await loadSeasonsByFarm(farms[0].id, user.id);
@@ -462,6 +541,7 @@ function AppContent() {
     const updatedFarms = [...ownedFarms, newFarm];
     setOwnedFarms(updatedFarms);
     setOwnFarmById(user.id, newFarm);
+    setHasLoadedOnce(false);
     await loadSeasonsByFarm(newFarm.id, user.id);
     handleNavigate('dashboard');
   }, [user, ownedFarms, setOwnedFarms, setOwnFarmById, loadSeasonsByFarm]);
@@ -482,7 +562,25 @@ function AppContent() {
     await loadSharedFarms();
   }, [loadSharedFarms]);
 
-  if (dataLoadError && !loading) {
+  /*
+   * R-1, the amplifier. The gates below used to fire unconditionally, from ABOVE
+   * DashboardLayout and all fourteen pages, so a load error or one frame of `loading`
+   * discarded the entire tree. Which surface a load state earns is now a pure decision
+   * in lib/appLoadState.ts with a truth table under it, because App.tsx itself cannot
+   * be exercised without Supabase credentials.
+   */
+  const chrome = resolveAppLoadPresentation({
+    authLoading,
+    loading,
+    hasLoadedOnce,
+    loadError: dataLoadError,
+  });
+  const retryInitialLoad = () => {
+    setDataLoadError(null);
+    loadInitialData();
+  };
+
+  if (chrome.fullScreen === 'error') {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
         <div className="w-full max-w-md bg-white rounded-2xl shadow-xl p-8 text-center">
@@ -494,10 +592,7 @@ function AppContent() {
           <h2 className="text-xl font-bold text-gray-900 mb-3">Failed to Load</h2>
           <p className="text-gray-600 mb-6">{dataLoadError}</p>
           <button
-            onClick={() => {
-              setDataLoadError(null);
-              loadInitialData();
-            }}
+            onClick={retryInitialLoad}
             className="w-full bg-blue-600 text-white py-3 px-4 rounded-lg font-medium hover:bg-blue-700 transition-colors"
           >
             Try Again
@@ -507,7 +602,7 @@ function AppContent() {
     );
   }
 
-  if (authLoading || loading) {
+  if (chrome.fullScreen === 'loading') {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
         <div className="text-center">
@@ -525,14 +620,19 @@ function AppContent() {
   }
 
   if (!user && wasAuthenticated.current) {
-    sessionStorage.removeItem('activePage');
     return <Auth />;
   }
 
   const isOwnFarm = activeFarm?.isOwn !== false;
   const activeRole = activeFarm?.role ?? 'admin';
 
-  if (isOwnFarm && seasons.length === 0 && !showSeasonForm) {
+  /*
+   * R-5. `emptySeasonsIsConfirmed` is the third state. Seasons being empty now means
+   * one of two things — a load that succeeded and found none, or a load that never
+   * completed — and only the first may show the first-run welcome screen. Without this
+   * test a failed load still reads as "this farm has no seasons", which is the defect.
+   */
+  if (isOwnFarm && seasons.length === 0 && !showSeasonForm && chrome.emptySeasonsIsConfirmed) {
     return (
       <div className="min-h-screen bg-gradient-to-br from-green-50 to-blue-50 flex items-center justify-center p-4">
         <div className="w-full max-w-md bg-white rounded-2xl shadow-xl p-8 text-center">
@@ -694,13 +794,31 @@ function AppContent() {
     );
   }
 
+  /*
+   * R-1. Both indicators are fixed-position overlays rendered beside the page rather
+   * than in place of it. They are repeated across the two remaining return paths on
+   * purpose — FieldDetail renders outside DashboardLayout, and it is exactly the kind
+   * of screen someone is mid-edit on when a refresh lands.
+   */
+  const loadStatusOverlays = (
+    <>
+      {chrome.overlay === 'refreshing' && <AppRefreshIndicator />}
+      {chrome.overlay === 'error' && (
+        <AppLoadErrorBanner message={dataLoadError ?? ''} onRetry={retryInitialLoad} />
+      )}
+    </>
+  );
+
   if (activePage === 'field-detail' && selectedFieldId && currentSeason?.id) {
     return (
-      <FieldDetail
-        fieldId={selectedFieldId}
-        seasonId={currentSeason.id}
-        onBack={handleBackFromFieldDetail}
-      />
+      <>
+        <FieldDetail
+          fieldId={selectedFieldId}
+          seasonId={currentSeason.id}
+          onBack={handleBackFromFieldDetail}
+        />
+        {loadStatusOverlays}
+      </>
     );
   }
 
@@ -754,6 +872,7 @@ function AppContent() {
           onRefreshSharedFarms={loadSharedFarms}
         />
       )}
+      {loadStatusOverlays}
     </DashboardLayout>
   );
 }

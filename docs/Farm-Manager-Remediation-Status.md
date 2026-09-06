@@ -4,7 +4,10 @@
 complete, shopping-list coverage complete, and **field-level fertilizer rates V-0 … V-6 and
 V-8 complete, confirmed in the running app**. Only V-7, the optional CSV import, remains,
 and it is **deferred by the owner's decision** until the grid has been used for a season.
-The random-reload diagnosis is written and **still not acted on**.
+**The random reload is acted on at last: R-1, R-5 and R-4 item 2 landed 6 Sep** — the
+full-screen amplifier is gone, a failed seasons load no longer reads as an empty farm, and
+the render-phase mutation is in an effect. R-2, R-3, the rest of R-4 and R-7 still wait on
+an auth-diagnostics dump the owner has not been able to catch; R-6 does not.
 **Repo:** `jwolfish/Farm-Manager` — **everything is merged on `main` and pushed to origin
 (`9711bf6`)**. Nothing is half-finished and no branch is ahead: `git branch --no-merged
 main` is empty. The seven older branches still exist locally and are all 0 commits ahead.
@@ -54,10 +57,10 @@ the running app — *How to prove the fix*, at the end of that section.
 
 | Measured 6 Sep 2026 | |
 |---|---|
-| Tests | **386 passing**, 10 files (380 before V-8 added 6; 347 before V-6 added 25) |
-| TypeScript | **73 errors** (103 at review, 98 before WI-19, 75 before V-8 replaced two `Json` casts with `Array.isArray` guards) |
-| ESLint | **107 errors, 28 warnings** (from 136/28; 109 before V-8 deleted one `prefer-const` and one `no-explicit-any`) |
-| Build | succeeds — **1,787.96 kB** (477.27 kB gz), plus lazy `FertilizerContractsTab` 25.96 kB, `BookingModal` 19.63 kB and `FieldFertilizerRateGridPanel` 19.83 kB |
+| Tests | **400 passing**, 11 files (386 before R-1 added 14; 380 before V-8 added 6; 347 before V-6 added 25) |
+| TypeScript | **73 errors** (103 at review, 98 before WI-19, 75 before V-8 replaced two `Json` casts with `Array.isArray` guards). Unmoved by R-1, set compared with positions stripped |
+| ESLint | **107 errors, 28 warnings** (from 136/28; 109 before V-8 deleted one `prefer-const` and one `no-explicit-any`). Unmoved by R-1 |
+| Build | succeeds — **1,790.04 kB** (477.80 kB gz; 1,787.96 before R-1 added 2.08 kB to the eager `App.tsx` path), plus lazy `FertilizerContractsTab` 25.96 kB, `BookingModal` 19.63 kB and `FieldFertilizerRateGridPanel` 19.83 kB, all three byte-identical |
 | Migrations | **63 files**, matching the database one-for-one |
 | Edge function | **version 17**, running source confirmed identical to the repo by sha256, re-verified 6 Sep |
 | Security advisors | 14 WARN — 13 are the by-design `authenticated_security_definer_function_executable` lint that fires on every RPC, 1 is `auth_leaked_password_protection` (WI-6). No new class of finding. V-6’s internal `apply_field_fertilizer_rates` is correctly absent, being executable by neither role |
@@ -198,13 +201,21 @@ The query in *The override defect* above answers it in one shot — every row sh
 
 ### Then, in order
 
-1. **The random reload.** `Farm-Manager-Random-Reload-Diagnosis.md` — written 30 Aug,
-   **nothing implemented.** Verified still true on 31 Aug: the full-screen gate at
-   `App.tsx:492` with no `hasLoadedOnce`, `tokenChanged` still gating `setUser` at
-   `AuthContext.tsx:79`, seven dependency arrays still holding a bare `user`, the
-   render-phase `sessionStorage.removeItem` at `App.tsx:510`, no error boundary anywhere,
-   24 `exhaustive-deps` warnings. Start with that document's own advice: the one-line auth
-   log in section 4, *before* fixing anything, then R-1.
+1. **The random reload — R-1, R-5 and R-4 item 2 landed 6 Sep; R-2, R-3, R-4, R-6, R-7
+   remain.** `Farm-Manager-Random-Reload-Diagnosis.md` §5a has the detail. The amplifier is
+   gone: a transient load or a load error no longer unmounts the app, a failed seasons load
+   no longer presents as an empty farm, and the render-phase `sessionStorage.removeItem` is
+   in an effect. **Still true and still waiting on the auth log:** `tokenChanged` gating
+   `setUser` at `AuthContext.tsx:79` (R-2 — the diagnosis says explicitly not to touch it
+   until a real session shows the `decision` entry), the bare `user` dependency arrays
+   (R-3), the rest of R-4, and R-7. **R-6, the error boundary, needs no log either and is
+   the obvious next one.**
+
+   **One check outstanding, and it is the owner's**: open a modal on Products, force a
+   token refresh, confirm the modal and its fields survive. Nothing on this machine can
+   reach `App.tsx` at runtime, so the behaviour is proven by 14 tests over the extracted
+   decision and by rendering the two indicators — not by watching a modal live through a
+   refresh.
 2. **Finish WI-19.** **73** errors left (75 until V-8 replaced two `Json` casts with
    `Array.isArray` guards): nullability, the remaining unguarded `Json` casts, recharts
    formatter signatures, unused parameters, and the residue. The nullability
@@ -2276,6 +2287,69 @@ neither the unit tests nor the SQL check could:
 `FieldProgramDetails`, `FieldDetail`'s cost math, the V-5 editor, the V-6 grid, the shopping
 list, the Contracts tab and the plan calculator all call `resolveFieldFertilizerItems`. The
 next one added must too, and the standing rule in `CLAUDE.md` says so.
+
+### The random reload — R-1, R-5 and R-4 item 2 — 6 Sep 2026
+
+**The first code change against the reload complaint, and it went in without the dump.**
+The owner has not been able to catch an `authDiag.dump()`, and the diagnosis's own
+sequencing says to instrument before fixing — so the item chosen is the one that sequencing
+does not apply to. R-1 aims at the **amplifier**, not a trigger: `App.tsx` returned a
+full-screen spinner and a full-screen error card from **above** `DashboardLayout` and all
+fourteen pages, so any momentary `loading` unmounted every page, every open modal and every
+half-typed form. It contains every trigger in §3, named or not, and would be right even if
+that whole section turned out to be wrong about causes.
+
+R-2, R-3, the rest of R-4 and R-7 each aim at a *particular* trigger and are untouched;
+**R-2 must not be implemented until the log shows `setUser: true` with `userChanged: false`
+in a real session**, which is §4a's whole purpose. R-6, the error boundary, needs no log
+either and is the obvious next one.
+
+**What changed:** after the first successful render nothing takes the screen. A refresh
+shows a 3 px bar at the top edge; a failed load shows a retry banner and **keeps the data
+already on screen**. A farm switch still loads full-screen, because that transition
+legitimately replaces everything — expressed by clearing `hasLoadedOnce` at the load rather
+than by a second flag. R-5 stops both seasons paths clearing `seasons` on failure, so an
+empty list means a *confirmed* empty, and only that may reach "Welcome to Crop Tracker!".
+R-4's item 2 moves `sessionStorage.removeItem('activePage')` out of the render body into an
+effect; **its behaviour is deliberately unchanged**, because whether an unexpected sign-out
+should keep the page is the rest of R-4 and still wants the log.
+
+**The decision is a pure function**, `resolveAppLoadPresentation` in `lib/appLoadState.ts`,
+with **14 tests**. That is the `accumulateNeed` / `planLineDraw` pattern, and here it is
+what makes the change checkable at all: `App.tsx` imports the Supabase client at module
+load, so a rule left inline in it can only ever be verified by reading on this machine.
+**Proved to be a regression guard rather than merely green** — with `hasLoadedOnce` forced
+back out of the decision, exactly the four R-1 assertions fail and the other ten pass.
+
+**Rendering found a defect for the eighth round running, and this time it was in the fix.**
+The refresh indicator started as a centred pill at `top-3`. At 375 px the header owns the
+top of the viewport, so it sat over the season name — *"2027 Growing Season"* rendered as
+*"027 Growing Season"*. That is the F-4b defect exactly: the thing obscured is the thing
+that matters, and which season you are in is not negotiable. It is now a 3 px bar on the
+top edge, which obscures nothing at any width.
+
+**A false claim caught before it was committed.** An intermediate version added `sm:w-full`
+to the banner with a comment saying rendering had proved it necessary. Measured with and
+without: **448 px both ways** — the apparently shrink-wrapped banner was the 0.625
+screenshot scale being misread. Class and comment both removed. *A screenshot is evidence of
+what is on screen, not of why.*
+
+**A correction to the diagnosis doc, found while fixing it.** T-4 says a failed seasons load
+renders the welcome screen. On the farm path it did not: the catch also sets `dataLoadError`
+and the "Failed to Load" gate is tested first, so the error card appeared — a takeover, but
+not the first-run lie. The lie was real only on the legacy no-farm branch of `loadSeasons`,
+which cleared the seasons and reported **nothing at all**. `dataLoadError` predates the
+diagnosis by five months (`a9dcbca`, 14 Mar), so this was wrong when written — and it was
+then copied into the 31 Aug instrumentation comment. Recorded in §5a of that document.
+
+**Not verified, and not to be claimed:** no transient `loading` has been observed leaving a
+real modal mounted. That needs `App.tsx` against Supabase and is the owner's check — open a
+modal on Products, force a token refresh, confirm the modal and its fields survive.
+
+**Floor:** TypeScript **73**, set byte-identical with positions stripped · ESLint
+**107 / 28** · tests 386 → **400** · build succeeds, main chunk 1,787.96 → **1,790.04 kB**
+(477.27 → 477.80 gz), the three lazy chunks byte-identical. The seasons timeout also went
+10 s → 20 s, which costs nothing now that a slow load no longer blanks the page.
 
 ## Open items and standing notes
 

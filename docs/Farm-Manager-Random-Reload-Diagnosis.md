@@ -14,6 +14,14 @@ against the code on 31 Aug. What *has* landed is the section 4 instrumentation, 
 step is reading a real session rather than guessing. See **§4a**. One claim in R-2 is
 corrected there.
 
+**Update, 6 Sep 2026: R-1, R-5 and R-4 item 2 are IMPLEMENTED.** Done without a dump,
+deliberately: the owner has not been able to catch one, and R-1 is the only item here that
+does not need to know which trigger fired — it contains all of them. R-2, R-3, R-4 (the
+rest) and R-7 are still untouched and still want the log; **R-2 in particular must not be
+implemented until §4a's `decision` entry is seen in a real session.** See **§5a** for what
+landed, including a correction to T-4 below. R-6 is unstarted and is now the obvious next
+one, because it needs no log either.
+
 **Companion docs:** `Farm-Manager-Remediation-Status.md`, `Farm-Manager-Remediation-PRD.md`
 
 ---
@@ -174,6 +182,25 @@ presents as the app resetting itself to first-run state. Same defect shape as WI
 "a failed query is indistinguishable from an empty one," here surfacing in the UI instead
 of in the cascade.
 
+> **CORRECTION, 6 Sep 2026, found while fixing it.** The heading is right about the class
+> of defect and **wrong about which screen appears on this path.** `loadSeasonsByFarm`'s
+> catch also sets `dataLoadError`, and the *"Failed to Load"* gate is tested **before** the
+> welcome gate — so a failed farm seasons load rendered the error card, not the welcome
+> screen. Still a full-screen takeover, and still R-1's problem, but not the first-run lie.
+>
+> The lie was real on the **legacy no-farm branch of `loadSeasons`**, which cleared the
+> seasons and set **no error at all**, so a failure there did render "Welcome to Crop
+> Tracker!" with nothing anywhere to say a query had failed. That branch runs only when
+> `activeFarmId` is null, which `loadInitialData` normally prevents.
+>
+> `dataLoadError` was added 14 Mar 2026 (`a9dcbca`), months before this section was
+> written, so this was wrong when written rather than overtaken by later work. Worth
+> recording because the wrong screen was named twice — here on 30 Aug, and again in the
+> instrumentation comment on 31 Aug, which copied it. Reading a claim is not checking it.
+>
+> Both paths are fixed: neither clears the seasons on failure, and the welcome gate now
+> requires a *confirmed* empty. See §5a.
+
 ### T-5 · There is no error boundary anywhere
 
 Grep for `ErrorBoundary`, `componentDidCatch`, `getDerivedStateFromError` across `src/`:
@@ -297,7 +324,7 @@ because this machine has no Supabase credentials. The first real reading is the 
 Sequenced by leverage, not by cause. **R-1 first** — it is the only item that helps even if
 the diagnosis above turns out to be incomplete.
 
-### R-1 — Stop a transient loading state from tearing down the app · P0 · M
+### R-1 — Stop a transient loading state from tearing down the app · P0 · M — **DONE 6 Sep 2026**
 
 **Problem.** `App.tsx:492` returns a full-screen spinner above the entire tree, so any
 momentary `loading` discards all page state.
@@ -360,7 +387,7 @@ screen, wipes `activePage`, and resets the farm and season on return.
 **AC.** `[ ]` Simulating a forced `SIGNED_OUT` and signing back in returns the user to the
 same page, farm and season. `[ ]` A real sign-out still clears everything.
 
-### R-5 — Distinguish "no seasons" from "could not load seasons" · P1 · S
+### R-5 — Distinguish "no seasons" from "could not load seasons" · P1 · S — **DONE 6 Sep 2026**
 
 **Problem.** `loadSeasonsByFarm` (`App.tsx:64`) sets `setSeasons([])` on failure, so a
 timeout renders the first-run welcome screen.
@@ -392,6 +419,75 @@ they stand — see the comment at `useDashboardMetrics.ts:214` — and must not 
 to a `user_id` filter.
 
 **AC.** `[ ]` A cascade updates the dashboard numbers in place with no spinner.
+
+## 5a. R-1, R-5 and R-4 item 2 as built — 6 Sep 2026
+
+**Built without a dump, on purpose.** §7 says to instrument before fixing, and that is still
+right for R-2, R-3, R-4 and R-7 — each of those aims at a *particular* trigger, so landing
+one blind is the confident-plausible-incomplete failure this document exists to explain.
+R-1 is the exception by construction: it aims at the **amplifier**, contains every trigger
+named or not, and would be the correct change even if §3 turned out to be entirely wrong
+about causes. R-5 and the render-phase mutation are independent defects in the same lines.
+
+**The one decision, made pure.** Which surface a load state earns now lives in
+`src/lib/appLoadState.ts` — `resolveAppLoadPresentation({authLoading, loading, hasLoadedOnce,
+loadError})` → `{fullScreen, overlay, emptySeasonsIsConfirmed}` — with 14 tests under it.
+This is the `accumulateNeed` / `planLineDraw` pattern, and here it is what makes the change
+checkable at all: `App.tsx` reaches the Supabase client at module load, so a rule left
+inline in it can only ever be verified by reading, on a machine that has never had
+credentials.
+
+**Proved to be a regression guard, not just green.** With `hasLoadedOnce` forced back out
+of the decision — the pre-R-1 behaviour — exactly the four R-1 assertions fail and the other
+ten pass. So the tests fail if someone reinstates the takeover.
+
+| | Before | After |
+|---|---|---|
+| Transient `loading` after first load | full-screen spinner, entire tree unmounted | page stays mounted, 3 px bar at the top edge |
+| `authLoading` flipping on a token refresh | same | same |
+| Load error after first load | full-screen "Failed to Load" card | page stays mounted, retry banner bottom-left |
+| Failed seasons load | seasons cleared to `[]` | **seasons kept** |
+| Empty seasons after a *failed* load | eligible for the welcome screen | refused — `emptySeasonsIsConfirmed` |
+| Farm switch | full-screen | **still full-screen**, by clearing `hasLoadedOnce` at the load |
+| First load of all | full-screen | unchanged — nothing to preserve yet |
+| `sessionStorage.removeItem('activePage')` | in the render body, twice under StrictMode | in an effect |
+
+**R-4's behaviour is deliberately NOT changed** — only its item 2, the render-phase
+mutation. Whether an unexpected sign-out should keep the page, the farm and the season is
+the rest of R-4, and that still wants the log.
+
+**The seasons timeout went 10 s → 20 s.** A slow query on rural cell data is a normal event,
+and the old timeout turned it into a failure. It costs nothing now: after the first load the
+page stays put while it runs. A single automatic retry was considered and left out — it
+doubles the worst case before the user is told anything, and Try Again is now available
+without losing the page.
+
+**Rendering found a defect for the eighth round running, and it was in the fix.** The
+refresh indicator was first a centred pill at `top-3`. At 375 px the header occupies the top
+of the viewport, so it sat squarely over the season name — *"2027 Growing Season"* read as
+*"027 Growing Season"*. Obscuring **which season you are in** is not an acceptable price for
+saying a refresh is running, and it is the F-4b defect exactly: the thing that gets hidden
+is the thing that matters. It is now a 3 px bar pinned to the very top edge, which obscures
+nothing at any width. Measured after: bar at y=0, header text intact, `scrollWidth` 375 =
+`clientWidth`, banner 343 px wide with a 44 px Try Again, and the bar correctly suppressed
+while the banner is up so two overlays never stack.
+
+**A false claim caught before it was committed.** An intermediate version added `sm:w-full`
+to the banner and a comment saying rendering had proved it necessary. Measuring with and
+without gave **448 px both ways** — the "shrink-wrapped" banner was the 0.625 screenshot
+scale being misread. Both the class and the comment were removed. A screenshot is evidence
+of what is on screen, not of why.
+
+**What is NOT verified, and must not be claimed.** The pure decision has tests and the two
+overlays were driven in a browser, but **no transient `loading` has been observed leaving a
+real modal mounted**, because that needs `App.tsx` running against Supabase. The honest
+check is the one §7 already specifies, and it is the owner's: open a modal on Products,
+force a `TOKEN_REFRESHED`, confirm the modal and its fields survive. Run it before and after
+if possible, so the fix is shown to change the behaviour rather than assumed to.
+
+**Floor:** TypeScript **73**, error set byte-identical to the baseline with positions
+stripped · ESLint **107 / 28**, unchanged · tests **386 → 400** · build succeeds, main chunk
+1,787.96 → **1,790.04 kB** (477.27 → 477.80 gz), the three lazy chunks byte-identical.
 
 ## 6. What this is not
 
