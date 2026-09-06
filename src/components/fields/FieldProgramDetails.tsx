@@ -1,6 +1,12 @@
 import { useEffect, useState } from 'react';
 import { Sprout, Beaker, FlaskConical, Loader2, Pencil } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
+import {
+  resolveFieldFertilizerItems,
+  type FertilizerProductMeta,
+  type FieldRate,
+  type ProgramItemRate,
+} from '../../lib/fieldFertilizerRates';
 
 interface SeedVarietyInfo {
   id: string;
@@ -16,6 +22,8 @@ interface FertilizerProgramInfo {
   program_name: string;
   application_cost: number;
   cost_per_acre: number;
+  /** True when these rates came from the field rather than the program. */
+  has_field_rates: boolean;
   items: Array<{
     product_name: string;
     application_rate: number;
@@ -70,6 +78,13 @@ export function FieldProgramDetails({
   const loadProgramDetails = async () => {
     setLoading(true);
     try {
+      // The season scopes the product catalogue the resolved rates are read against.
+      const { data: fieldRow } = await supabase
+        .from('fields')
+        .select('season_id')
+        .eq('id', fieldId)
+        .maybeSingle();
+
       const { data: fieldCosts } = await supabase
         .from('field_costs')
         .select('seed_variety_id, seeding_rate_override, template_id')
@@ -142,7 +157,8 @@ export function FieldProgramDetails({
 
       await Promise.all([
         loadFertilizerPrograms(
-          fertilizerCustom ? overrideMap.get('fertilizer_programs') : templateFertilizer
+          fertilizerCustom ? overrideMap.get('fertilizer_programs') : templateFertilizer,
+          fieldRow?.season_id ?? null
         ),
         loadChemicalPrograms(
           chemicalCustom ? overrideMap.get('chemical_programs') : templateChemical
@@ -155,7 +171,21 @@ export function FieldProgramDetails({
     }
   };
 
-  const loadFertilizerPrograms = async (programsJson: unknown) => {
+  /*
+   * Fertilizer rates come from the FIELD where it has its own, and the program otherwise —
+   * V-5 follow-up, 6 Sep.
+   *
+   * V-0 fixed which PROGRAMS this component shows. It kept reading each program's item
+   * rates straight from `fertilizer_program_items`, which is the shared list, so the first
+   * field ever given a custom rate displayed the program's 185 lb/ac while its stored rate,
+   * its cost and its field total all said 200. The money was right and the screen was not,
+   * which is the same shape as defect 3 one level deeper.
+   *
+   * Resolution goes through `resolveFieldFertilizerItems` — the same function the editor,
+   * the cost math and (at V-8) the shopping list use, so they cannot disagree about what a
+   * field's rate is.
+   */
+  const loadFertilizerPrograms = async (programsJson: unknown, seasonId: string | null) => {
     if (!Array.isArray(programsJson) || programsJson.length === 0) {
       setFertilizerPrograms([]);
       return;
@@ -165,48 +195,81 @@ export function FieldProgramDetails({
     const ids = refs.map((r) => r.program_id);
     const costMap = new Map(refs.map((r) => [r.program_id, r.cost_per_acre]));
 
-    const { data: programs } = await supabase
-      .from('fertilizer_programs')
-      .select('id, program_name, application_cost')
-      .in('id', ids);
+    const [programRes, itemRes, productRes, rateRes] = await Promise.all([
+      supabase.from('fertilizer_programs').select('id, program_name, application_cost').in('id', ids),
+      supabase
+        .from('fertilizer_program_items')
+        .select('program_id, fertilizer_product_id, application_rate, application_rate_unit')
+        .in('program_id', ids),
+      seasonId
+        ? supabase
+            .from('fertilizer_products')
+            .select('id, product_name, unit_type, price_per_unit, density_lb_per_gal')
+            .eq('season_id', seasonId)
+        : Promise.resolve({ data: [], error: null }),
+      supabase
+        .from('field_fertilizer_rates')
+        .select('field_id, program_id, fertilizer_product_id, application_rate, application_rate_unit')
+        .eq('field_id', fieldId),
+    ]);
 
+    const programs = programRes.data;
     if (!programs || programs.length === 0) {
       setFertilizerPrograms([]);
       return;
     }
 
-    const { data: items } = await supabase
-      .from('fertilizer_program_items')
-      .select(`
-        program_id,
-        application_rate,
-        application_rate_unit,
-        fertilizer_products ( product_name, price_per_unit, unit_type )
-      `)
-      .in('program_id', ids);
+    const products = new Map<string, FertilizerProductMeta>(
+      (productRes.data ?? []).map((p: any) => [
+        p.id,
+        {
+          productId: p.id,
+          productName: p.product_name,
+          unitType: p.unit_type,
+          pricePerUnit: Number(p.price_per_unit ?? 0),
+          density: p.density_lb_per_gal == null ? null : Number(p.density_lb_per_gal),
+        },
+      ])
+    );
 
-    const itemsByProgram = new Map<string, FertilizerProgramInfo['items']>();
-    for (const item of items || []) {
-      const product = (item as any).fertilizer_products;
-      if (!product) continue;
+    const fieldRates: FieldRate[] = (rateRes.data ?? []).map((r) => ({
+      fieldId: r.field_id,
+      programId: r.program_id,
+      productId: r.fertilizer_product_id,
+      rate: Number(r.application_rate),
+      rateUnit: r.application_rate_unit,
+    }));
+
+    const itemsByProgram = new Map<string, ProgramItemRate[]>();
+    for (const item of itemRes.data ?? []) {
       const list = itemsByProgram.get(item.program_id) ?? [];
       list.push({
-        product_name: product.product_name,
-        application_rate: Number(item.application_rate),
-        application_rate_unit: item.application_rate_unit,
-        price_per_unit: Number(product.price_per_unit),
-        unit_type: product.unit_type,
+        productId: item.fertilizer_product_id,
+        rate: Number(item.application_rate),
+        rateUnit: item.application_rate_unit,
       });
       itemsByProgram.set(item.program_id, list);
     }
 
-    const result: FertilizerProgramInfo[] = programs.map((p) => ({
-      id: p.id,
-      program_name: p.program_name,
-      application_cost: Number(p.application_cost ?? 0),
-      cost_per_acre: costMap.get(p.id) ?? 0,
-      items: itemsByProgram.get(p.id) ?? [],
-    }));
+    const result: FertilizerProgramInfo[] = programs.map((p) => {
+      const resolved = resolveFieldFertilizerItems(
+        fieldId, p.id, itemsByProgram.get(p.id) ?? [], fieldRates, products
+      );
+      return {
+        id: p.id,
+        program_name: p.program_name,
+        application_cost: Number(p.application_cost ?? 0),
+        cost_per_acre: costMap.get(p.id) ?? 0,
+        has_field_rates: resolved.isCustom,
+        items: resolved.items.map((i) => ({
+          product_name: i.product.productName,
+          application_rate: i.rate,
+          application_rate_unit: i.rateUnit,
+          price_per_unit: i.product.pricePerUnit,
+          unit_type: i.product.unitType,
+        })),
+      };
+    });
 
     setFertilizerPrograms(result);
   };
@@ -369,7 +432,14 @@ export function FieldProgramDetails({
                       <table className="w-full text-sm">
                         <thead>
                           <tr className="text-gray-500 text-xs">
-                            <th className="text-left font-medium pb-1">Product</th>
+                            <th className="text-left font-medium pb-1">
+                              Product
+                              {prog.has_field_rates && (
+                                <span className="ml-2 rounded bg-amber-100 px-2 py-0.5 text-[10px] font-medium text-amber-800">
+                                  Field rates
+                                </span>
+                              )}
+                            </th>
                             <th className="text-right font-medium pb-1">Rate</th>
                             <th className="text-right font-medium pb-1">Price</th>
                           </tr>

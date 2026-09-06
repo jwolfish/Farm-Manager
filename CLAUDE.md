@@ -72,7 +72,7 @@ The status doc is the source of truth for what is done. Update it when a round l
   before the unused-symbol sweep brought it to 76. See the WI-19 section of the status
   doc for the full accounting; every movement is itemised there.
 - `npx eslint .` reports **109 errors, 28 warnings** (was 136/28 at review).
-- `npx vite build` succeeds and emits a **1,784.40 kB** main chunk (476.35 kB gz), plus two
+- `npx vite build` succeeds and emits a **1,785.44 kB** main chunk (476.72 kB gz), plus two
   lazy fertilizer chunks: **25.96 kB** `FertilizerContractsTab` (7.10 gz) and **20.07 kB**
   `BookingModal` (6.03 gz), the latter shared by the Contracts tab, the Shopping Lists tab
   and the plan calculator. It was 1,751.91 kB before fertilizer F-1, which added 2.38 kB for
