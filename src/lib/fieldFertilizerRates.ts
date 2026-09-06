@@ -1,4 +1,8 @@
-import { calculateCostWithConversion, describeConversionFailure } from './unitConversions';
+import {
+  calculateCostWithConversion,
+  convertProductUnits,
+  describeConversionFailure,
+} from './unitConversions';
 import type { NeedContribution } from './shoppingListMath';
 
 /**
@@ -215,4 +219,54 @@ export function totalFromRate(rate: number, acreage: number): number | null {
   if (!Number.isFinite(rate) || !Number.isFinite(acreage)) return null;
   if (acreage < 0) return null;
   return rate * acreage;
+}
+
+/*
+ * The unit-aware pair the editor actually uses — V-5.
+ *
+ * The owner enters a TOTAL, in the product's own unit ("8.2 ton of Potash on Home 80"),
+ * because that is what a VR prescription reports. The stored value is a RATE in the rate's
+ * unit (lb/ac), because the rate is what must survive an acreage change (§7.1).
+ *
+ * So there are two steps, and both can fail: a unit conversion between the product's unit
+ * and the rate's, which needs a density when one side is a volume and the other a mass, and
+ * a division by acreage. Failing loudly is the F-5 rule — the form must name the product it
+ * could not convert rather than quietly showing nothing.
+ */
+export type FieldTotalResult =
+  | { ok: true; value: number }
+  | { ok: false; issue: string };
+
+/** Total in the product's unit → rate per acre in `rateUnit`. */
+export function rateFromFieldTotal(
+  total: number,
+  productUnit: string,
+  rateUnit: string,
+  acreage: number,
+  density: number | null
+): FieldTotalResult {
+  if (!Number.isFinite(total)) return { ok: false, issue: 'the total is not a number' };
+  if (!Number.isFinite(acreage) || acreage <= 0) {
+    return { ok: false, issue: 'this field has no acreage, so a total cannot become a rate' };
+  }
+  const converted = convertProductUnits(productUnit, rateUnit, total, density);
+  if (!converted.ok) return { ok: false, issue: describeConversionFailure(converted) };
+  return { ok: true, value: converted.value / acreage };
+}
+
+/** Rate per acre in `rateUnit` → total in the product's unit. The inverse. */
+export function fieldTotalFromRate(
+  rate: number,
+  rateUnit: string,
+  productUnit: string,
+  acreage: number,
+  density: number | null
+): FieldTotalResult {
+  if (!Number.isFinite(rate)) return { ok: false, issue: 'the rate is not a number' };
+  if (!Number.isFinite(acreage) || acreage < 0) {
+    return { ok: false, issue: 'this field has no acreage' };
+  }
+  const converted = convertProductUnits(rateUnit, productUnit, rate * acreage, density);
+  if (!converted.ok) return { ok: false, issue: describeConversionFailure(converted) };
+  return { ok: true, value: converted.value };
 }

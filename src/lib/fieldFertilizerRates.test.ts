@@ -5,6 +5,8 @@ import {
   contributionsFromItems,
   rateFromTotal,
   totalFromRate,
+  rateFromFieldTotal,
+  fieldTotalFromRate,
   type FertilizerProductMeta,
   type FieldRate,
   type ProgramItemRate,
@@ -274,5 +276,64 @@ describe('rateFromTotal / totalFromRate — the §7.1 round trip', () => {
   it('a zero total is a real answer, not a refusal', () => {
     expect(rateFromTotal(0, 40)).toBe(0);
     expect(totalFromRate(0, 40)).toBe(0);
+  });
+});
+
+describe('rateFromFieldTotal / fieldTotalFromRate — unit-aware, V-5', () => {
+  it('8.2 ton of Potash on 43 ac becomes 381.395 lb/ac and back', () => {
+    // The §7.1 round trip as the editor actually performs it: the owner types the total in
+    // the product's unit, the rate is stored in the rate's unit.
+    const r = rateFromFieldTotal(8.2, 'ton', 'lbs', 43, null);
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.value).toBeCloseTo(381.3953488372093, 9);
+
+    const back = fieldTotalFromRate(r.value, 'lbs', 'ton', 43, null);
+    expect(back.ok).toBe(true);
+    if (!back.ok) return;
+    expect(back.value).toBeCloseTo(8.2, 10);
+  });
+
+  it('bridges a liquid through its density in both directions', () => {
+    // 6-24-6 at 11.1 lb/gal, priced by the ton, applied in gallons.
+    const r = rateFromFieldTotal(1, 'ton', 'gallon', 50, 11.1);
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    // 1 ton = 2000 lb / 11.1 = 180.18 gal over 50 ac
+    expect(r.value).toBeCloseTo(2000 / 11.1 / 50, 9);
+
+    const back = fieldTotalFromRate(r.value, 'gallon', 'ton', 50, 11.1);
+    expect(back.ok).toBe(true);
+    if (back.ok) expect(back.value).toBeCloseTo(1, 10);
+  });
+
+  it('names the product problem when a liquid has no density', () => {
+    const r = rateFromFieldTotal(1, 'ton', 'gallon', 50, null);
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.issue).toContain('density');
+  });
+
+  it('refuses a field with no acreage rather than dividing by zero', () => {
+    const r = rateFromFieldTotal(8.2, 'ton', 'lbs', 0, null);
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.issue).toContain('acreage');
+  });
+
+  it('a zero total is a real answer', () => {
+    const r = rateFromFieldTotal(0, 'ton', 'lbs', 43, null);
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.value).toBe(0);
+  });
+
+  it('identity units need no conversion at all', () => {
+    const r = rateFromFieldTotal(100, 'ton', 'ton', 50, null);
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(r.value).toBe(2);
+  });
+
+  it('rejects a non-numeric total instead of producing NaN', () => {
+    expect(rateFromFieldTotal(NaN, 'ton', 'lbs', 43, null).ok).toBe(false);
+    expect(fieldTotalFromRate(NaN, 'lbs', 'ton', 43, null).ok).toBe(false);
   });
 });
