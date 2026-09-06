@@ -16,6 +16,7 @@ import { TemplateSelector } from '../components/TemplateSelector';
 import { SeedVarietyAssignmentComponent } from '../components/SeedVarietyAssignment';
 import { TemplateApplicationPreview } from '../components/TemplateApplicationPreview';
 import { Pagination } from '../components/Pagination';
+import { ErrorBoundary } from '../components/ErrorBoundary';
 import { FieldCard } from '../components/fields/FieldCard';
 import type { CropType } from '../lib/database.types';
 import type { SeedVarietyAssignment } from '../lib/templateUtils';
@@ -386,13 +387,21 @@ export function Fields({ seasonId, onViewFieldDetail }: FieldsProps) {
       </div>
 
       {showRateGrid && seasonId && (
-        <Suspense fallback={<div className="fixed inset-0 z-50 bg-white p-8 text-gray-500">Loading…</div>}>
-          <FieldFertilizerRateGridPanel
-            seasonId={seasonId}
-            onClose={() => setShowRateGrid(false)}
-            onSaved={loadFields}
-          />
-        </Suspense>
+        // R-6. Lazy chunk, and a full-screen panel — so a rejected import here would
+        // otherwise take the Fields page with it. Closing the grid is the way out.
+        <ErrorBoundary
+          label="the Fertilizer Rates grid"
+          resetKey={showRateGrid}
+          action={{ label: 'Close', onClick: () => setShowRateGrid(false) }}
+        >
+          <Suspense fallback={<div className="fixed inset-0 z-50 bg-white p-8 text-gray-500">Loading…</div>}>
+            <FieldFertilizerRateGridPanel
+              seasonId={seasonId}
+              onClose={() => setShowRateGrid(false)}
+              onSaved={loadFields}
+            />
+          </Suspense>
+        </ErrorBoundary>
       )}
 
       {fields.length > 0 && (

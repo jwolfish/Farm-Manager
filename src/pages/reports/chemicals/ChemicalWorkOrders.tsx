@@ -132,14 +132,22 @@ export function ChemicalWorkOrders({ currentSeasonId, effectiveUserId }: Props) 
         if (overridesRes.error) throw overridesRes.error;
         if (templatesRes.error) throw templatesRes.error;
 
+        // Both guarded, not cast. `override_value` and `chemical_programs` are `Json`
+        // columns; an override holds EITHER a number or a ProgramReference[]. Anything
+        // that is not an array must mean "no programs" rather than be read as one.
         const overrideMap = new Map<string, ProgramReference[]>();
         for (const o of overridesRes.data ?? []) {
-          overrideMap.set(o.field_id, o.override_value as ProgramReference[]);
+          if (Array.isArray(o.override_value)) {
+            overrideMap.set(o.field_id, o.override_value as unknown as ProgramReference[]);
+          }
         }
 
         const templateMap = new Map<string, ProgramReference[]>();
         for (const t of templatesRes.data ?? []) {
-          templateMap.set(t.id, (t.chemical_programs as ProgramReference[]) ?? []);
+          templateMap.set(
+            t.id,
+            Array.isArray(t.chemical_programs) ? (t.chemical_programs as unknown as ProgramReference[]) : []
+          );
         }
 
         // 4. Resolve program refs per field

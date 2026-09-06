@@ -4,13 +4,21 @@
 complete, shopping-list coverage complete, and **field-level fertilizer rates V-0 … V-6 and
 V-8 complete, confirmed in the running app**. Only V-7, the optional CSV import, remains,
 and it is **deferred by the owner's decision** until the grid has been used for a season.
-**The random reload is acted on at last: R-1, R-5 and R-4 item 2 landed 6 Sep** — the
+**The random reload is acted on at last: R-1, R-5, R-4 item 2 and R-6 landed 6 Sep** — the
 full-screen amplifier is gone, a failed seasons load no longer reads as an empty farm, and
 the render-phase mutation is in an effect. R-2, R-3, the rest of R-4 and R-7 still wait on
-an auth-diagnostics dump the owner has not been able to catch; R-6 does not.
-**Repo:** `jwolfish/Farm-Manager` — **everything is merged on `main` and pushed to origin
-(`9711bf6`)**. Nothing is half-finished and no branch is ahead: `git branch --no-merged
-main` is empty. The seven older branches still exist locally and are all 0 commits ahead.
+an auth-diagnostics dump the owner has not been able to catch. **R-6 needed no dump and
+landed the same day** — the app has error boundaries at last, so a render crash degrades one
+region instead of blanking everything.
+**Repo:** `jwolfish/Farm-Manager` — everything through the reload work R-1 / R-5 / R-4 item 2
+/ R-6 is merged on `main` and pushed to origin. The seven older branches still exist locally
+and are all 0 commits ahead.
+
+*A note on this line, because it has now been wrong twice.* It used to name a specific
+`main` SHA and assert that no branch was ahead. Both went stale the moment work landed on a
+branch — R-1 sat unmerged on `r-1-loading-amplifier` for a day while this paragraph said
+otherwise, and the quoted SHA was two commits behind. **Check the repo, not this sentence:**
+`git rev-list --left-right --count origin/main...HEAD` and `git branch --no-merged main`.
 Every migration in `supabase/migrations/` is applied to the live database.
 **Edge function:** `process-cascade-task` **version 17** — the V-3 deploy, last updated
 2026-09-06 01:24 UTC. Carries WI-15, SEC-3, the F-1 density bridge, the override-total fix,
@@ -57,10 +65,10 @@ the running app — *How to prove the fix*, at the end of that section.
 
 | Measured 6 Sep 2026 | |
 |---|---|
-| Tests | **401 passing**, 11 files (386 before R-1 added 15; 380 before V-8 added 6; 347 before V-6 added 25) |
-| TypeScript | **73 errors** (103 at review, 98 before WI-19, 75 before V-8 replaced two `Json` casts with `Array.isArray` guards). Unmoved by R-1, set compared with positions stripped |
-| ESLint | **107 errors, 28 warnings** (from 136/28; 109 before V-8 deleted one `prefer-const` and one `no-explicit-any`). Unmoved by R-1 |
-| Build | succeeds — **1,790.05 kB** (477.80 kB gz; 1,787.96 before R-1 added 2.09 kB to the eager `App.tsx` path), plus lazy `FertilizerContractsTab` 25.96 kB, `BookingModal` 19.63 kB and `FieldFertilizerRateGridPanel` 19.83 kB, all three byte-identical |
+| Tests | **422 passing**, 12 files (401 before R-6 added 21; 386 before R-1 added 15; 380 before V-8 added 6; 347 before V-6 added 25) |
+| TypeScript | **69 errors** (103 at review, 98 before WI-19, 75 before V-8 replaced two `Json` casts with `Array.isArray` guards, 73 before the chemical path got the same four). Unmoved by R-1 and R-6; set compared with positions stripped at every step |
+| ESLint | **107 errors, 28 warnings** (from 136/28; 109 before V-8 deleted one `prefer-const` and one `no-explicit-any`). Unmoved by R-1, by the cast guards, or by R-6 |
+| Build | succeeds — **1,794.82 kB** (479.30 kB gz; 1,790.05 before R-6 added 4.64 kB to the eager `main.tsx`/`App.tsx` path, 1,787.96 before R-1 added 2.09), plus lazy `FertilizerContractsTab` 25.96 kB, `BookingModal` 19.63 kB and `FieldFertilizerRateGridPanel` 19.83 kB, all three byte-identical |
 | Migrations | **63 files**, matching the database one-for-one |
 | Edge function | **version 17**, running source confirmed identical to the repo by sha256, re-verified 6 Sep |
 | Security advisors | 14 WARN — 13 are the by-design `authenticated_security_definer_function_executable` lint that fires on every RPC, 1 is `auth_leaked_password_protection` (WI-6). No new class of finding. V-6’s internal `apply_field_fertilizer_rates` is correctly absent, being executable by neither role |
@@ -72,7 +80,8 @@ WI-14, WI-15, WI-16 · LOG-1, LOG-2, LOG-3, LOG-4, LOG-5, LOG-7, LOG-8, LOG-10 �
 collaboration defects found by testing, none of which were in the original review.
 
 **Partial:** SEC-6 (WI-6 untouched) · SEC-8 (mechanism in place, `ALLOWED_ORIGIN` unset by
-choice) · WI-19 (103 → 73, triage done, 73 remain) · WI-20 (386 tests, but nowhere near the
+choice) · WI-19 (103 → 69; **all 73 read for defects on 6 Sep and none found**, 69 remain,
+86 `no-explicit-any` the substantive group) · WI-20 (422 tests, but nowhere near the
 80 % target) · WI-23 / PERF-2 (V-8 bounded the shopping list's fertilizer override query
 with `.in('field_id', …)`; the chemical one at `shoppingListGeneration.ts:56` still selects
 every visible row and filters in JavaScript).
@@ -208,20 +217,23 @@ The query in *The override defect* above answers it in one shot — every row sh
    in an effect. **Still true and still waiting on the auth log:** `tokenChanged` gating
    `setUser` at `AuthContext.tsx:79` (R-2 — the diagnosis says explicitly not to touch it
    until a real session shows the `decision` entry), the bare `user` dependency arrays
-   (R-3), the rest of R-4, and R-7. **R-6, the error boundary, needs no log either and is
-   the obvious next one.**
+   (R-3), the rest of R-4, and R-7. **R-6 is DONE** — it needed no log either; six
+   boundaries at four scopes, with the chunk-load distinction as a tested pure function.
+   See §5b of the diagnosis.
 
    **One check outstanding, and it is the owner's**: open a modal on Products, force a
    token refresh, confirm the modal and its fields survive. Nothing on this machine can
    reach `App.tsx` at runtime, so the behaviour is proven by 15 tests over the extracted
    decision and by rendering the two indicators — not by watching a modal live through a
    refresh.
-2. **Finish WI-19.** **73** errors left (75 until V-8 replaced two `Json` casts with
-   `Array.isArray` guards): nullability, the remaining unguarded `Json` casts, recharts
-   formatter signatures, unused parameters, and the residue. The nullability
-   block is the one with real value left in it — it means reconciling the app's
-   hand-written interfaces against the schema. Note it also makes R-6 (error boundary)
-   worth more, since those nullability bugs are what would blank the app.
+2. **Finish WI-19 — but the reading is done, and that was the valuable half.** **69** errors
+   left. All 73 were read for defects on 6 Sep and **none was a third `fetchSharedFarms`**;
+   the full triage is in the WI-19 section above, so nobody need repeat it. Four cast guards
+   were taken (73 → 69) as hardening rather than as a fix. What remains is **86
+   `no-explicit-any`** — the one group that still hides this class of message — plus the
+   nullability block, which means reconciling the app's hand-written interfaces against the
+   schema. R-6 has landed, so a nullability crash now degrades one region instead of
+   blanking the app; that lowers the urgency without removing the work.
 3. **The collaboration test that is now cheap.** Production now has **2 farms** and **1
    accepted team member** (it had 1 farm and 0 when this was last written). Have the
    collaborator account create a field or a chemical, then check it appears in Spray
@@ -2351,6 +2363,112 @@ modal on Products, force a token refresh, confirm the modal and its fields survi
 (477.27 → 477.80 gz), the three lazy chunks byte-identical. The seasons timeout also went
 10 s → 20 s, which costs nothing now that a slow load no longer blanks the page.
 
+### WI-19 — the remaining 73 read for defects, and four guards taken — 6 Sep 2026
+
+**All 73 TypeScript errors and all 107 lint errors were read rather than fixed.** That is
+what WI-19 is actually for: it earned its promotion twice, once when `tsc` turned out to be
+naming the `fetchSharedFarms` bug in plain English and once when V-8 found a non-array being
+iterated as a program list. **This pass found no third one**, and that is worth recording as
+a result rather than leaving the next reader to re-derive it.
+
+The triage, so nobody has to repeat it:
+
+| Group | Count | Assessment |
+|---|---|---|
+| `Season` nullability, all in `App.tsx` | 15 | **Latent.** The hand-written interface declares `is_active`, `created_at`, `updated_at`, `farm_id` non-null; the schema says nullable; production holds zero NULLs |
+| `Json` → `ProgramReference[]` casts | 10 | Six were **already** inside an `Array.isArray` check — the cast only names the element type afterwards. Four were unguarded but protected by their own `.eq('cost_item_name', 'chemical_programs')` filter. **Now guarded anyway — see below** |
+| `GenericStringError` in `cascadeUpdates.ts` | 6 | **Not** a broken relationship, despite looking exactly like the `fetchSharedFarms` error. The cause is `.select('id, ' + programField + ', season_id')` — a column list built at runtime, which PostgREST typing cannot resolve, so the row type degrades and the code casts through `Record<string, unknown>`. No live defect; it does mean the compiler checks nothing about the rows in the function that moves every field cost |
+| recharts formatter signatures | 9 | Cosmetic. `(v: number) => string` against `LabelFormatter` |
+| Unused parameters | 13 | Mostly edge-function-mirrored signatures (guardrail 7). One real gap, still open: `cascadeUpdates.ts:170` takes a `taskId` and never uses it, so template-path cascade warnings are never logged against the task while its sibling logs them |
+| Residue — hand-written interface vs generated row type | 19 | Same class as the nullability block |
+
+On the lint side, **86 of the 107 errors are `no-explicit-any`**, concentrated in
+`shoppingListGeneration` (16), `ChemicalWorkOrders` (9), `workOrderCrud` (6) and
+`BreakEvenAnalysis` (6). That is the substantive remainder and it is not a tidy-up: `any`
+suppresses precisely the class of message that named `fetchSharedFarms`. The rest is
+mechanical — 12 unused vars, 3 `prefer-const`, and five copies of one idiom
+(`next.has(id) ? next.delete(id) : next.add(id)`) tripping `no-unused-expressions`.
+
+**One lint error must NOT be "fixed": `no-fallthrough` at `workOrderCrud.ts:260`.** It was
+read. The fallthrough is intentional — grouped `case` labels in `describeRpcFailure`, where
+`55000`, `42501`, `22023` and `P0002` all return `error.message`. Adding a `break` would
+change behaviour. Silence it with a comment if it ever needs silencing.
+
+**Four guards taken, 73 → 69.** The chemical path's unguarded casts now match the fertilizer
+path V-8 already fixed: `shoppingListGeneration.ts` ×2 and `ChemicalWorkOrders.tsx` ×2 read
+`override_value` and `chemical_programs` through `Array.isArray` rather than a cast. This is
+**hardening, not a fix** — the `cost_item_name` filter means no numeric override can reach
+them today, and no wrong number was ever produced. It was worth doing because the guarantee
+lived three lines away in a query string, and because the two halves of the same idea
+disagreeing is the shape this project keeps getting bitten by. The error set was compared
+with positions stripped: **zero new, exactly the four removed.** ESLint, tests and the lazy
+chunks all unmoved.
+
+### The random reload — R-6, the error boundary — 6 Sep 2026
+
+**There was no error boundary anywhere in this app.** Any uncaught render error unmounted
+the whole tree and left a white page — the same symptom R-1 removed for a transient load,
+arriving by a different route. R-6 needed no auth-diagnostics dump, which is why it was the
+obvious next one.
+
+**Both acceptance criteria met, and both checked in a browser rather than by reading.**
+
+| | |
+|---|---|
+| Root | `main.tsx` wraps `<App />`. No `resetKey` on purpose — if the failure is above the page area there is nowhere to navigate to, so recovery is retry or reload |
+| Page area | Inside `DashboardLayout`, keyed on `activePage`, so the sidebar and season picker survive a page crash and navigating away clears the error. `loadStatusOverlays` is deliberately **outside** it, so R-1's refresh indicator and retry banner keep working while a page shows the panel |
+| `FieldDetail` | Renders outside `DashboardLayout` and carries its own only route back, so its boundary supplies a **Back to Fields** action. Without it that screen becomes a dead end when it throws — the blank page in miniature |
+| The three lazy chunks | `FertilizerContractsTab`, `FieldFertilizerRateGridPanel` and `BookingModal` each get their own boundary, so a stale chunk after a deploy degrades one panel instead of a page. The `BookingModal` case was the worst of the three: `fallback={null}`, so the user tapped *Book this* and nothing happened at all |
+
+**The decision is a pure function, per the `appLoadState` / `accumulateNeed` pattern.**
+`describeRenderError` in `src/lib/renderErrorState.ts`, **21 tests**. `App.tsx` and the
+boundary cannot be rendered on this machine, so a rule left inline in them could only ever
+be verified by reading.
+
+**The interesting half of those tests is the negatives.** Classifying a chunk failure is
+easy; the way this goes wrong is over-matching. A bare `Failed to fetch` or `NetworkError`
+is what a failed *data* request looks like, and telling someone to reload there is advice
+that cannot work — the reload needs the same network. Both are pinned as `render`, along
+with an ordinary null-property crash and a Postgres message. The four real browser wordings
+are matched: Chrome/Edge, Firefox (which differs only in case), Safari (which names no
+module) and Vite's CSS preload failure.
+
+**Verified on screen at 1280 px and 375 px** with a throwaway harness, since
+`RenderErrorPanel` is exported separately with no Supabase import — the same split F-4b, V-5
+and V-6 had to make before anything could be looked at. Deleted afterwards.
+
+- A component made to throw showed the panel while **the sidebar beside it stayed usable**,
+  and the console carried `Render error caught by boundary (the Fields page)` with the
+  component stack.
+- **Recovery works**: with the throw removed, clicking to another page cleared the boundary
+  and the region rendered normally — the `resetKey` mechanism, which is what stops a
+  once-broken region staying broken until a reload.
+- Reload is offered for the chunk-load case only; the render case offers Try again alone.
+- At 375 px the buttons stack, `scrollX` stays 0 after `scrollTo(999,0)` with
+  `scrollWidth === clientWidth === 375`, and every panel button measures **44–46 px**,
+  meeting the design doc's ≥44 px rule.
+
+**This is the first round in nine where rendering did NOT find a defect.** Worth saying
+plainly rather than quietly dropping the streak: eight consecutive rounds found something,
+and this one did not. The likeliest reason is that the panel is nearly all static text with
+no data behind it — there is far less here to be wrong than in a rate grid or a season
+summary.
+
+**A real limitation, not to be claimed away.** The root boundary does **not** catch
+`Missing Supabase environment variables`, because that throw happens at module *import*
+time, before React renders anything. Nothing rendered inside React can catch it. That is
+also why this machine still cannot boot the real app, and why the presentation/container
+split remains the only way to look at these screens.
+
+**Not verified, and the owner's check:** no boundary has caught a real fault in the running
+app. Forcing one needs a genuine render crash against live data. The natural first
+opportunity is the WI-19 nullability block — those errors are exactly what would blank the
+app, which is the argument for having done R-6 before finishing them.
+
+**Floor:** TypeScript **69**, set byte-identical with positions stripped · ESLint
+**107 / 28**, new files clean · tests 401 → **422** · build succeeds, main chunk
+1,790.05 → **1,794.82 kB** (477.80 → 479.30 gz), the three lazy chunks byte-identical.
+
 ## Open items and standing notes
 
 **Nothing in this section is open any more.** It is all practice notes and closed records
@@ -2477,7 +2595,10 @@ It sat inside the 103 errors this document itself taught everyone to treat as ba
 noise. A whole feature — shared farms — never worked, and the compiler said so on every
 run. There is no reason to assume it is the only one.
 
-**Triage the remaining 73 for defects rather than fixing them in bulk.** The 86
+**That triage is now DONE — see the WI-19 section above.** All 73 were read on 6 Sep and no
+third defect was found; the groups and their assessments are recorded there so this does not
+have to be redone. The paragraph below stands as the reasoning for why it was worth doing,
+and the 86 `no-explicit-any` remain the group where the argument still applies. The 86
 `no-explicit-any` lint errors matter for the same reason: `any` suppresses exactly this
 class of message. Getting to zero is the goal, but reading them is the value. The
 nullability block is the one with real value left, and it is also the argument for R-6 — an
@@ -2491,7 +2612,7 @@ program list. That is the second time reading this baseline has found a real def
 
 ### 3. Round 6 — performance
 
-PERF-1 … PERF-5. The bundle is the headline: **1,787.96 kB (477.27 kB gz)** against WI-22's
+PERF-1 … PERF-5. The bundle is the headline: **1,794.82 kB (479.30 kB gz)** against WI-22's
 ≤ 300 kB gzip target, so it needs `React.lazy` on the pages plus `manualChunks` for
 recharts, jspdf and html2canvas. Four lazy chunks exist now — the two fertilizer ones, the
 V-6 grid panel and html2canvas — which is the pattern to repeat, not the job done.
@@ -2538,27 +2659,30 @@ All figures below are measured, not estimated.
 
 | Metric | Review baseline | After Round 3 | After Round 4 | End of 30 Aug | After Round 6 step 2 | Measured 31 Aug | **Measured 6 Sep** |
 |---|---|---|---|---|---|---|---|
-| TypeScript errors | 103 | 103 (identical set) | 99 | 98 | 76 | 75 | **73** |
+| TypeScript errors | 103 | 103 (identical set) | 99 | 98 | 76 | 75 | **69** |
 | ESLint | 136 errors, 28 warnings | 134 / 28 | 134 / 28 | 134 / 28 | 109 / 28 | 109 / 28 | **107 / 28** |
-| Tests | 0 | 178 passing, 4 files | 206 passing, 5 files | 206 passing, 5 files | 206 passing, 5 files | 282 passing, 7 files | **386 passing, 10 files** |
+| Tests | 0 | 178 passing, 4 files | 206 passing, 5 files | 206 passing, 5 files | 206 passing, 5 files | 282 passing, 7 files | **422 passing, 12 files** |
 | CI | none | none | none | none | none | none | **none — still WI-21** |
-| Main JS chunk | 1,747 kB (465 kB gz) | 1,754.43 kB (467.56 kB gz) | 1,751.97 kB (467.39 kB gz) | 1,751.96 kB (467.50 kB gz) | 1,751.91 kB (467.46 kB gz) | 1,760.80 kB (470.25 gz) | **1,787.96 kB (477.27 kB gz)** |
+| Main JS chunk | 1,747 kB (465 kB gz) | 1,754.43 kB (467.56 kB gz) | 1,751.97 kB (467.39 kB gz) | 1,751.96 kB (467.50 kB gz) | 1,751.91 kB (467.46 kB gz) | 1,760.80 kB (470.25 gz) | **1,794.82 kB (479.30 kB gz)** |
 | Lazy chunks | — | — | — | — | — | `FertilizerContractsTab` 25.96, `BookingModal` 20.02 | **those two plus `FieldFertilizerRateGridPanel` 19.83 kB (6.36 gz)** |
 | Migrations | 40 files | 43 | 46 | 52 | 52 | 58 | **63, diffed against the database one-for-one** |
 | Edge function | — | v8 pending | — | v10 | v10 | v13 | **v17, source confirmed in sync by sha256** |
 
-**The 6 Sep column is shopping-list coverage plus field-level rates V-0 … V-8, itemised.**
+**The 6 Sep column is shopping-list coverage, field-level rates V-0 … V-8, and the reload
+work R-1 / R-5 / R-4 item 2 / R-6, itemised.**
 
-- **Tests 282 → 386**, every step accounted for: +13 pre-coverage work (282 → 295), +13
+- **Tests 282 → 422**, every step accounted for: +13 pre-coverage work (282 → 295), +13
   shopping-list coverage (→ 308), +12 V-0 (→ 320), +20 V-2 (→ 340), +7 V-5 (→ 347), +25 V-6
-  (→ 372), +8 `formatRate` (→ 380), +6 V-8 (→ **386**).
-- **TypeScript 75 → 73**, a strict subset. Both removals are V-8's, where a `Json` column
-  was cast to `ProgramRef[]` and is now guarded with `Array.isArray` — a behaviour fix as
-  much as a type fix.
-- **ESLint 109 → 107**, also V-8: one `prefer-const` and one `no-explicit-any` deleted from
-  the code it rewrote. Diffed by rule and message, not by count.
-- **Main chunk 1,760.80 → 1,787.96 kB.** +3.71 shopping-list coverage, +0.89 V-0, +15.85
-  V-5 (the plan editor is on the eager `FieldDetail` path), +1.06 V-6, +1.11 V-8, and the
+  (→ 372), +8 `formatRate` (→ 380), +6 V-8 (→ 386), +15 R-1 (→ 401), +21 R-6 (→ **422**).
+- **TypeScript 75 → 69**, a strict subset at every step. Two removals are V-8's and four are
+  the chemical path taking the same `Array.isArray` guards on 6 Sep. The V-8 pair was a
+  behaviour fix as much as a type fix; the later four are hardening, since a query filter
+  already made them unreachable.
+- **ESLint 109 → 107**, all V-8: one `prefer-const` and one `no-explicit-any` deleted from
+  the code it rewrote. Diffed by rule and message, not by count. Unmoved by R-1 and R-6.
+- **Main chunk 1,760.80 → 1,794.82 kB.** +3.71 shopping-list coverage, +0.89 V-0, +15.85
+  V-5 (the plan editor is on the eager `FieldDetail` path), +1.06 V-6, +1.11 V-8, +2.09 R-1
+  and +4.64 R-6 — the last two eager because they are `App.tsx` and `main.tsx` — and the
   rest is the eager share of the Shopping Lists tab. The V-6 grid panel itself is lazy —
   19.83 kB that never loads unless the screen is opened.
 - **Migrations 58 → 63:** shopping-list coverage columns, `field_fertilizer_rates`, the save

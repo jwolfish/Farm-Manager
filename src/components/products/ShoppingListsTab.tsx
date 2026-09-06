@@ -6,6 +6,7 @@ import { ShoppingListLineRow } from './ShoppingListLineRow';
 import { useAuth } from '../../contexts/AuthContext';
 import { useFarm } from '../../contexts/FarmContext';
 import { Pagination } from '../Pagination';
+import { ErrorBoundary } from '../ErrorBoundary';
 import { MarkPurchasedModal } from './MarkPurchasedModal';
 import { exportShoppingListPDF } from '../../lib/exports/shoppingListPdfExport';
 import { convertProductUnits } from '../../lib/unitConversions';
@@ -561,6 +562,14 @@ export function ShoppingListsTab({ seasonId, readOnly = false, onPricesChanged }
       )}
 
       {bookTarget && user && (
+        // R-6. Lazy chunk. A rejected import inside a modal is the worst version of
+        // this — `fallback={null}` means the user taps Book this and nothing happens
+        // at all. The panel at least says why, and offers the reload that fixes it.
+        <ErrorBoundary
+          label="the booking form"
+          resetKey={bookTarget}
+          action={{ label: 'Close', onClick: () => setBookTarget(null) }}
+        >
         <Suspense fallback={null}>
           <BookingModal
             open
@@ -579,6 +588,7 @@ export function ShoppingListsTab({ seasonId, readOnly = false, onPricesChanged }
             suggestedQuantity={bookTarget.suggested}
           />
         </Suspense>
+        </ErrorBoundary>
       )}
     </div>
   );

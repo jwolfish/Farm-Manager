@@ -19,8 +19,9 @@ deliberately: the owner has not been able to catch one, and R-1 is the only item
 does not need to know which trigger fired — it contains all of them. R-2, R-3, R-4 (the
 rest) and R-7 are still untouched and still want the log; **R-2 in particular must not be
 implemented until §4a's `decision` entry is seen in a real session.** See **§5a** for what
-landed, including a correction to T-4 below. R-6 is unstarted and is now the obvious next
-one, because it needs no log either.
+landed, including a correction to T-4 below. **R-6 landed the same day** — it needed no log
+either — so the app now has error boundaries at the root, the page area, `FieldDetail` and
+each of the three lazy chunks. See **§5b**.
 
 **Companion docs:** `Farm-Manager-Remediation-Status.md`, `Farm-Manager-Remediation-PRD.md`
 
@@ -400,15 +401,18 @@ raising it and retrying once.
 **AC.** `[ ]` A seasons query forced to fail shows a retry banner, not "Welcome to Crop
 Tracker." `[ ]` A genuinely new farm still gets the welcome screen.
 
-### R-6 — Add an error boundary · P1 · S
+### R-6 — Add an error boundary · P1 · S — **DONE 6 Sep 2026, see §5b**
 
 Wrap the page area — ideally also the whole root — in a boundary that renders a recoverable
 error panel and logs the error, so one bad render degrades one region instead of blanking
 the app. Give the lazy-chunk case its own handling: a rejected dynamic `import()` after a
 deploy is the one situation where offering the user a reload button is the correct answer.
 
-**AC.** `[ ]` A component made to throw shows the error panel with the rest of the app still
-usable. `[ ]` A failed lazy chunk offers a reload rather than a blank screen.
+**AC.** `[x]` A component made to throw shows the error panel with the rest of the app still
+usable — checked in a browser; the sidebar beside the failed region stayed usable and the
+console logged the catch with its component stack. `[x]` A failed lazy chunk offers a reload
+rather than a blank screen — `describeRenderError` classifies it and only it as
+`chunk-load`, with 21 tests, half of them pinning what must *not* be classified that way.
 
 ### R-7 — Realtime should refresh data, not re-enter loading · P2 · S
 
@@ -488,6 +492,78 @@ if possible, so the fix is shown to change the behaviour rather than assumed to.
 **Floor:** TypeScript **73**, error set byte-identical to the baseline with positions
 stripped · ESLint **107 / 28**, unchanged · tests **386 → 401** · build succeeds, main chunk
 1,787.96 → **1,790.05 kB** (477.27 → 477.80 gz), the three lazy chunks byte-identical.
+
+## 5b. R-6 as built — 6 Sep 2026
+
+**There was no error boundary anywhere in this codebase.** `grep` for `componentDidCatch`
+returned nothing, so any uncaught render error unmounted the whole tree and left a white
+page. That is §2's amplifier arriving by a second route: R-1 stopped a *load* from taking
+the screen; R-6 stops a *render* from taking it.
+
+**Six boundaries, at four scopes.**
+
+| Scope | Reset path | Why there |
+|---|---|---|
+| Root, in `main.tsx` | none, deliberately | Above the page area there is nowhere to navigate to, so recovery is retry or reload |
+| Page area, inside `DashboardLayout` | `resetKey={activePage}` | The sidebar and season picker survive, and navigating away clears the error |
+| `FieldDetail` | `resetKey={selectedFieldId}` + a **Back to Fields** action | It renders outside `DashboardLayout` and carries its own only route back. Without the action it becomes a dead end when it throws |
+| The three lazy chunks | own `resetKey`, plus a Close action on the two that are panels | A stale chunk after a deploy degrades one panel, not a page |
+
+`loadStatusOverlays` is deliberately **outside** the page boundary, so R-1's refresh
+indicator and retry banner keep working while a page is showing the error panel. The two
+pieces of work are independent by construction and stay that way.
+
+**The decision is pure, per the `resolveAppLoadPresentation` precedent.**
+`describeRenderError` in `src/lib/renderErrorState.ts`, 21 tests. The boundary class decides
+nothing; it catches, logs, and renders what the function returns.
+
+**The one distinction that matters, and the trap inside it.** A rejected dynamic `import()`
+is the only error where "reload the page" is correct — the tab has been open across a
+deploy and the chunk filename is gone. For everything else a reload replays the fault after
+destroying whatever else was on screen. There is no error code for this, only per-browser
+wording, so it is substring matching and has to be:
+
+```
+Chrome / Edge   Failed to fetch dynamically imported module: <url>
+Firefox         error loading dynamically imported module: <url>
+Safari          Importing a module script failed.
+Vite preload    Unable to preload CSS for <url>
+```
+
+**A bare `Failed to fetch` or `NetworkError` is deliberately NOT matched.** That is what a
+failed *data* request looks like, and advising a reload there is advice that cannot work,
+because the reload needs the same network. Half the test file exists to pin that negative,
+alongside an ordinary null-property crash and a Postgres message.
+
+**Checked in a browser at 1280 px and 375 px** with a throwaway harness, deleted afterwards.
+`RenderErrorPanel` is exported separately with no Supabase import, which is the only reason
+that was possible — the same cut F-4b, V-5 and V-6 each had to make first.
+
+- A component made to throw showed the panel while the sidebar beside it stayed usable, and
+  the console carried `Render error caught by boundary (the Fields page)` with the stack.
+- With the throw removed, navigating cleared the boundary and the region rendered normally.
+  That is the `resetKey` mechanism, and it is what stops a once-broken region staying broken
+  until a reload.
+- At 375 px the buttons stack, `scrollX` stays 0 after `scrollTo(999,0)`, and every panel
+  button measures 44–46 px.
+
+**First round in nine where rendering found no defect.** Recorded rather than quietly
+dropped: eight consecutive rounds found something and this one did not, most likely because
+the panel is almost entirely static text with no data behind it.
+
+**A limitation that must not be claimed away.** The root boundary does **not** catch
+`Missing Supabase environment variables`. That throw happens at module *import* time, before
+React renders, and nothing inside React can catch it. It is also why this machine still
+cannot boot the real app.
+
+**Not verified:** no boundary has caught a real fault in the running app. The natural first
+opportunity is WI-19's nullability block — those errors are precisely what would blank the
+app, which is the argument for having done R-6 before finishing them.
+
+**Floor:** TypeScript **69** (four unrelated cast guards taken the same day; set compared
+with positions stripped, zero new) · ESLint **107 / 28**, new files clean · tests
+**401 → 422** · build succeeds, main chunk 1,790.05 → **1,794.82 kB** (477.80 → 479.30 gz),
+the three lazy chunks byte-identical.
 
 ## 6. What this is not
 

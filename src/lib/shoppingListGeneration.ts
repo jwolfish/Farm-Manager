@@ -67,7 +67,13 @@ export async function generateChemicalLines(
   );
   const overrideMap = new Map<string, ProgramRef[]>();
   for (const o of overridesFiltered) {
-    overrideMap.set(o.field_id, o.override_value as ProgramRef[]);
+    // Guarded, not cast — the fertilizer path above does the same. `override_value`
+    // is a `Json` column holding EITHER a number or a ProgramRef[]; the query filters
+    // to `chemical_programs`, but that guarantee lives three lines away in a query
+    // string. Anything that is not an array must mean "no programs".
+    if (Array.isArray(o.override_value)) {
+      overrideMap.set(o.field_id, o.override_value as unknown as ProgramRef[]);
+    }
   }
 
   const templateIds = [
@@ -88,7 +94,12 @@ export async function generateChemicalLines(
       .select('id, chemical_programs')
       .in('id', templateIds);
     for (const t of data ?? []) {
-      templateMap.set(t.id, (t.chemical_programs as ProgramRef[]) ?? []);
+      // Guarded, not cast. `chemical_programs` is a `Json` column, so anything
+      // that is not an array must mean "no programs" rather than be read as one.
+      templateMap.set(
+        t.id,
+        Array.isArray(t.chemical_programs) ? (t.chemical_programs as unknown as ProgramRef[]) : []
+      );
     }
   }
 

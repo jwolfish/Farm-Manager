@@ -5,6 +5,7 @@ import { Plus, Package, Droplet, FlaskConical, Layers, Copy, ShoppingCart, Truck
 import { FertilizerPrograms } from '../components/FertilizerPrograms';
 import { ChemicalPrograms } from '../components/ChemicalPrograms';
 import { CrossFarmCopyModal } from '../components/CrossFarmCopyModal';
+import { ErrorBoundary } from '../components/ErrorBoundary';
 import { SeasonImportWizard } from '../components/SeasonImportWizard';
 import { useFarm } from '../contexts/FarmContext';
 import { SeedsTab } from '../components/products/SeedsTab';
@@ -259,9 +260,14 @@ export function Products({ seasonId, readOnly = false }: ProductsProps) {
       )}
 
       {activeTab === 'contracts' && (
-        <Suspense fallback={<div className="py-12 text-center text-gray-500">Loading…</div>}>
-          <FertilizerContractsTab seasonId={seasonId} readOnly={readOnly} onPricesChanged={invalidateFertilizers} />
-        </Suspense>
+        // R-6. This tab is a lazy chunk, so after a deploy an open tab's import can
+        // reject. The boundary keeps that to this panel and offers the reload that
+        // actually fixes it, instead of taking the whole Products page down.
+        <ErrorBoundary label="the Fertilizer Contracts tab" resetKey={activeTab}>
+          <Suspense fallback={<div className="py-12 text-center text-gray-500">Loading…</div>}>
+            <FertilizerContractsTab seasonId={seasonId} readOnly={readOnly} onPricesChanged={invalidateFertilizers} />
+          </Suspense>
+        </ErrorBoundary>
       )}
 
       {showCrossFarmModal && seasonId && user && (

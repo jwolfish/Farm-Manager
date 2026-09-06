@@ -100,15 +100,16 @@ The status doc is the source of truth for what is done. Update it when a round l
 
 ## Known baseline — do not treat these as regressions you caused
 
-- `npx tsc --noEmit -p tsconfig.app.json` reports **73 errors** (was 103 at review, 98
+- `npx tsc --noEmit -p tsconfig.app.json` reports **69 errors** (was 103 at review, 98
   before WI-19 began; 75 until V-8 replaced two `Json`-to-`ProgramRef[]` casts with real
-  `Array.isArray` guards). The regeneration of `database.types.ts` briefly took it to 103 —
+  `Array.isArray` guards, and 73 until the chemical path got the same four guards on
+  6 Sep). The regeneration of `database.types.ts` briefly took it to 103 —
   12 errors resolved, 17 revealed that the stale hand-written file had been hiding —
   before the unused-symbol sweep brought it to 76. See the WI-19 section of the status
   doc for the full accounting; every movement is itemised there.
 - `npx eslint .` reports **107 errors, 28 warnings** (was 136/28 at review; 109 until V-8
   removed one `prefer-const` and one `no-explicit-any` from the code it rewrote).
-- `npx vite build` succeeds and emits a **1,790.05 kB** main chunk (477.80 kB gz), plus
+- `npx vite build` succeeds and emits a **1,794.82 kB** main chunk (479.30 kB gz), plus
   three lazy chunks: **25.96 kB** `FertilizerContractsTab` (7.10 gz), **19.63 kB**
   `BookingModal` (5.90 gz) — shared by the Contracts tab, the Shopping Lists tab and the
   plan calculator — and **19.83 kB** `FieldFertilizerRateGridPanel` (6.36 gz).
@@ -122,9 +123,10 @@ The status doc is the source of truth for what is done. Update it when a round l
   field-rates V-0 added **0.89 kB**, the override read and two badges in
   `FieldProgramDetails`; V-5 added **15.85 kB** for the per-field plan editor on the eager
   `FieldDetail` path; V-6 added only **1.06 kB** to the main chunk, putting its grid panel in
-  a lazy chunk of its own; V-8 added **1.11 kB**; and the reload work's R-1 added
-  **2.09 kB**, which is eager because it is `App.tsx`.
-- `npm test` reports **401 passing** in 11 files (386 before R-1 added 15; 380 before V-8 added 6; 372 before
+  a lazy chunk of its own; V-8 added **1.11 kB**; the reload work's R-1 added
+  **2.09 kB**, which is eager because it is `App.tsx`; and R-6's error boundary added
+  **4.64 kB**, eager for the same reason — it is `main.tsx` and `App.tsx`.
+- `npm test` reports **422 passing** in 12 files (401 before R-6 added 21; 386 before R-1 added 15; 380 before V-8 added 6; 372 before
   `formatRate` added 8; 347 before V-6 added 25; 340 before V-5 added 7; 320 before V-2 added 20; 308 before V-0
   added 12; 295 before shopping-list coverage added 13).
 - There is **no CI**. Adding it is WI-21 in the PRD.
@@ -217,13 +219,26 @@ These are real mistakes made during this work, not hypotheticals.
    a failed load must never clear the data it failed to refresh — an empty seasons list may
    only mean "new farm" when a load actually *succeeded* and found none.
 
+12. **"Reload the page" is correct for exactly one error, and wrong for the rest.** R-6's
+   boundaries classify a caught error through `describeRenderError`
+   (`src/lib/renderErrorState.ts`, 21 tests). A rejected dynamic `import()` — a tab left
+   open across a deploy, so the lazy chunk filename is gone — is the **only** case where a
+   reload fixes anything; for every other render error a reload replays the fault after
+   destroying whatever else was on screen. The classifier therefore matches the four real
+   browser wordings and deliberately does **not** match a bare `Failed to fetch` or
+   `NetworkError`, which is what a failed *data* request looks like: advising a reload
+   there is advice that cannot work, because the reload needs the same network. Half the
+   tests exist to pin that negative. Also: every boundary needs a `resetKey` (or an
+   `action`) or the region it guards stays broken until a reload — the blank page in
+   miniature.
+
 ## Verifying your own work
 
 Bolt and Claude both fail the same way here: confident, plausible, incomplete. Prefer
 checks that can return "no" over judgement:
 
 ```
-npx tsc --noEmit -p tsconfig.app.json   # must stay at 73 or drop
+npx tsc --noEmit -p tsconfig.app.json   # must stay at 69 or drop
 npx eslint .                            # must stay at 107 errors / 28 warnings, or drop
 npx vite build                          # must succeed
 npm test                                # must stay green

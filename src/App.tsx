@@ -18,6 +18,7 @@ import { FarmSettings } from './pages/FarmSettings';
 import { Team } from './pages/Team';
 import { DashboardLayout } from './components/DashboardLayout';
 import { AppLoadErrorBanner, AppRefreshIndicator } from './components/AppLoadStatus';
+import { ErrorBoundary } from './components/ErrorBoundary';
 import { resolveAppLoadPresentation } from './lib/appLoadState';
 import { SeasonImportWizard } from './components/SeasonImportWizard';
 import { supabase } from './lib/supabase';
@@ -46,6 +47,25 @@ interface Season {
  * available without losing the page.
  */
 const SEASON_LOAD_TIMEOUT_MS = 20000;
+
+/*
+ * R-6. Names the failing region in the error panel, so a crash on one screen reads as
+ * that screen rather than as "the app broke". Falls back to neutral wording for an
+ * unlisted page rather than printing a raw route key at the user.
+ */
+const PAGE_LABELS: Record<string, string> = {
+  dashboard: 'the Dashboard',
+  fields: 'the Fields page',
+  products: 'the Products page',
+  templates: 'the Cost Templates page',
+  yields: 'the Yields page',
+  sales: 'the Sales page',
+  'spray-planner': 'the Spray Planner',
+  reports: 'the Reports page',
+  'account-settings': 'Account Settings',
+  'farm-settings': 'Farm Settings',
+  team: 'the Team page',
+};
 
 function AppContent() {
   const { user, loading: authLoading } = useAuth();
@@ -819,11 +839,22 @@ function AppContent() {
   if (activePage === 'field-detail' && selectedFieldId && currentSeason?.id) {
     return (
       <>
-        <FieldDetail
-          fieldId={selectedFieldId}
-          seasonId={currentSeason.id}
-          onBack={handleBackFromFieldDetail}
-        />
+        {/*
+         * R-6. This screen renders outside DashboardLayout, so it carries its own only
+         * route back. If it throws, the boundary's panel has to supply that route or the
+         * user is stranded on a blank page with no navigation at all.
+         */}
+        <ErrorBoundary
+          label="this field"
+          resetKey={selectedFieldId}
+          action={{ label: 'Back to Fields', onClick: handleBackFromFieldDetail }}
+        >
+          <FieldDetail
+            fieldId={selectedFieldId}
+            seasonId={currentSeason.id}
+            onBack={handleBackFromFieldDetail}
+          />
+        </ErrorBoundary>
         {loadStatusOverlays}
       </>
     );
@@ -847,6 +878,14 @@ function AppContent() {
       onInviteAccepted={handleInviteAccepted}
       activeRole={activeRole}
     >
+      {/*
+       * R-6. Inside DashboardLayout, so the sidebar and season picker survive a page
+       * crash and the user can navigate away — which `resetKey={activePage}` then
+       * clears the error for. `loadStatusOverlays` stays OUTSIDE the boundary on
+       * purpose: R-1's refresh indicator and retry banner must keep working even
+       * while a page is showing the error panel.
+       */}
+      <ErrorBoundary label={PAGE_LABELS[activePage]} resetKey={activePage}>
       {activePage === 'dashboard' && <Dashboard seasonId={currentSeason?.id || null} />}
       {activePage === 'fields' && (
         <Fields
@@ -879,6 +918,7 @@ function AppContent() {
           onRefreshSharedFarms={loadSharedFarms}
         />
       )}
+      </ErrorBoundary>
       {loadStatusOverlays}
     </DashboardLayout>
   );
