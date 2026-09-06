@@ -45,8 +45,13 @@ local file through `tr -d '\r'`. The same thing makes a regenerated `database.ty
 look wholly rewritten.)*
 **Supabase project:** `wvccxjakqwqfmyewclue` (bolt-native-database-63401892)
 **Before starting mobile:** `Farm-Manager-Pre-Mobile-Readiness.md` — what is left across the
-whole PRD, measured against the tree rather than against this document, and which two items
-actually gate a mobile effort (WI-22 and WI-29; nothing else does).
+whole PRD, measured against the tree rather than against this document. It named two items
+as gating a mobile effort (WI-22 and WI-29) and **both are now done**, so nothing
+structural is outstanding. Its §4 also settles the `<DataList>` question with
+measurements: **one primitive, adopted 12–16 times, not 31** — the 31 raw tables are three
+populations, and rendering four report tables at 375 px found the identity column scrolling
+out of view on every one, which is the defect the primitive exists to fix once instead of
+twelve times.
 **Companion docs:** `Farm-Manager-Code-Review-Summary.md`,
 `Farm-Manager-Remediation-PRD.md`, `Farm-Manager-Random-Reload-Diagnosis.md`,
 `Fertilizer-Contract-Tracking-Design.md`, `Field-Level-Fertilizer-Rates-Design.md`,
