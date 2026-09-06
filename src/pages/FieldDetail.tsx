@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { ArrowLeft, Sprout, FileText, AlertCircle, Unlink } from 'lucide-react';
 import { FieldApplicationHistory } from '../components/fields/FieldApplicationHistory';
 import { FieldProgramDetails } from '../components/fields/FieldProgramDetails';
+import { FieldFertilizerPlanModal } from '../components/fields/FieldFertilizerPlanModal';
 import { supabase } from '../lib/supabase';
 import {
   getTemplate,
@@ -37,6 +38,9 @@ export function FieldDetail({ fieldId, onBack }: FieldDetailProps) {
   const [fieldCosts, setFieldCosts] = useState<ResolvedFieldCosts | null>(null);
   const [template, setTemplate] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [planOpen, setPlanOpen] = useState(false);
+  // Bumped after a plan save so FieldProgramDetails re-reads the override it renders from.
+  const [programsRefresh, setProgramsRefresh] = useState(0);
 
   useEffect(() => {
     loadFieldData();
@@ -160,6 +164,16 @@ export function FieldDetail({ fieldId, onBack }: FieldDetailProps) {
 
   return (
     <div className="min-h-screen bg-gray-50">
+      {planOpen && (
+        <FieldFertilizerPlanModal
+          fieldId={fieldId}
+          onClose={() => setPlanOpen(false)}
+          onSaved={() => {
+            setProgramsRefresh((n) => n + 1);
+            loadFieldData();
+          }}
+        />
+      )}
       <div className="max-w-6xl mx-auto p-6">
         <button
           onClick={onBack}
@@ -248,10 +262,12 @@ export function FieldDetail({ fieldId, onBack }: FieldDetailProps) {
         {fieldCosts && (
           <div className="space-y-4">
             <FieldProgramDetails
+              key={programsRefresh}
               fieldId={fieldId}
               seedCostPerAcre={costs.seed_cost_per_acre || 0}
               fertilizerCostPerAcre={costs.fertilizer_cost_per_acre || 0}
               chemicalCostPerAcre={costs.chemical_cost_per_acre || 0}
+              onEditFertilizerPlan={() => setPlanOpen(true)}
             />
 
             <div className="bg-white rounded-lg shadow-sm border border-gray-200">

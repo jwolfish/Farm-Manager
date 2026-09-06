@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { Sprout, Beaker, FlaskConical, Loader2 } from 'lucide-react';
+import { Sprout, Beaker, FlaskConical, Loader2, Pencil } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 
 interface SeedVarietyInfo {
@@ -44,6 +44,8 @@ interface FieldProgramDetailsProps {
   seedCostPerAcre: number;
   fertilizerCostPerAcre: number;
   chemicalCostPerAcre: number;
+  /** Opens the per-field plan editor. Omitted where there is nothing to edit. */
+  onEditFertilizerPlan?: () => void;
 }
 
 export function FieldProgramDetails({
@@ -51,6 +53,7 @@ export function FieldProgramDetails({
   seedCostPerAcre,
   fertilizerCostPerAcre,
   chemicalCostPerAcre,
+  onEditFertilizerPlan,
 }: FieldProgramDetailsProps) {
   const [seedVariety, setSeedVariety] = useState<SeedVarietyInfo | null>(null);
   const [seedingRate, setSeedingRate] = useState<number | null>(null);
@@ -337,7 +340,19 @@ export function FieldProgramDetails({
                 </span>
               )}
             </div>
-            <span className="font-medium text-gray-900">${fertilizerCostPerAcre.toFixed(2)}/acre</span>
+            <div className="flex items-center gap-3">
+              <span className="font-medium text-gray-900">${fertilizerCostPerAcre.toFixed(2)}/acre</span>
+              {onEditFertilizerPlan && (
+                <button
+                  type="button"
+                  onClick={onEditFertilizerPlan}
+                  className="flex items-center gap-1 rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-700 transition-colors hover:bg-gray-50"
+                >
+                  <Pencil className="h-3.5 w-3.5" />
+                  Edit plan
+                </button>
+              )}
+            </div>
           </div>
         </div>
         <div className="p-4">

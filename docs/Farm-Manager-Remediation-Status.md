@@ -36,11 +36,11 @@ the running app — *How to prove the fix*, at the end of that section.
 
 | Measured 4 Sep 2026 | |
 |---|---|
-| Tests | **340 passing**, 8 files (320 before V-2 added 20) |
+| Tests | **347 passing**, 8 files (340 before V-5 added 7) |
 | TypeScript | **75 errors** (103 at review, 98 before WI-19) |
 | ESLint | **109 errors, 28 warnings** (from 136/28) |
 | Build | succeeds — **1,768.55 kB** (472.56 kB gz), plus lazy `FertilizerContractsTab` 25.96 kB and `BookingModal` 20.07 kB |
-| Migrations | **61 files**, matching the database one-for-one |
+| Migrations | **62 files**, matching the database one-for-one |
 | Edge function | **version 16**, deployed source confirmed identical to the repo by sha256 (5 Sep) |
 | Security advisors | 13 WARN — 12 are the by-design `authenticated_security_definer_function_executable` lint that fires on every RPC, 1 is `auth_leaked_password_protection` (WI-6). No new class of finding |
 | Cascade tasks | **58 total, 0 failed** |
@@ -1828,6 +1828,70 @@ hand-maintained tail by *line number* clipped a line off that block twice in thi
 `} as const` once and `WorkOrderStatus` once. Both were caught by checking the diff was
 purely additive, which is the check to keep. Splice on the `// ---` marker, not on a line
 count.
+
+### Field-level fertilizer rates — V-5, the editor — 6 Sep 2026
+
+The first step of this feature a user can reach. *Edit plan* on `FieldDetail`'s Fertilizer
+Programs section opens a per-field plan editor carrying both controls §7.2 needs: which
+passes run on this field, and the rates within each pass. Entry is by **total** (§7.1), with
+the derived rate beside it and either editable.
+
+**Split for rendering, deliberately.** `FieldFertilizerPlanEditor` is presentation only, with
+no Supabase import; `FieldFertilizerPlanModal` and `fieldFertilizerRatesCrud` do the loading
+and saving. Every fertilizer step before F-4b shipped with *"not opened in a browser"*
+against it precisely because the components reached the Supabase client at module load and
+threw without credentials. F-6 had to cut `PlanCalculator` out of `PlanCalculatorModal` for
+the same reason. That split is what made the check below possible.
+
+**Rendering found a defect for the fifth round running, and this one would have made the
+feature unusable.** The first version disabled **Save** whenever any row could not convert —
+so a field carrying one liquid with no density could not have **any** of its rates edited.
+The Potash figure the owner opened the screen to change is perfectly valid and perfectly
+storable, and it was being held hostage by a different product in a different pass.
+
+The fix separates two things the first version conflated. A conversion failure is a **note**:
+what fails is the *display* of that row's total and its contribution to the cost, and
+`costResolvedItems` already reports the shortfall by name so the $/ac presents as an
+undercount rather than a total (WI-11). The real blocker is a rate box holding something that
+is not a number, because the save silently drops those rows.
+
+**Also found: a 38 px tap target** on the rate and total inputs, against the ≥44 px the design
+doc sets for new controls — and these are the primary entry surface on a phone. Raised to
+46 px, confirmed in the browser.
+
+**Verified on screen, against hand figures**, at 1280 px and 375 px:
+
+| | |
+|---|---|
+| Potash 200 lb/ac × 83 ac | **8.3 ton** |
+| TSP 60 lb/ac × 83 ac | **2.49 ton** |
+| Urea 185 lb/ac × 83 ac | **7.678 ton** |
+| Fall pass | 0.1 t × $450 + 0.03 t × $825 + $4 = **$73.75/ac** |
+| Topdress | 0.0925 t × $600 + $4 = **$59.50/ac** |
+| Field total | **$133.25/ac** |
+
+At 375 px the page does not scroll sideways (`scrollWidth` = `clientWidth` = 375); each
+program's table scrolls inside its own container, and the column that stays visible is
+**Total for field** — the one the owner actually types into. That is the F-4b lesson applied:
+there, the column that fell off the right edge was the one the change existed to surface.
+
+**One thing NOT verified:** the *Reset to program* control's padding was raised from 16 px in
+the same pass, but the dev server kept serving a stale module for that file and the browser
+never showed the new class. The padded version is on disk and in the build; it has not been
+seen rendering. It is a secondary control, not the entry surface.
+
+**Defect 4 is now addressed** — the one V-0 could not fix because rates did not exist yet.
+Where a field also carries a typed `fertilizer_cost_per_acre` override, the editor says so
+and warns that saving a plan makes it the source of the field's fertilizer money. Two numbers
+claiming the same cost is how they end up disagreeing.
+
+**Floor:** TypeScript 75 identical set, ESLint 109/28, tests 347, build 1,768.55 →
+**1,784.40 kB** (+15.85 kB — the editor, modal and CRUD are on the eager `FieldDetail` path).
+
+**Not yet done:** nothing has been saved through this screen against real data. The RPC is
+proven by rehearsal and the arithmetic by tests and by reading figures off the screen, but no
+`field_fertilizer_rates` row exists in production yet, so the round trip — save, re-open,
+see the same numbers, watch the field cost move — has not been observed.
 
 ## Open items and standing notes
 

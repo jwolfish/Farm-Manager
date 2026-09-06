@@ -222,6 +222,83 @@ export function totalFromRate(rate: number, acreage: number): number | null {
 }
 
 /*
+ * The editor's view of a field's fertilizer plan — V-5.
+ *
+ * Defined here rather than in the component so the data layer can build one without
+ * importing a `.tsx`, and so the assembly below can be unit-tested.
+ */
+export interface PlanEditorRow {
+  product: FertilizerProductMeta;
+  rate: number;
+  rateUnit: string;
+}
+
+export interface PlanEditorProgram {
+  programId: string;
+  programName: string;
+  applicationCost: number;
+  /** Is this pass in the field's program list at all? */
+  enabled: boolean;
+  /** Does the field already carry its own rates for this pass? */
+  isCustom: boolean;
+  /** The effective rows — the field's own if custom, else the program's. */
+  rows: PlanEditorRow[];
+  /** The program's own rows, for "Reset to program". */
+  programRows: PlanEditorRow[];
+}
+
+export interface PlanSavePayload {
+  programId: string;
+  enabled: boolean;
+  isCustom: boolean;
+  costPerAcre: number;
+  rates: Array<{ productId: string; rate: number; unit: string; sortOrder: number }>;
+}
+
+/** One season program as the loader reads it. */
+export interface SeasonProgram {
+  programId: string;
+  programName: string;
+  applicationCost: number;
+  items: ProgramItemRate[];
+}
+
+/**
+ * Assemble the editor's model for one field.
+ *
+ * `enabledProgramIds` is the field's effective program list — its override array if it has
+ * one, else the template's. Every season program is returned, so a pass can be switched
+ * back on as well as off; the ones not in the list simply arrive unchecked.
+ */
+export function buildPlanPrograms(
+  fieldId: string,
+  seasonPrograms: readonly SeasonProgram[],
+  fieldRates: readonly FieldRate[],
+  products: ReadonlyMap<string, FertilizerProductMeta>,
+  enabledProgramIds: ReadonlySet<string>
+): PlanEditorProgram[] {
+  return seasonPrograms.map((program) => {
+    const resolved = resolveFieldFertilizerItems(
+      fieldId, program.programId, program.items, fieldRates, products
+    );
+    const programOnly = resolveFieldFertilizerItems(
+      fieldId, program.programId, program.items, [], products
+    );
+    return {
+      programId: program.programId,
+      programName: program.programName,
+      applicationCost: program.applicationCost,
+      enabled: enabledProgramIds.has(program.programId),
+      isCustom: resolved.isCustom,
+      rows: resolved.items.map((i) => ({ product: i.product, rate: i.rate, rateUnit: i.rateUnit })),
+      programRows: programOnly.items.map((i) => ({
+        product: i.product, rate: i.rate, rateUnit: i.rateUnit,
+      })),
+    };
+  });
+}
+
+/*
  * The unit-aware pair the editor actually uses — V-5.
  *
  * The owner enters a TOTAL, in the product's own unit ("8.2 ton of Potash on Home 80"),

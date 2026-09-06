@@ -6,6 +6,9 @@ import {
   rateFromFieldTotal,
   fieldTotalFromRate,
   type FertilizerProductMeta,
+  type PlanEditorRow,
+  type PlanEditorProgram,
+  type PlanSavePayload,
 } from '../../lib/fieldFertilizerRates';
 
 /**
@@ -32,25 +35,7 @@ import {
  * too, because the stored value is the rate — it is what survives a re-measured field.
  */
 
-export interface PlanEditorRow {
-  product: FertilizerProductMeta;
-  rate: number;
-  rateUnit: string;
-}
-
-export interface PlanEditorProgram {
-  programId: string;
-  programName: string;
-  applicationCost: number;
-  /** Is this pass in the field's program list at all? */
-  enabled: boolean;
-  /** Does the field already carry its own rates for this pass? */
-  isCustom: boolean;
-  /** The effective rows — the field's own if custom, else the program's. */
-  rows: PlanEditorRow[];
-  /** The program's own rows, for "Reset to program". */
-  programRows: PlanEditorRow[];
-}
+export type { PlanEditorRow, PlanEditorProgram, PlanSavePayload };
 
 interface DraftRow {
   product: FertilizerProductMeta;
@@ -68,14 +53,6 @@ interface DraftProgram {
   isCustom: boolean;
   rows: DraftRow[];
   programRows: PlanEditorRow[];
-}
-
-export interface PlanSavePayload {
-  programId: string;
-  enabled: boolean;
-  isCustom: boolean;
-  costPerAcre: number;
-  rates: Array<{ productId: string; rate: number; unit: string; sortOrder: number }>;
 }
 
 interface Props {
@@ -197,9 +174,33 @@ export function FieldFertilizerPlanEditor({
     .filter((p) => p.enabled)
     .reduce((sum, p) => sum + programCost(p).costPerAcre, 0);
 
-  const blockingIssues = draft
+  /*
+   * A conversion failure is a NOTE, not a blocker — found by rendering this, 6 Sep.
+   *
+   * The first version disabled Save whenever any row could not convert. That meant a field
+   * carrying one liquid with no density could not have ANY of its rates edited: the Potash
+   * figure the owner came to change is perfectly valid and perfectly storable, and it was
+   * being held hostage by a different product in a different pass.
+   *
+   * What actually fails is the DISPLAY of that row's total and its contribution to the
+   * cost — the rate itself stores fine, and `costResolvedItems` already reports the
+   * shortfall by name so the $/ac presents as an undercount rather than a total (WI-11).
+   */
+  const conversionNotes = draft
     .filter((p) => p.enabled)
     .flatMap((p) => p.rows.filter((r) => r.issue).map((r) => `${r.product.productName}: ${r.issue}`));
+
+  /*
+   * This is the real blocker: a rate box holding something that is not a number. `handleSave`
+   * drops those rows, so saving would silently discard what the user typed.
+   */
+  const blockingIssues = draft
+    .filter((p) => p.enabled)
+    .flatMap((p) =>
+      p.rows
+        .filter((r) => r.rateText.trim() !== '' && parseNumberField(r.rateText) === null)
+        .map((r) => `${r.product.productName}: "${r.rateText}" is not a number`)
+    );
 
   const handleSave = () =>
     onSave(
@@ -278,7 +279,7 @@ export function FieldFertilizerPlanEditor({
                   <button
                     type="button"
                     onClick={() => resetProgram(p.programId)}
-                    className="flex items-center gap-1 text-xs text-amber-700 hover:text-amber-900"
+                    className="flex items-center gap-1 rounded px-2 py-3 text-xs text-amber-700 hover:bg-amber-50 hover:text-amber-900"
                     title="Discard this field's rates and go back to the program"
                   >
                     <RotateCcw className="h-3.5 w-3.5" />
@@ -315,7 +316,7 @@ export function FieldFertilizerPlanEditor({
                               value={r.totalText}
                               onChange={(e) => editTotal(p.programId, r.product.productId, e.target.value)}
                               aria-label={`Total ${r.product.productName} for ${fieldName}`}
-                              className="w-24 rounded border border-gray-300 px-2 py-2 text-right focus:border-transparent focus:ring-2 focus:ring-blue-500"
+                              className="w-24 rounded border border-gray-300 px-2 py-3 text-right focus:border-transparent focus:ring-2 focus:ring-blue-500"
                             />
                             <span className="w-10 text-left text-xs text-gray-500">
                               {r.product.unitType}
@@ -330,7 +331,7 @@ export function FieldFertilizerPlanEditor({
                               value={r.rateText}
                               onChange={(e) => editRate(p.programId, r.product.productId, e.target.value)}
                               aria-label={`Rate per acre of ${r.product.productName}`}
-                              className="w-24 rounded border border-gray-300 px-2 py-2 text-right focus:border-transparent focus:ring-2 focus:ring-blue-500"
+                              className="w-24 rounded border border-gray-300 px-2 py-3 text-right focus:border-transparent focus:ring-2 focus:ring-blue-500"
                             />
                             <span className="w-10 text-left text-xs text-gray-500">
                               {r.rateUnit}
@@ -358,6 +359,17 @@ export function FieldFertilizerPlanEditor({
           </div>
         );
       })}
+
+      {conversionNotes.length > 0 && (
+        <div className="rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900">
+          <p className="mb-1 font-medium">
+            These rates save, but cannot be shown as a total or costed:
+          </p>
+          {conversionNotes.map((i) => (
+            <div key={i}>{i}</div>
+          ))}
+        </div>
+      )}
 
       {blockingIssues.length > 0 && (
         <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm text-red-800">
