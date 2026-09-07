@@ -1888,6 +1888,9 @@ which was already correct. So v16 is now confirmed healthy under a real JWT agai
 data, and the *new* code in it is still exercised only by unit tests. The first real
 exercise will be the first custom-rated field, at V-5.
 
+> **That happened on 6 Sep 03:52** — Prairie Stream 2, `53.90 -> 38.00`, total 665.93 →
+> 650.03. See the correction under *the array-shaped override is gone again* below.
+
 ### Field-level fertilizer rates — V-2 and V-4 — 5–6 Sep 2026
 
 **V-2** — `src/lib/fieldFertilizerRates.ts`, pure and unit-tested: `resolveFieldFertilizerItems`
@@ -2062,7 +2065,18 @@ Re-measured at the start of V-6: **9 overrides, all numeric, 0 array-shaped, 0 r
 The owner then tested *Reset All Custom Values*, which deletes the override row outright —
 so the row that armed it was removed by the very test that confirmed the reset works.
 
-So the V-0 cascade fix is **still exercised only by unit tests**, exactly as it was before,
+> **Superseded 6–7 Sep 2026 — V-0's cascade fix HAS now run in production.** Prairie
+> Stream 2's per-field rates (V-6) gave the season a *durable* array-shaped override,
+> unlike the one this section describes being deleted by its own reset test, and the next
+> fertilizer price change armed it. Task `678365a0`, 6 Sep 03:52 UTC, carried the warning
+> `Refreshed fertilizer_programs override on field 8a23333d…: 53.90 -> 38.00`, and the
+> field's total moved 665.93 → **650.03**. The arithmetic reconciles to the cent:
+> 53.90 − 38.00 = 15.90 = 665.93 − 650.03. Without the fix that entry would have stayed
+> frozen at 53.90 while the template moved — defect 2 of the field-rates design, observed
+> working for the first time rather than inferred. Found while verifying the SEC-8
+> lockdown, not by looking for it.
+
+So the V-0 cascade fix was, until then, **exercised only by unit tests**, exactly as before,
 and the standing note that production holds zero rows of that shape is true again. The
 first custom-rated field that survives will re-arm it. Recording the correction rather than
 editing the claim away, because the sequence — feature writes the row, reset removes it —
@@ -2202,7 +2216,13 @@ landed, checked in SQL independently of the client:
 | `field_fertilizer_rates` | Rhizosorb **57.142857142857146 lb/ac** — 2 ton ÷ 70 ac, exactly — and **Potash 75 lb/ac**, carried over untouched |
 | The pass's cost | 0.0285714 t × $1399 + 0.0375 t × $450 + $4 = **$60.846428571** |
 | The override array | that figure, in the P&K entry, siblings preserved at 39.4625 / 82.75 / 53.9 |
-| `total_cost_per_acre` | 653.94 − 224.97 + 236.958929 = **665.93**, which is what is stored |
+| `total_cost_per_acre` | 653.94 − 224.97 + 236.958929 = **665.93**, which is what was stored |
+
+*(**That figure is now 650.03**, and the change is correct rather than drift. On 6 Sep at
+03:52 a fertilizer price change fired the V-0 override refresh on this field —
+`53.90 -> 38.00` inside its `fertilizer_programs` array — so the total fell by exactly
+15.90. The 665.93 above is kept because it is what the V-6 save produced and what the rest
+of this section's arithmetic checks against.)*
 
 **The controls are what make it evidence.** Potash was *not* touched and is still 75 lb/ac,
 so replace-wholly kept the sibling product rather than dropping it. The program itself is
