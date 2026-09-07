@@ -2,20 +2,86 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { createClient } from "npm:@supabase/supabase-js@2";
 
 /*
- * SEC-8: the wildcard origin is a fallback, not the intended configuration.
- * Set the `ALLOWED_ORIGIN` secret on this function to the deployed app origin
- * and this locks down to it. It is left permissive by default because getting
- * it wrong breaks every cascade with an opaque CORS error, and the value is
- * deployment-specific rather than something this repository can know.
+ * SEC-8. `ALLOWED_ORIGIN` is a COMMA-SEPARATED LIST, and the matching is per request.
+ *
+ * This used to read the secret once into a static header. That could only ever hold one
+ * value, because `Access-Control-Allow-Origin` may be exactly one origin or `*` — a
+ * browser rejects `a.com, b.com` outright. So the obvious way to "just set the secret"
+ * on a deployment with more than one legitimate origin (production, a deploy preview,
+ * localhost) would have emitted a header every browser refuses and broken EVERY cascade,
+ * including production's. That is the opaque CORS failure the old comment warned about,
+ * arriving through the fix rather than the absence of one.
+ *
+ * So the list is matched against the request's `Origin` and the matching entry is echoed
+ * back. `Vary: Origin` is already set, which is what stops a cache serving one origin's
+ * answer to another.
+ *
+ * Three behaviours worth stating, because each is a decision:
+ *
+ *  - **Unset or empty still means `*`.** Nothing changes until the secret exists, so
+ *    deploying this is inert, and ROLLBACK IS UNSETTING THE SECRET — no redeploy.
+ *  - **An unrecognised origin gets no `Access-Control-Allow-Origin` header at all**,
+ *    rather than a wrong one. The browser then refuses the response, which is the
+ *    intended answer.
+ *  - **One `*` is allowed inside an entry**, for Netlify deploy previews, whose origins
+ *    are `https://<deploy-id>--<site>.netlify.app` and therefore not enumerable in
+ *    advance. It is a prefix+suffix match, not a substring one, and the suffix has to be
+ *    a real host suffix — only Netlify can issue a host ending `--<site>.netlify.app`.
+ *
+ * KEEP THIS HONEST ABOUT WHAT IT BUYS. CORS is defence in depth here, not the control
+ * that protects a cascade. The real ones are the JWT check and SEC-3's ownership
+ * validation, which run regardless of origin — a non-browser caller ignores CORS
+ * entirely. This is worth setting; it is not worth breaking cascades over.
+ *
+ * NOT mirrored in src/ (guardrail 7). The duplicated code is the cost math; the request
+ * handling is unique to this file.
  */
-const ALLOWED_ORIGIN = Deno.env.get("ALLOWED_ORIGIN") ?? "*";
+const ALLOWED_ORIGINS = (Deno.env.get("ALLOWED_ORIGIN") ?? "")
+  .split(",")
+  .map((entry) => entry.trim())
+  .filter((entry) => entry.length > 0);
 
-const corsHeaders = {
-  "Access-Control-Allow-Origin": ALLOWED_ORIGIN,
-  "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
-  "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Client-Info, Apikey",
-  "Vary": "Origin",
-};
+function originMatches(entry: string, origin: string): boolean {
+  if (entry === origin) return true;
+
+  const star = entry.indexOf("*");
+  if (star === -1 || star !== entry.lastIndexOf("*")) return false;
+
+  const prefix = entry.slice(0, star);
+  const suffix = entry.slice(star + 1);
+
+  // The suffix must look like a host suffix rather than an empty string, or the entry
+  // `https://*` would match every https origin there is — a wildcard by accident.
+  if (!suffix.includes(".")) return false;
+  if (origin.length < prefix.length + suffix.length) return false;
+  if (!origin.startsWith(prefix) || !origin.endsWith(suffix)) return false;
+
+  // An Origin header carries no path, but assert it rather than rely on it: a value
+  // with a `/` in the matched middle would mean this is not the shape we think it is.
+  return !origin.slice(prefix.length).includes("/");
+}
+
+function resolveAllowedOrigin(requestOrigin: string | null): string | null {
+  if (ALLOWED_ORIGINS.length === 0) return "*";
+  if (ALLOWED_ORIGINS.includes("*")) return "*";
+  if (!requestOrigin) return null;
+  return ALLOWED_ORIGINS.some((entry) => originMatches(entry, requestOrigin))
+    ? requestOrigin
+    : null;
+}
+
+function corsHeadersFor(req: Request): Record<string, string> {
+  const headers: Record<string, string> = {
+    "Access-Control-Allow-Methods": "GET, POST, PUT, DELETE, OPTIONS",
+    "Access-Control-Allow-Headers": "Content-Type, Authorization, X-Client-Info, Apikey",
+    "Vary": "Origin",
+  };
+
+  const allowed = resolveAllowedOrigin(req.headers.get("Origin"));
+  if (allowed) headers["Access-Control-Allow-Origin"] = allowed;
+
+  return headers;
+}
 
 const MAX_WARNINGS = 100;
 
@@ -917,6 +983,11 @@ async function entityBelongsToSeason(
 }
 
 Deno.serve(async (req: Request) => {
+  // Resolved once per request and named `corsHeaders` deliberately: every existing
+  // `...corsHeaders` spread below is unchanged, so this diff is the CORS decision and
+  // nothing else. Ten response sites keep working without being touched.
+  const corsHeaders = corsHeadersFor(req);
+
   if (req.method === "OPTIONS") {
     return new Response(null, { status: 200, headers: corsHeaders });
   }
