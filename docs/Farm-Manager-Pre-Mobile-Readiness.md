@@ -338,8 +338,11 @@ been able to catch. Nothing can be done on them from this side.
 
 ### Deferred by decision
 
-V-7 (the FieldAlytics CSV import), `ALLOWED_ORIGIN`, exercising the `viewer` role in the UI,
-real email for invitations, and the collaboration test with a second account.
+V-7 (the FieldAlytics CSV import), exercising the `viewer` role in the UI, real email for
+invitations, and the collaboration test with a second account.
+
+*(`ALLOWED_ORIGIN` was on this list and is no longer deferred — SEC-8 closed 6 Sep 2026,
+once the Netlify move gave the app a stable origin to name.)*
 
 ## 6. Recommended order
 

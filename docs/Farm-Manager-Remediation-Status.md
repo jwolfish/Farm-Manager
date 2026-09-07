@@ -29,17 +29,26 @@ branch — R-1 sat unmerged on `r-1-loading-amplifier` for a day while this para
 otherwise, and the quoted SHA was two commits behind. **Check the repo, not this sentence:**
 `git rev-list --left-right --count origin/main...HEAD` and `git branch --no-merged main`.
 Every migration in `supabase/migrations/` is applied to the live database.
-**Edge function:** `process-cascade-task` **version 17** — the V-3 deploy, last updated
-2026-09-06 01:24 UTC. Carries WI-15, SEC-3, the F-1 density bridge, the override-total fix,
-and V-0's `refreshProgramOverridesInSeason`. **Re-verified byte-for-byte on 6 Sep**:
-downloaded and diffed against the repository copy, `sha256
-30908b5946d5f712e2e21adeaed582143f2d9cbdd5cebe2b274713dbb8e4fe06` on both sides, 1,151
-lines, diff clean.
+**Edge function:** `process-cascade-task` **version 19** — the SEC-8 deploy, 6 Sep 2026.
+Carries WI-15, SEC-3, the F-1 density bridge, the override-total fix, V-0's
+`refreshProgramOverridesInSeason`, and the per-request CORS allowlist. **Verified
+byte-for-byte after deploying**: 1,222 lines both sides, `sha256
+bb34b768986e987523d0102ecdfd17e087b04f82387423bc056e7e680249eb9b` with CRs stripped, diff
+clean.
 
-*(**This number has now been wrong four times** — 10 when the platform was at 11, 12 at 13,
-14 at 15, and 16 at 17. Every single time the **source** was correct and only the number
-written here was wrong, which is the useful part: the deploy has never actually drifted.
-Confirm with `list_edge_functions`, never with this line.)*
+*(**The recorded number was wrong for a FIFTH time.** This line said 17; the platform said
+19 after a deploy that adds one, so it had been at 18. As every previous time, the *source*
+was right and only the number written here was wrong. `list_edge_functions`, never this
+sentence.)*
+
+*(The V-3 deploy's figures, superseded: `sha256
+30908b5946d5f712e2e21adeaed582143f2d9cbdd5cebe2b274713dbb8e4fe06`, 1,151 lines, diff
+clean.)*
+
+*(**This number has now been wrong five times** — 10 when the platform was at 11, 12 at 13,
+14 at 15, 16 at 17, and 17 at 19. Every single time the **source** was correct and only the
+number written here was wrong, which is the useful part: the deploy has never actually
+drifted. Confirm with `list_edge_functions`, never with this line.)*
 
 *(**A trap when re-verifying on this machine.** The repo copy is CRLF, because git has
 `core.autocrlf=true`; the downloaded copy is LF. A plain `sha256sum` therefore reports two
@@ -104,17 +113,16 @@ live cascade, with the two fields that correctly moved by exactly $80 as the con
 | ESLint | **105 errors, 28 warnings** (from 136/28; 109 before V-8 deleted one `prefer-const` and one `no-explicit-any`; 107 before WI-29b deleted a dead parameter and an unnecessary dependency). Unmoved by R-1, by the cast guards, by R-6 or by WI-29a |
 | Build | succeeds — **40 chunks. First paint 418.65 kB raw / 119.11 kB gzip**, which is the single `<script>` in `dist/index.html`. WI-22 landed 6 Sep and took it from 1,794.82 kB / 479.30 gz to 102.11 gz by making 12 of 13 pages `React.lazy`; WI-29a then added 16.29 kB gz of `react-router-dom`, WI-29b 0.47 kB gz of module boundaries, and the Netlify move 0.24 kB gz for `BrowserRouter`, all eager. Still inside WI-22's ≤ 300 kB gz target. **Quote first paint, not a "main chunk"** |
 | Migrations | **63 files**, matching the database one-for-one |
-| Edge function | **version 17**, running source confirmed identical to the repo by sha256, re-verified 6 Sep |
+| Edge function | **version 19**, running source confirmed identical to the repo by sha256 immediately after the SEC-8 deploy, 6 Sep |
 | Security advisors | 14 WARN — 13 are the by-design `authenticated_security_definer_function_executable` lint that fires on every RPC, 1 is `auth_leaked_password_protection` (WI-6). No new class of finding. V-6’s internal `apply_field_fertilizer_rates` is correctly absent, being executable by neither role |
 | Cascade tasks | **58 total, 0 failed** |
 | SEC-5 policy matrix | **120 assertions, 0 failures** (extended at V-1 and re-run against the live schema; was 101 at F-3). **Not re-run since V-1** — V-4 and V-6 changed function bodies and grants, not tables or policies, so the matrix has nothing new to exercise; each was attacked directly in its own rehearsal instead |
 
-**Closed:** SEC-1, SEC-2, SEC-3, SEC-4, SEC-5, SEC-7 · WI-9, WI-10, WI-11, WI-12, WI-13,
+**Closed:** SEC-1, SEC-2, SEC-3, SEC-4, SEC-5, SEC-7, **SEC-8** · WI-9, WI-10, WI-11, WI-12, WI-13,
 WI-14, WI-15, WI-16 · LOG-1, LOG-2, LOG-3, LOG-4, LOG-5, LOG-7, LOG-8, LOG-10 · plus four
 collaboration defects found by testing, none of which were in the original review.
 
-**Partial:** SEC-6 (WI-6 untouched) · SEC-8 (mechanism in place, `ALLOWED_ORIGIN` unset by
-choice) · WI-19 (103 → 69; **all 73 read for defects on 6 Sep and none found**, 69 remain,
+**Partial:** SEC-6 (WI-6 untouched) · WI-19 (103 → 69; **all 73 read for defects on 6 Sep and none found**, 69 remain,
 86 `no-explicit-any` the substantive group) · WI-20 (435 tests, but nowhere near the
 80 % target) · WI-23 / PERF-2 (V-8 bounded the shopping list's fertilizer override query
 with `.in('field_id', …)`; the chemical one at `shoppingListGeneration.ts:57` still selects
@@ -314,9 +322,9 @@ The query in *The override defect* above answers it in one shot — every row sh
    scheduled `database.types.ts` drift check, and a job that applies migrations to a
    scratch database and runs the SEC-5 matrix.
 
-**Two loose ends deliberately left:** set the `ALLOWED_ORIGIN` secret when there is a
-stable production URL, and exercise the `viewer` role in the app (`team_members` still has
-**0** viewer rows).
+**One loose end deliberately left:** exercise the `viewer` role in the app (`team_members`
+still has **0** viewer rows). *(The other was `ALLOWED_ORIGIN`, which needed a stable
+production URL. It has one now — closed 6 Sep, see* SEC-8 closed *below.)*
 
 ## How this work is being run
 
@@ -2995,14 +3003,12 @@ shipped those too. Both had passed the floor on their own commits. Recorded beca
 hosting change is the only new thing in production" would be false, and would be the wrong
 first suspect if something looks off.
 
-**Still open, and both are the owner's.** **SEC-8**: `ALLOWED_ORIGIN` on
-the cascade function has been left at `*` since Round 5 specifically because Bolt preview
-origins rotate and no production URL was committed. A stable Netlify domain is exactly what
-that was waiting for. Note that setting it strictly would break deploy previews, so it
-wants a comma-separated list or a permissive preview context — worth doing deliberately
-rather than as a footnote to this move. Supabase's Authentication → URL Configuration also
-needs the new origin, or password-reset and confirmation links keep pointing at
-`bolt.host`.
+**Both follow-ups this move unblocked are now done.** Supabase's Authentication → URL
+Configuration was pointed at the new origin, so password-reset and confirmation links no
+longer go to `bolt.host`; the custom domain is Netlify's primary, so the `.netlify.app`
+address redirects rather than serving the app twice. And **SEC-8 is closed** — the stable
+domain was the only thing it was ever waiting for. See *SEC-8 closed* below, including why
+"set the secret" turned out not to be the job.
 
 **Floor:** tests **435**, unchanged · TypeScript **68**, unchanged · ESLint **105 errors,
 28 warnings**, unchanged · build succeeds, 40 chunks unchanged, every lazy chunk
@@ -3010,6 +3016,85 @@ byte-identical. **First paint 417.29 → 418.65 kB raw, 118.87 → 119.11 kB gzi
 raw, which is `BrowserRouter`'s history handling in place of `HashRouter`'s. It is the only
 source change on the eager path, and it is stated rather than buried. WI-22's target is
 ≤ 300 kB gz, so it is still met with room.
+
+### SEC-8 closed — the CORS allowlist — 6 Sep 2026, edge function v19
+
+**Open since Round 5, and it was never really "set a secret".** `ALLOWED_ORIGIN` had been
+left at `*` because the app had no stable origin — Bolt preview URLs rotate — and every
+note about it, here and in the PRD, said the remaining work was to set it, "extending it to
+a comma-separated list first if more than one origin is needed."
+
+**That parenthetical was the entire job, and doing it the obvious way would have taken
+production down.** `Access-Control-Allow-Origin` may be exactly one origin or `*`; a
+browser rejects `a.com, b.com` outright. The function read the secret once at module load
+into a static header, so with three legitimate origins — production, deploy previews,
+localhost — there was no correct single value to put there. Setting the list against the
+old code would have emitted a header every browser refuses and broken **every** cascade,
+production's included. That is precisely the opaque CORS failure the original comment
+warned about, arriving *through* the fix rather than through its absence.
+
+**So the matching is now per request.** The list is split, matched against the request's
+`Origin`, and the matching entry echoed back; `Vary: Origin` was already set, which is what
+stops a cache handing one origin's answer to another. Three decisions inside it:
+
+| | |
+|---|---|
+| Unset or empty still means `*` | Deploying is inert, and **rollback is unsetting the secret** — no redeploy. That is why the deploy and the secret were separate steps |
+| An unknown origin gets **no** `Access-Control-Allow-Origin` at all | Not a wrong one. The browser then refuses the response, which is the answer |
+| One `*` is allowed **inside** an entry | Netlify preview origins are `https://<deploy-id>--<site>.netlify.app` and cannot be enumerated ahead of time. Prefix + suffix match, and the suffix must contain a dot, so `https://*` cannot become a general wildcard by accident |
+
+`corsHeaders` is resolved per request and deliberately keeps its name, so all ten existing
+`...corsHeaders` spreads are untouched and the diff is the CORS decision and nothing else.
+
+**Verified without Deno, which is still not installed here.** The function bundles clean
+under esbuild with the Deno specifiers external, and **21 assertions drive the real
+source** — sliced out of `index.ts` and evaluated with a stubbed `Deno.env` rather than
+retyped, because a copy only ever proves the copy works. Twelve of the 21 are refusals.
+*(The slice failed on the first run for the documented CRLF reason: the repo copy is CRLF,
+so a `\n}\n` marker matches nothing. Same trap as the deploy diff.)*
+
+**Then attacked live, which is the standard this project holds RLS to.** Deployed first
+with the secret still unset and confirmed the endpoint still answered `*` — proof the
+deploy was inert — then set the secret and probed the running function:
+
+| Origin | `Access-Control-Allow-Origin` |
+|---|---|
+| `https://farmmanager.doolittleair.com` | echoed back |
+| `https://68bd1a2f--zingy-pothos-b2f954.netlify.app` | echoed back |
+| `http://localhost:5173` | echoed back |
+| `https://evil.example` | **none** |
+| `https://farmmanager.doolittleair.com.evil.example` | **none** |
+| `http://farmmanager.doolittleair.com` | **none** |
+| `https://doolittleair.com` | **none** |
+| `https://zingy-pothos-b2f954.netlify.app` | **none** |
+| `https://abc--other-site.netlify.app` | **none** |
+
+The bare `.netlify.app` is excluded on purpose: with the custom domain set as primary it
+301s there, so the app never runs at that origin.
+
+**Deployed as v19 and verified byte-for-byte**: 1,222 lines both sides, `sha256
+bb34b768986e987523d0102ecdfd17e087b04f82387423bc056e7e680249eb9b` with CRs stripped, diff
+clean.
+
+**KEEP THIS HONEST ABOUT WHAT IT BUYS.** The review rated SEC-8 **Low**, and that is right.
+CORS is defence in depth here, not the control protecting a cascade — the real ones are the
+JWT check and SEC-3's ownership validation, which run regardless of origin, and a
+non-browser caller ignores CORS entirely. Worth setting; never worth breaking cascades
+over, which is why the deploy and the secret were two steps with a rollback that needs
+neither.
+
+**Not verified: a real cascade since the lockdown.** Every probe above is a preflight. The
+end-to-end path — the app at the custom domain firing a cascade that rewrites field costs —
+is the owner's check, and it is the one that would catch a mistake. **A regression here
+looks like a price change that silently never propagates**, so it is worth doing
+deliberately rather than waiting to notice.
+
+**A related exposure recorded rather than fixed:** deploy previews build with the same
+secrets as production, so **a preview points at the production database**. Allowing
+previews through CORS does not create that — a preview can already write to production
+through ordinary Supabase calls — so blocking them here would have produced half-broken
+previews while protecting nothing. The actual fix is per-context environment variables, and
+it is a separate decision nobody has made yet.
 
 ## Open items and standing notes
 
@@ -3213,10 +3298,11 @@ credentials, so they are deliberately left rather than half-wired.
   + `Units`; acreage, `Avg Rate` and all three cost columns ignored), the requirement that a
   `--Multiple--` row be refused by name rather than approximated, and §10.7's rule that the
   grid is the review surface and nothing is written until the review is committed.
-- **`ALLOWED_ORIGIN`** — SEC-8's mechanism is deployed but falls back to `*`. Left
-  permissive because the app has no stable production URL, Bolt preview origins rotate, and
-  a wrong value breaks every cascade with an opaque CORS error. Set it when there is a real
-  deployment; extend it to a comma-separated list first if more than one origin is needed.
+- **`ALLOWED_ORIGIN`** — **no longer deferred; closed 6 Sep 2026.** It was waiting on a
+  stable production URL, which the Netlify move supplied. The note here used to say
+  "extend it to a comma-separated list first if more than one origin is needed" — that
+  turned out to be the whole job rather than a footnote, because the header may carry only
+  one origin. See *SEC-8 closed* below.
 - **The `viewer` role in the app** — proven at the database level by the matrix, never
   exercised through the UI. All four collaboration defects this session lived in the
   client, so read-only carries the same exposure.
