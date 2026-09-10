@@ -108,13 +108,13 @@ live cascade, with the two fields that correctly moved by exactly $80 as the con
 
 | Measured 10 Sep 2026 | |
 |---|---|
-| Tests | **463 passing**, 16 files (456 before the ActionMenu fix added 7; 435 before the field-editing work added 21; 422 before WI-29a added 13; 401 before R-6 added 21; 386 before R-1 added 15; 380 before V-8 added 6; 347 before V-6 added 25) |
-| TypeScript | **65 errors** (103 at review, 98 before WI-19, 75 before V-8 replaced two `Json` casts with `Array.isArray` guards, 73 before the chemical path got the same four, 69 before WI-29b deleted a dead parameter, 68 before the field-editing work fixed three). Set compared with positions stripped at every step |
+| Tests | **489 passing**, 17 files (463 before the harvest tracker added 26; 456 before the ActionMenu fix added 7; 435 before the field-editing work added 21; 422 before WI-29a added 13; 401 before R-6 added 21; 386 before R-1 added 15; 380 before V-8 added 6; 347 before V-6 added 25) |
+| TypeScript | **63 errors** (103 at review, 98 before WI-19, 75 before V-8 replaced two `Json` casts with `Array.isArray` guards, 73 before the chemical path got the same four, 69 before WI-29b deleted a dead parameter, 68 before the field-editing work fixed three, 65 before the harvest tracker fixed two — the undeclared `readOnly` on `Yields` and a hand-written interface declaring a nullable cost column non-null). Set compared with positions stripped at every step |
 | ESLint | **105 errors, 27 warnings.** **The split recorded here was wrong from 6 Sep to 10 Sep** — it said 105 / 28 while the committed baseline held 106 / 27. The total, 133, was right; only the split was not, and no work moved a warning. One error went on 10 Sep with a dead parameter. Quote **105 / 27**; the old split was never measured |
 | Build | succeeds — **42 chunks. First paint 418.78 kB raw / 119.16 kB gzip**, which is the single `<script>` in `dist/index.html`. WI-22 landed 6 Sep and took it from 1,794.82 kB / 479.30 gz to 102.11 gz by making 12 of 13 pages `React.lazy`; WI-29a then added 16.29 kB gz of `react-router-dom`, WI-29b 0.47 kB gz of module boundaries, the Netlify move 0.24 kB gz for `BrowserRouter`, and the field-editing work 0.05 kB gz — all eager. Still inside WI-22's ≤ 300 kB gz target. **Quote first paint, not a "main chunk"** |
-| Migrations | **63 files**, matching the database one-for-one |
+| Migrations | **64 files**, matching the database one-for-one |
 | Edge function | **version 19**, running source confirmed identical to the repo by sha256 immediately after the SEC-8 deploy, 6 Sep |
-| Security advisors | 14 WARN — 13 are the by-design `authenticated_security_definer_function_executable` lint that fires on every RPC, 1 is `auth_leaked_password_protection` (WI-6). No new class of finding. V-6’s internal `apply_field_fertilizer_rates` is correctly absent, being executable by neither role |
+| Security advisors | 14 WARN, unchanged after the harvest migration, which creates no function, table or policy — 13 are the by-design `authenticated_security_definer_function_executable` lint that fires on every RPC, 1 is `auth_leaked_password_protection` (WI-6). No new class of finding. V-6’s internal `apply_field_fertilizer_rates` is correctly absent, being executable by neither role |
 | Cascade tasks | **58 total, 0 failed** |
 | SEC-5 policy matrix | **120 assertions, 0 failures** (extended at V-1 and re-run against the live schema; was 101 at F-3). **Not re-run since V-1** — V-4 and V-6 changed function bodies and grants, not tables or policies, so the matrix has nothing new to exercise; each was attacked directly in its own rehearsal instead |
 
@@ -3656,3 +3656,90 @@ Toolchain used for these measurements: Node 24.19.0, npm 11.17.0, Vitest 2.1.9, 
 Note that npm 11 blocks package install scripts by default (`core-js` and `esbuild`
 postinstalls were skipped); nothing in this project needed them, and both test and build
 succeed regardless.
+
+### The harvest tracker — H-1 … H-5 — 10 Sep 2026 — NEW FEATURE
+
+**Design and full detail: `Harvest-Tracker-Design.md`.** The owner's ask: a phone screen for
+entering a field as it comes off — date, final yield, moisture — and a per-crop progress
+view. *"The Yields screen I use in planning to estimate yield so I can estimate my per-bushel
+cost. This would take that estimate and replace it with actual."*
+
+**The design turns entirely on one measured fact.** `field_yields` is one row per field
+(`UNIQUE(field_id)`), and three readers take `yield_bushels_per_acre` with no notion of where
+it came from: the dashboard's cost per bushel, `useReportData`, and the Yields screen. So the
+actual lands in **that** column and the estimate moves to a new one — which makes cost per
+bushel an actual figure with no change to any reader. A `field_harvests` table was rejected
+on this project's own evidence: a second table means every reader resolves two and picks a
+winner, and the first one that forgets shows a plausible wrong cost per bushel. That is the
+defect the field-rates work produced three times.
+
+**The estimate has to survive**, because "bushels estimated to go" is the estimate summed
+over the fields not yet cut. Overwriting it would delete that number the moment the first
+field is entered — the screen at its least useful in the middle of harvest, which is the only
+time it is open.
+
+**`harvested_at` is the only test for "this field is off", and the data is why.** Not a
+harvest date: one 2026 row already carries one and was never cut, typed into the planning
+screen's optional date box. Not a yield above zero: all 30 of 2026's estimate rows would read
+as harvested today. Both of those production rows are unit tests.
+
+| Step | What landed |
+|---|---|
+| **H-1** | Migration `20260910173555` — `estimated_yield_bushels_per_acre`, `harvested_at`, backfill, partial index |
+| **H-2** | `harvestProgress.ts`, pure, 26 tests. `isHarvested` / `isHarvestedRow` — two spellings, one body |
+| **H-3** | `HarvestEntrySheet` — presentation only, four controls, date defaulting to today |
+| **H-4** | `HarvestProgressCards`, `HarvestFieldLists`, the `/harvest` page, route and sidebar together |
+| **H-5** | The Yields badge, the overwrite guard, and `readOnly` |
+
+**H-1 rehearsed before applying — 62 rows, 7 assertions, 0 failures** — rollback confirmed (0
+new columns, 62 rows intact), then applied. *(The design said 63 rows; the measurement said
+62, and the measurement wins.)* The two assertions that earn their keep: `yield_bushels_per_acre`
+byte-identical across all 62 rows afterwards, and corn's acreage-weighted cost per bushel
+**3.534193 both before and after**. That is what makes "additive in effect" a measurement
+rather than a claim. Types regenerated and spliced on the `// ---` marker: 6 insertions, 0
+deletions.
+
+**Three rules the arithmetic encodes, each one a defect paid for elsewhere.** The bar measures
+**acres**, not fields — twelve of thirty fields can be a fifth of the crop. **Bushels are never
+summed across crops**, and the module deliberately returns no season total: that is F-4b's
+tons-added-to-gallons in a new costume. And **a field with no estimate is counted and named**,
+never read as zero — 2027 has 32 fields and no yield rows, and reporting "0 bushels to go" for
+them is the WI-15 lie in its quiet direction.
+
+**RENDERED, and the figures checked by hand on screen** with the 2026 season's real field
+names and acreages, at 1280 px and 375 px, harness deleted afterwards: corn 27,205 bu in the
+bin (83 × 204.3 + 61 × 168), **+2,552 bu over estimate**, 20.4 % moisture bushel-weighted over
+2 fields, the bar at **37 % = 144 of 393 acres** beside "2 of 6 fields". A field harvested at
+0 bu/ac reads as harvested with nothing in the bin and 2,048 bu under estimate. All 15 controls
+measured **44–76 px** with `getBoundingClientRect`; `scrollWidth === clientWidth === 375`;
+console clean.
+
+**The input sequence was `mousedown` → gap → `mouseup` → gap → `click`, spaced across tasks**,
+asserting the pressed element survived the mousedown — the method the ActionMenu post-mortem
+established hours earlier. A bad moisture is refused by name with the sheet open and the typed
+numbers intact; a forced save error keeps every value and says *"Nothing was lost."*
+
+**H-5 retired a baseline entry, and it was a real hole.** `Yields` had never declared the
+`readOnly` prop `App.tsx` has always passed it, so **a viewer on a shared farm could edit
+every yield**. `tsc` had been reporting it as a TS2322 inside the baseline the whole time —
+**the fourth real defect read out of that baseline**, after `fetchSharedFarms`, V-8's casts
+and `Fields`. The second fix is a hand-written interface declaring `field_costs.total_cost_per_acre`
+non-null against a nullable column; it now says "not costed" rather than crashing on `.toFixed`.
+
+**The guard that matters is in the hook, not on the input.** The Yields autosave fires 1.5 s
+after a keystroke with no notion of what is in the row, so a cursor left in a yield box on a
+harvested field would replace a measured number with a typed one. Disabling the input is the
+affordance; `autosaveYield` refusing is the writer.
+
+**Floor:** tests 463 → **489** · TypeScript 65 → **63** (0 new, 2 fixed) · ESLint **105 / 27**,
+unchanged · build succeeds, **45 chunks** (was 42) · first paint 418.78 → **419.77 kB raw,
+119.16 → 119.43 kB gzip** (+0.99 raw — the route, the sidebar item and the page label, all of
+which are `App.tsx` and therefore eager; the page itself is a 17.19 kB lazy chunk) · migrations
+63 → **64** · advisor **14 WARN**, unchanged.
+
+**NOT verified, and it is the owner's check.** Nothing here has run against Supabase —
+`harvestCrud.ts` and `useHarvestTracker.ts` have never executed, and production holds 0 rows
+with `harvested_at` set. And **every input above was dispatched, not tapped**: the Browser pane
+was hidden, so real browser input could not be driven, and the ActionMenu post-mortem says
+plainly that no dispatched sequence proves what a touchscreen does. §11 of the design doc
+carries the six checks, in order.

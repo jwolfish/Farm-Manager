@@ -1,4 +1,5 @@
 import { useEffect, useState, useRef, useCallback } from 'react';
+import { isHarvestedRow } from '../lib/harvestProgress';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import type { CropType } from '../lib/database.types';
@@ -11,6 +12,16 @@ export interface FieldYield {
   harvest_date: string | null;
   moisture_percentage: number | null;
   notes: string;
+  /**
+   * H-5. The planning estimate, and the stamp that says this field has actually been cut.
+   *
+   * This screen owns the estimate and must not touch a measured actual: `harvested_at` is
+   * set by the harvest tracker and by nothing else, and where it is set the number in
+   * `yield_bushels_per_acre` came off a monitor rather than out of a forecast. See the
+   * refusal in `autosaveYield`.
+   */
+  estimated_yield_bushels_per_acre?: number | null;
+  harvested_at?: string | null;
 }
 
 export interface FieldYieldWithCalculations extends FieldYield {
@@ -24,7 +35,13 @@ export interface FieldWithYield {
   crop_type: CropType;
   acreage: number;
   yield?: FieldYieldWithCalculations;
-  field_cost?: { total_cost_per_acre: number };
+  /**
+   * `field_costs.total_cost_per_acre` is nullable — a field whose costs have never been
+   * computed has no total. This interface declared it non-null, which is the hand-written-
+   * interface-against-the-schema drift WI-19 keeps finding. A null here means "no cost yet",
+   * and must not be read as a cost of zero.
+   */
+  field_cost?: { total_cost_per_acre: number | null };
 }
 
 export interface Season {
@@ -102,15 +119,45 @@ export function useYieldEntry(seasonId: string | null) {
       const costsMap = new Map(costsData?.map(c => [c.field_id, { total_cost_per_acre: c.total_cost_per_acre }]) || []);
 
       const enrichedFields: FieldWithYield[] = (fieldsData || []).map(field => {
-        const fieldYield = yieldsMap.get(field.id);
+        const row = yieldsMap.get(field.id);
         const fieldCost = costsMap.get(field.id);
 
-        if (fieldYield && fieldYield.yield_bushels_per_acre > 0) {
-          const pricePerBushel = seasonData[`${field.crop_type}_price_per_bushel` as keyof Season] as number | null;
-          const { grossRevenue, profit } = calculateProfitMetrics(fieldYield.yield_bushels_per_acre, pricePerBushel, fieldCost?.total_cost_per_acre || null);
-          return { ...field, yield: { ...fieldYield, gross_revenue_per_acre: grossRevenue, profit_per_acre: profit }, field_cost: fieldCost };
-        }
-        return { ...field, yield: fieldYield, field_cost: fieldCost };
+        if (!row) return { ...field, yield: undefined, field_cost: fieldCost };
+
+        /*
+         * Mapped column by column rather than spread.
+         *
+         * The row that comes back is the database's shape and this interface is not: `notes`
+         * is nullable in Postgres and non-null here, which the compiler had been reporting
+         * as a TS2322 inside the baseline the whole time. Spreading a row into a stricter
+         * interface is how that goes unnoticed; naming the columns is how the next added
+         * one gets noticed.
+         */
+        const priced = row.yield_bushels_per_acre > 0;
+        const pricePerBushel = priced
+          ? (seasonData[`${field.crop_type}_price_per_bushel` as keyof Season] as number | null)
+          : null;
+        const { grossRevenue, profit } = priced
+          ? calculateProfitMetrics(row.yield_bushels_per_acre, pricePerBushel, fieldCost?.total_cost_per_acre ?? null)
+          : { grossRevenue: null, profit: null };
+
+        return {
+          ...field,
+          yield: {
+            id: row.id,
+            field_id: row.field_id,
+            yield_bushels_per_acre: row.yield_bushels_per_acre,
+            total_yield_bushels: row.total_yield_bushels,
+            harvest_date: row.harvest_date,
+            moisture_percentage: row.moisture_percentage,
+            notes: row.notes ?? '',
+            estimated_yield_bushels_per_acre: row.estimated_yield_bushels_per_acre,
+            harvested_at: row.harvested_at,
+            gross_revenue_per_acre: grossRevenue,
+            profit_per_acre: profit,
+          },
+          field_cost: fieldCost,
+        };
       });
 
       setFields(enrichedFields);
@@ -189,11 +236,24 @@ export function useYieldEntry(seasonId: string | null) {
 
   const autosaveYield = useCallback(async (field: FieldWithYield) => {
     if (!user || !field.yield || field.yield.yield_bushels_per_acre <= 0) return;
+    /*
+     * H-5. The guard that matters, and it is here rather than only on the input.
+     *
+     * This autosave fires 1.5 s after a keystroke with no notion of what is already in the
+     * row. A cursor left in a yield box on a harvested field would quietly replace a
+     * measured number with a typed one, and afterwards nothing on any screen would tell
+     * them apart. Disabling the input is the affordance; this is the writer.
+     */
+    if (isHarvestedRow(field.yield)) return;
     setSaveStatus(prev => ({ ...prev, [field.id]: 'saving' }));
     try {
       const yieldData = {
         field_id: field.id, user_id: user.id,
         yield_bushels_per_acre: field.yield.yield_bushels_per_acre,
+        // This screen is the estimate's editor, so both move together while the field is
+        // standing. Letting the estimate go stale would put an old number into "estimated
+        // to go" on the harvest screen.
+        estimated_yield_bushels_per_acre: field.yield.yield_bushels_per_acre,
         total_yield_bushels: field.yield.total_yield_bushels,
         harvest_date: field.yield.harvest_date || null,
         moisture_percentage: field.yield.moisture_percentage || null,
@@ -225,6 +285,7 @@ export function useYieldEntry(seasonId: string | null) {
   const handleYieldChange = (fieldId: string, yieldPerAcre: number) => {
     setFields(prevFields => prevFields.map(field => {
       if (field.id !== fieldId) return field;
+      if (isHarvestedRow(field.yield)) return field;
       const totalYield = yieldPerAcre * field.acreage;
       const pricePerBushel = getSeasonPrice(field.crop_type);
       const { grossRevenue, profit } = calculateProfitMetrics(yieldPerAcre, pricePerBushel, field.field_cost?.total_cost_per_acre || null);
@@ -246,6 +307,7 @@ export function useYieldEntry(seasonId: string | null) {
   const handleFieldUpdate = (fieldId: string, updates: Partial<FieldYield>) => {
     setFields(prevFields => prevFields.map(field => {
       if (field.id !== fieldId || !field.yield) return field;
+      if (isHarvestedRow(field.yield)) return field;
       const updatedField = { ...field, yield: { ...field.yield, ...updates } };
       if (updatedField.yield.yield_bushels_per_acre > 0) scheduleAutosave(updatedField);
       return updatedField;
@@ -254,11 +316,16 @@ export function useYieldEntry(seasonId: string | null) {
 
   const saveYield = async (field: FieldWithYield) => {
     if (!field.yield || field.yield.yield_bushels_per_acre <= 0) { alert('Please enter a valid yield'); return; }
+    if (isHarvestedRow(field.yield)) {
+      alert('This field has been harvested. Change the measured yield on the Harvest page.');
+      return;
+    }
     setSaving(field.id);
     try {
       const yieldData = {
         field_id: field.id, user_id: user!.id,
         yield_bushels_per_acre: field.yield.yield_bushels_per_acre,
+        estimated_yield_bushels_per_acre: field.yield.yield_bushels_per_acre,
         total_yield_bushels: field.yield.total_yield_bushels,
         harvest_date: field.yield.harvest_date || null,
         moisture_percentage: field.yield.moisture_percentage || null,

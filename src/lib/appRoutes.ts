@@ -33,6 +33,7 @@ export const PAGE_PATHS: Record<string, string> = {
   products: '/products',
   templates: '/templates',
   yields: '/yields',
+  harvest: '/harvest',
   sales: '/sales',
   'spray-planner': '/spray-planner',
   reports: '/reports',

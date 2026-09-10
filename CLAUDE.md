@@ -30,8 +30,8 @@ a contract, why load lines carry no price, why the plan calculator's field selec
 note rather than a record.
 
 Not yet exercised: a second user, the `viewer` role, and a browser look at the load ticket
-and the booking form. **Rendering a screen has now found a real defect in nine of the last twelve
-rounds**, across both this feature and field-level rates — so if something misbehaves,
+and the booking form. **Rendering a screen has now found a real defect in nine of the last
+thirteen rounds**, across both this feature and field-level rates — so if something misbehaves,
 open the screen before reading the code. Splitting presentation from the Supabase-importing
 container is what makes that possible on a machine with no credentials.
 
@@ -41,6 +41,11 @@ behaviour under a real input sequence, and the only defect from this work to rea
 production was of that kind: a menu that opened and did nothing on a phone, found by the
 owner after three cosmetic defects had been caught on the same screen. A streak counted by
 defects rather than by severity is not measuring what it appears to.
+
+*The harvest tracker (10 Sep) is the thirteenth round, and rendering found nothing in it —
+recorded here rather than quietly dropped. What did find two defects that round was the
+baseline ratchet, and what found a third was reading `tsc`'s output. Rendering is one
+instrument, not the instrument.*
 
 Rules this feature keeps re-learning the hard way:
 
@@ -140,14 +145,51 @@ already cost defects:
 
 The status doc is the source of truth for what is done. Update it when a round lands.
 
+## Harvest tracker (H-1 … H-5, 10 Sep 2026)
+
+A phone screen for entering a field as it comes off, and a per-crop progress view. It does not
+add a yield number — it replaces the planning estimate with a measured one, in place.
+
+- **`field_yields` is ONE row per field, and `yield_bushels_per_acre` is "the best number
+  available"** — the estimate until the field is cut, the actual afterwards. Three readers
+  take it blindly (`useDashboardMetrics` cost per bushel, `useReportData`, the Yields screen),
+  and that is deliberate: it is what makes cost per bushel become an actual figure with no
+  change to any of them. `estimated_yield_bushels_per_acre` holds the forecast and survives
+  harvest untouched, because "estimated to go" is that column summed over the fields not yet
+  cut. **Do not add a `field_harvests` table** — a second source means every reader resolves
+  two and picks a winner, which is the two-table defect the field-rates work produced three
+  times.
+- **`harvested_at` is the ONLY test for "this field is off", via `isHarvested` /
+  `isHarvestedRow` in `harvestProgress.ts`.** Two spellings, one body. Not a harvest date: a
+  date in that box says only that somebody typed one. The 2026 wheat field carried one before
+  this feature existed and it could not say whether the field had been cut — it had, and the
+  app had nowhere to record that, which is precisely why the date proves nothing either way.
+  Not a yield above zero either — all 30 of 2026's estimate rows would read as harvested.
+  Both of those production rows are tests, and they fail if anyone re-derives the predicate.
+- **Progress is measured in acres; bushels are never summed across crops.** Twelve of thirty
+  fields can be a fifth of the crop, and a season "total bushels" adds corn to soybeans — the
+  same error as F-4b's tons-added-to-gallons. `summariseHarvest` returns one row per crop and
+  deliberately offers no total.
+- **A field with no estimate is counted and named, never read as zero.** 2027 has 32 fields
+  and no yield rows; "0 bushels to go" for them is the WI-15 lie in its quiet direction.
+- **The Yields autosave is the hazard, and the guard is in the hook.** It fires 1.5 s after a
+  keystroke with no notion of what is already in the row, so a cursor left in a yield box on a
+  harvested field would overwrite a measured number with a typed one. Disabling the input is
+  the affordance; `autosaveYield` refusing is the writer. The Yields screen writes BOTH
+  columns while a field is standing, so the estimate never goes stale.
+
+@docs/Harvest-Tracker-Design.md
+
 ## Known baseline — do not treat these as regressions you caused
 
-- `npx tsc --noEmit -p tsconfig.app.json` reports **65 errors** (was 103 at review, 98
+- `npx tsc --noEmit -p tsconfig.app.json` reports **63 errors** (was 103 at review, 98
   before WI-19 began; 75 until V-8 replaced two `Json`-to-`ProgramRef[]` casts with real
   `Array.isArray` guards, and 73 until the chemical path got the same four guards on
   6 Sep, 69 until WI-29b deleted a dead parameter, and 68 until the field-editing work
   fixed three on 10 Sep — an undeclared `readOnly` prop, a dead parameter and a form reset
-  that dropped two fields). The regeneration of
+  that dropped two fields, and 65 until the harvest tracker fixed two more the same day — a
+  SECOND undeclared `readOnly`, this one on `Yields`, and an interface declaring a nullable
+  cost column non-null). The regeneration of
   `database.types.ts` briefly took it to 103 —
   12 errors resolved, 17 revealed that the stale hand-written file had been hiding —
   before the unused-symbol sweep brought it to 76. See the WI-19 section of the status
@@ -162,13 +204,13 @@ The status doc is the source of truth for what is done. Update it when a round l
   baseline held 106 / 27 the whole time. The total, 133, was right; nothing had moved a
   warning. Quote the split above, and if it ever disagrees with `baselines/eslint.txt`,
   the baseline is the measurement and this sentence is not.
-- `npx vite build` succeeds and emits **42 chunks**. The number that matters is **first
-  paint: 418.78 kB raw / 119.16 kB gzip**, which is `dist/index.html`'s single
+- `npx vite build` succeeds and emits **45 chunks**. The number that matters is **first
+  paint: 419.77 kB raw / 119.43 kB gzip**, which is `dist/index.html`'s single
   `<script>` and nothing else — measure it that way, by reading the tags out of
   `index.html`, not by looking for "the main chunk". WI-29a added 48.85 kB raw /
   16.29 kB gzip to it (`react-router-dom`, which `App.tsx` imports eagerly), WI-29b a
   further 2.55 kB raw of module boundaries, and the Netlify move 1.36 kB raw for
-  `BrowserRouter` in place of `HashRouter`, and the field-editing work 0.13 kB raw; WI-22's
+  `BrowserRouter` in place of `HashRouter`, the field-editing work 0.13 kB raw, and the harvest tracker 0.99 kB raw for its route, sidebar item and page label (the page itself is a 17.19 kB lazy chunk); WI-22's
   target is ≤ 300 kB gzip, so it is still met with room.
 
   **WI-22 landed 6 Sep 2026 and changed what these figures mean.** Until then all thirteen
@@ -177,14 +219,14 @@ The status doc is the source of truth for what is done. Update it when a round l
   `recharts` (eleven report sub-pages) and `jspdf` (reached through the `lib/exportUtils`
   barrel) are out of the first paint entirely. **479.30 → 102.11 kB gzip**, against WI-22's
   ≤ 300 kB target. WI-29 then took it to 118.87, and the Netlify move to
-  **119.11 kB gzip**, and the field-editing work to **119.16**.
+  **119.11 kB gzip**, the field-editing work to **119.16**, and the harvest tracker to **119.43**.
 
   Consequence for future work: **app-level code is the only thing that still lands in the
   first paint.** R-1's 2.09 kB, R-6's 4.64 kB and WI-29a's 16.29 kB gz did, because they
   are `App.tsx` and `main.tsx`; a change confined to one page no longer does. Total across all chunks went
   593 → 612 kB gzip from chunking overhead, which is the correct trade and not a
   regression — quote first paint, not the total.
-- `npm test` reports **463 passing** in 16 files (456 before the ActionMenu fix added 7; 435 before the field-editing work added 21; 422 before WI-29a added 13; 401 before R-6 added 21; 386 before R-1 added 15; 380 before V-8 added 6; 372 before
+- `npm test` reports **489 passing** in 17 files (463 before the harvest tracker added 26; 456 before the ActionMenu fix added 7; 435 before the field-editing work added 21; 422 before WI-29a added 13; 401 before R-6 added 21; 386 before R-1 added 15; 380 before V-8 added 6; 372 before
   `formatRate` added 8; 347 before V-6 added 25; 340 before V-5 added 7; 320 before V-2 added 20; 308 before V-0
   added 12; 295 before shopping-list coverage added 13).
 - **CI exists as of 6 Sep 2026** — `.github/workflows/ci.yml`, WI-21's core gate. It runs
@@ -365,7 +407,7 @@ npm run verify
 ```
 
 That is `npm test` → `npm run baselines` → `npm run build`. The middle step is the
-interesting one. `tsc` reports **65** and `eslint` **105 errors / 27 warnings** on a healthy
+interesting one. `tsc` reports **63** and `eslint` **105 errors / 27 warnings** on a healthy
 tree, so CI cannot require a zero exit; `scripts/check-baselines.mjs` instead compares
 against the committed sets in `baselines/` and fails only on something **new**.
 
@@ -382,10 +424,10 @@ against the committed sets in `baselines/` and fails only on something **new**.
 The individual commands still work when you want one of them:
 
 ```
-npx tsc --noEmit -p tsconfig.app.json   # 65
+npx tsc --noEmit -p tsconfig.app.json   # 63
 npx eslint .                            # 105 errors / 27 warnings
-npx vite build                          # must succeed; first paint 119.16 kB gz
-npm test                                # 463 passing, must stay green
+npx vite build                          # must succeed; first paint 119.43 kB gz
+npm test                                # 489 passing, must stay green
 ```
 
 **The Supabase CLI is installed as a dev dependency** (`supabase` 2.116.0, added 31 Aug
