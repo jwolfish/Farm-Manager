@@ -3737,9 +3737,43 @@ unchanged · build succeeds, **45 chunks** (was 42) · first paint 418.78 → **
 which are `App.tsx` and therefore eager; the page itself is a 17.19 kB lazy chunk) · migrations
 63 → **64** · advisor **14 WARN**, unchanged.
 
-**NOT verified, and it is the owner's check.** Nothing here has run against Supabase —
-`harvestCrud.ts` and `useHarvestTracker.ts` have never executed, and production holds 0 rows
-with `harvested_at` set. And **every input above was dispatched, not tapped**: the Browser pane
-was hidden, so real browser input could not be driven, and the ActionMenu post-mortem says
-plainly that no dispatched sequence proves what a touchscreen does. §11 of the design doc
-carries the six checks, in order.
+**CONFIRMED END TO END BY THE OWNER, and MERGED TO PRODUCTION — 10 Sep 2026.** The paragraph
+that stood here said nothing had run against Supabase and that `harvestCrud.ts` and
+`useHarvestTracker.ts` had never executed. Both are now false.
+
+**Home Behind Woods, 2026 wheat**, entered on the Harvest page and checked in SQL
+independently of the client:
+
+| | |
+|---|---|
+| `yield_bushels_per_acre` | **98** — the actual |
+| `estimated_yield_bushels_per_acre` | **100** — the estimate, untouched |
+| `total_yield_bushels` | **2,450** = 98 × 25, recomputed |
+| `harvest_date` / `harvested_at` | 2026-07-15 / stamped 18:14 UTC |
+
+The whole 2026 season recomputed in SQL, which is what the cards should read: wheat **100 %,
+25 of 25 ac, 2,450 bu in the bin, 50 bu under estimate**; corn and soybeans **0 %** with
+63,762 and 21,373 bu estimated to go. The two untouched crops are the control — the change is
+inert where nothing has been harvested, and the wheat card can only say "50 under" because the
+estimate survived the entry.
+
+**Merged as `6b9bf93` (PR #6) and deployed.** Floor green on `main`, deploy green, entry chunk
+`index-CAjM3Gcv` → `index-BSsrj6Pa`, and **`/harvest` cold-loads 200** — the check that
+actually asks whether `public/_redirects` covers a route added today, which clicking the
+sidebar would not.
+
+**A CORRECTION THAT CAME WITH IT, and it is the useful part.** Four places justified the
+`harvested_at` predicate by asserting that a 2026 row "carries a harvest date and was never
+cut". That row is this wheat field, and it **had** been cut, in July — the date was true, and
+the app simply had nowhere to record a harvest. The decision is unchanged and the reasoning is
+better for it: a date in that box says only that somebody typed a date, and cannot distinguish
+a real harvest from a planning note **in either direction**. Recorded rather than edited away,
+because a justification that is factually wrong about production data is worth more visible
+than tidy.
+
+**Still not done, and both are small.** The **undo path has never run** — reopening the field
+and pressing *Not harvested after all* should restore 100, clear the date and moisture, and
+drop wheat to 0 %; it is the one write path with no real-data proof, and the one that matters
+if a harvest is ever tagged to the wrong field. And **no dispatched-versus-tapped gap has been
+closed on this screen**: the owner used it in a browser, not by thumb on a phone, and the
+ActionMenu post-mortem is explicit that those are different tests.
