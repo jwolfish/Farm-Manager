@@ -10,11 +10,13 @@
  * Four rules are encoded here rather than in the components, and each one is a defect this
  * project has already paid for somewhere else:
  *
- * 1. **`harvestedAt` is the ONLY test for harvested.** Not a harvest date — a 2026 row
- *    already carries one and was never cut, typed into the planning screen's optional date
- *    box. Not a yield above zero — all 30 of 2026's estimate rows would read as harvested.
- *    The moment two screens each decide for themselves, they disagree in October and the
- *    progress bar becomes a thing nobody trusts.
+ * 1. **`harvestedAt` is the ONLY test for harvested.** Not a harvest date: a date in that
+ *    box says only that somebody typed a date. The 2026 wheat field carried one before this
+ *    feature existed, and it could not say whether the field had been cut — as it happens it
+ *    HAD been, and the app had nowhere to record that, which is exactly the point: a date
+ *    typed while planning looks identical. Not a yield above zero either — all 30 of 2026's
+ *    estimate rows would read as harvested. The moment two screens each decide for
+ *    themselves, they disagree in October and the progress bar becomes a thing nobody trusts.
  *
  * 2. **Progress is measured in ACRES.** Twelve of thirty fields can be a fifth of the crop.
  *    The field counts are returned too, but as counts, where they are honest.

@@ -160,10 +160,12 @@ add a yield number — it replaces the planning estimate with a measured one, in
   two and picks a winner, which is the two-table defect the field-rates work produced three
   times.
 - **`harvested_at` is the ONLY test for "this field is off", via `isHarvested` /
-  `isHarvestedRow` in `harvestProgress.ts`.** Two spellings, one body. Not a harvest date — a
-  2026 row carries one and was never cut, typed into the Yields screen's optional date box.
-  Not a yield above zero — all 30 of 2026's estimate rows would read as harvested. Both of
-  those production rows are tests, and they fail if anyone re-derives the predicate.
+  `isHarvestedRow` in `harvestProgress.ts`.** Two spellings, one body. Not a harvest date: a
+  date in that box says only that somebody typed one. The 2026 wheat field carried one before
+  this feature existed and it could not say whether the field had been cut — it had, and the
+  app had nowhere to record that, which is precisely why the date proves nothing either way.
+  Not a yield above zero either — all 30 of 2026's estimate rows would read as harvested.
+  Both of those production rows are tests, and they fail if anyone re-derives the predicate.
 - **Progress is measured in acres; bushels are never summed across crops.** Twelve of thirty
   fields can be a fifth of the crop, and a season "total bushels" adds corn to soybeans — the
   same error as F-4b's tons-added-to-gallons. `summariseHarvest` returns one row per crop and

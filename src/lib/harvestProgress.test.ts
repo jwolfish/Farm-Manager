@@ -42,8 +42,10 @@ describe('isHarvested', () => {
     expect(isHarvested(null)).toBe(false);
   });
 
-  // The 2026 wheat row in production: a harvest date typed on the planning screen, on a
-  // field that was never cut. This assertion IS that row.
+  // The 2026 wheat row as it stood before this feature: a harvest date and nothing else.
+  // That field HAD been cut, and the date could not say so — there was nowhere to record a
+  // harvest, and a date typed while planning is the same two characters. A date is not
+  // evidence in either direction, which is the whole reason for the stamp.
   it('is false for a row with a harvest date and no stamp', () => {
     expect(isHarvested(row({ harvestDate: '2026-07-15', yieldBushelsPerAcre: 100 }))).toBe(false);
   });

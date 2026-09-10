@@ -138,9 +138,17 @@ that is one deliberate `UPDATE` with a date the owner supplies — not part of t
 
 ### 4.3 "Harvested" is one predicate, in one place
 
-Not `harvest_date IS NOT NULL` — a 2026 row already carries a date and was never cut, entered
-on the planning screen. Not `yield_bushels_per_acre > 0` — all 30 of 2026's rows would read as
-harvested today.
+Not `harvest_date IS NOT NULL` — a 2026 row already carries a date, and a date in that box
+says only that somebody typed one. Not `yield_bushels_per_acre > 0` — all 30 of 2026's rows
+would read as harvested today.
+
+*(**Corrected 10 Sep, after the first real entry.** This section originally said that 2026 row
+"was never cut", and rested the argument on it. The row is the wheat field, Home Behind Woods,
+and it HAD been cut — in July. The date was true; the app simply had nowhere to record a
+harvest. The conclusion is unchanged and the reasoning is better for it: a date cannot
+distinguish a real harvest from a planning note in EITHER direction, which is why the stamp
+exists. Recorded rather than edited away, because a justification that turns out to be wrong
+about production data is worth more as a correction than as a silent fix.)*
 
 ```ts
 export function isHarvested(row: FieldYieldRow | undefined): boolean {
@@ -280,9 +288,10 @@ documented **14 WARN** baseline, unchanged — this migration creates no functio
 policy.
 
 **H-2 — `harvestProgress.ts`, 26 tests.** Two of them are production rows rather than
-inventions: the 2026 wheat row that carries a harvest date and was never cut, and an estimate
-row with a yield above zero. Both are the reasons `harvestedAt` is the only predicate, and
-both fail if someone re-derives it from a date or a number.
+inventions: the 2026 wheat row carrying a harvest date and nothing else, and an estimate row
+with a yield above zero. Both are the reasons `harvestedAt` is the only predicate, and both
+fail if someone re-derives it from a date or a number. (See the correction in §4.3 for what
+that wheat row actually turned out to be.)
 
 **H-3 / H-4 — rendered, and the numbers checked by hand on screen.** A throwaway fixture
 harness using the 2026 season's real field names and acreages, deleted afterwards:
