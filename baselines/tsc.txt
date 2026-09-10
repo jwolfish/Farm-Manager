@@ -1,10 +1,8 @@
 src/App.tsx | TS2322 | Type '((season: Season) => void) | undefined' is not assignable to type '((season: { id: string; year: number; name: string; is_active?: boolean | undefined; }) => void) | undefined'.
-src/App.tsx | TS2322 | Type '{ seasonId: string | null; onViewFieldDetail: (fieldId: string) => void; readOnly: boolean; }' is not assignable to type 'IntrinsicAttributes & FieldsProps'.
 src/App.tsx | TS2322 | Type '{ seasonId: string | null; readOnly: boolean; }' is not assignable to type 'IntrinsicAttributes & YieldsProps'.
 src/components/ChemicalPrograms.tsx | TS2345 | Argument of type '{ items: { id: string; chemical_id: string; application_rate: number; application_rate_unit: string | null; notes: string | null; }[]; application_cost: number; created_at: string | null; ... 7 more ...; chemical_program_items: { ...; }[]; }[]' is not assignable to parameter of type 'SetStateAction<ChemicalProgram[]>'.
 src/components/CrossFarmCopyModal.tsx | TS6133 | 'currentSeasonId' is declared but its value is never read.
 src/components/HedgeCommoditySection.tsx | TS2322 | Type 'Hedge' is not assignable to type 'HedgeFormData & { notes: string | null; }'.
-src/components/SeedVarietyAssignment.tsx | TS6133 | 'acreage' is declared but its value is never read.
 src/components/TemplateApplicationPreview.tsx | TS2345 | Argument of type 'Map<string, { field_id: string; total_cost_per_acre: number | null; }>' is not assignable to parameter of type 'SetStateAction<Map<string, FieldCost>>'.
 src/components/WorkOrderEditModal.tsx | TS2345 | Argument of type '(prev: WorkOrderEditDraft) => { chemicals: { chemicalId: string; chemicalName: string; epaRegNumber: string | null; ratePerAcre: number; rateUnit: string; pricePerUnit: number; priceUnit: string; itemNotes: string | null; }[]; acres: string; sprayVol: string; }' is not assignable to parameter of type 'SetStateAction<WorkOrderEditDraft>'.
 src/hooks/useSalesTracking.ts | TS2345 | Argument of type '{ id: string; crop_type: "corn" | "soybeans" | "wheat"; sale_date: string; delivery_month: string; destination: string; bushels_sold: number; price_per_bushel: number; total_revenue: number | null; notes: string | null; }[]' is not assignable to parameter of type 'SetStateAction<Sale[]>'.
@@ -53,7 +51,6 @@ src/lib/workOrderCrud.ts | TS6133 | 'farmId' is declared but its value is never 
 src/pages/CostTemplates.tsx | TS2769 | No overload matches this call.
 src/pages/CostTemplates.tsx | TS6133 | 'onTemplateSelect' is declared but its value is never read.
 src/pages/FieldDetail.tsx | TS2345 | Argument of type '{ acreage: number; created_at: string | null; crop_type: "corn" | "soybeans" | "wheat"; id: string; land_rent_per_acre: number | null; name: string; notes: string | null; property_tax_per_acre: number | null; season_id: string; updated_at: string | null; user_id: string; } | null' is not assignable to parameter of type 'SetStateAction<Field | null>'.
-src/pages/Fields.tsx | TS2345 | Argument of type '{ name: string; crop_type: "corn"; acreage: string; notes: string; }' is not assignable to parameter of type 'SetStateAction<{ name: string; crop_type: CropType; acreage: string; land_rent_per_acre: string; property_tax_per_acre: string; notes: string; }>'.
 src/pages/reports/costs/BreakEvenAnalysis.tsx | TS2322 | Type '(v: number) => string' is not assignable to type 'LabelFormatter'.
 src/pages/reports/costs/BreakEvenAnalysis.tsx | TS2322 | Type '(v: number) => string' is not assignable to type 'LabelFormatter'.
 src/pages/reports/costs/CostPerBushel.tsx | TS2322 | Type '(v: number) => string' is not assignable to type 'LabelFormatter'.

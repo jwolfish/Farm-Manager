@@ -30,8 +30,8 @@ a contract, why load lines carry no price, why the plan calculator's field selec
 note rather than a record.
 
 Not yet exercised: a second user, the `viewer` role, and a browser look at the load ticket
-and the booking form. **Rendering a screen has now found a real defect seven rounds
-running**, across both this feature and field-level rates — so if something misbehaves,
+and the booking form. **Rendering a screen has now found a real defect in nine of the last twelve
+rounds**, across both this feature and field-level rates — so if something misbehaves,
 open the screen before reading the code. Splitting presentation from the Supabase-importing
 container is what makes that possible on a machine with no credentials.
 
@@ -96,29 +96,61 @@ already cost defects:
 
 @docs/Field-Level-Fertilizer-Rates-Design.md
 
+## Field editing (U-1 … U-4 and MOB-3, 10 Sep 2026)
+
+- **`field_costs.seed_variety_id` has two writers and they mean different things.**
+  `saveFieldSeed` (`fieldSeedCrud.ts`) changes the seed and nothing else; the template
+  wizard sets it while replacing the field's whole cost row. Until U-1 the wizard was the
+  only one, so changing a field's seed went through `deleteAllOverrides` and destroyed its
+  per-field fertilizer rates. **Do not route an ordinary seed change through a template
+  application.**
+- **Anything that calls `deleteAllOverrides` must warn by name first.** It clears
+  `field_cost_overrides` *and* `field_fertilizer_rates`. `describeCustomisationLoss`
+  (`fieldCustomisation.ts`) counts both tables and names the fields; the three callers are
+  unlink, reset-all and apply-template. A warning that reads one table would clear a field
+  that is about to lose the other.
+- **`seedCostMath.ts` is the one seed cost.** `bags/ac = rate ÷ units_per_bag`, `× price`.
+  It refuses rather than returning 0 when a variety has no `units_per_bag` — the wizard
+  still *saves* 0 for backward compatibility, but it shows the reason.
+- **Three shared primitives now, and new controls use them:** `ResponsiveModal` (sheet on a
+  phone), `NumberField` (decimal keypad, 46 px), and `ActionMenu` (popover on desktop,
+  bottom sheet on a phone). The menu is a sheet on a phone on purpose — a popover anchored
+  to a card in a scrolling grid has three ways to render half off-screen.
+- **≥ 44 px is a measurement, not a comment.** Three controls in this round carried a
+  comment claiming 44 and rendered at 40, 40 and 36. `p-3` on a `w-5` icon is 44; `p-2.5`
+  is 40; `p-2` is 36. Check with `getBoundingClientRect`, in the browser.
+
 The status doc is the source of truth for what is done. Update it when a round lands.
 
 ## Known baseline — do not treat these as regressions you caused
 
-- `npx tsc --noEmit -p tsconfig.app.json` reports **68 errors** (was 103 at review, 98
+- `npx tsc --noEmit -p tsconfig.app.json` reports **65 errors** (was 103 at review, 98
   before WI-19 began; 75 until V-8 replaced two `Json`-to-`ProgramRef[]` casts with real
   `Array.isArray` guards, and 73 until the chemical path got the same four guards on
-  6 Sep, and 69 until WI-29b deleted a dead parameter). The regeneration of
+  6 Sep, 69 until WI-29b deleted a dead parameter, and 68 until the field-editing work
+  fixed three on 10 Sep — an undeclared `readOnly` prop, a dead parameter and a form reset
+  that dropped two fields). The regeneration of
   `database.types.ts` briefly took it to 103 —
   12 errors resolved, 17 revealed that the stale hand-written file had been hiding —
   before the unused-symbol sweep brought it to 76. See the WI-19 section of the status
   doc for the full accounting; every movement is itemised there.
-- `npx eslint .` reports **105 errors, 28 warnings** (was 136/28 at review; 109 until V-8
-  removed one `prefer-const` and one `no-explicit-any` from the code it rewrote, and 107
-  until WI-29b deleted a dead parameter and an unnecessary dependency). **`App.tsx` itself
-  now reports zero**, down from five.
-- `npx vite build` succeeds and emits **40 chunks**. The number that matters is **first
-  paint: 418.65 kB raw / 119.11 kB gzip**, which is `dist/index.html`'s single
+- `npx eslint .` reports **105 errors, 27 warnings** (was 136/28 at review; 109 until V-8
+  removed one `prefer-const` and one `no-explicit-any` from the code it rewrote, 107 until
+  WI-29b deleted a dead parameter and an unnecessary dependency, and 106 until the
+  field-editing work deleted another on 10 Sep). **`App.tsx` itself now reports zero**,
+  down from five.
+
+  **This line said 105 / 28 from 6 to 10 Sep and the split was wrong** — the committed
+  baseline held 106 / 27 the whole time. The total, 133, was right; nothing had moved a
+  warning. Quote the split above, and if it ever disagrees with `baselines/eslint.txt`,
+  the baseline is the measurement and this sentence is not.
+- `npx vite build` succeeds and emits **42 chunks**. The number that matters is **first
+  paint: 418.78 kB raw / 119.16 kB gzip**, which is `dist/index.html`'s single
   `<script>` and nothing else — measure it that way, by reading the tags out of
   `index.html`, not by looking for "the main chunk". WI-29a added 48.85 kB raw /
   16.29 kB gzip to it (`react-router-dom`, which `App.tsx` imports eagerly), WI-29b a
   further 2.55 kB raw of module boundaries, and the Netlify move 1.36 kB raw for
-  `BrowserRouter` in place of `HashRouter`; WI-22's
+  `BrowserRouter` in place of `HashRouter`, and the field-editing work 0.13 kB raw; WI-22's
   target is ≤ 300 kB gzip, so it is still met with room.
 
   **WI-22 landed 6 Sep 2026 and changed what these figures mean.** Until then all thirteen
@@ -127,14 +159,14 @@ The status doc is the source of truth for what is done. Update it when a round l
   `recharts` (eleven report sub-pages) and `jspdf` (reached through the `lib/exportUtils`
   barrel) are out of the first paint entirely. **479.30 → 102.11 kB gzip**, against WI-22's
   ≤ 300 kB target. WI-29 then took it to 118.87, and the Netlify move to
-  **119.11 kB gzip**.
+  **119.11 kB gzip**, and the field-editing work to **119.16**.
 
   Consequence for future work: **app-level code is the only thing that still lands in the
   first paint.** R-1's 2.09 kB, R-6's 4.64 kB and WI-29a's 16.29 kB gz did, because they
   are `App.tsx` and `main.tsx`; a change confined to one page no longer does. Total across all chunks went
   593 → 612 kB gzip from chunking overhead, which is the correct trade and not a
   regression — quote first paint, not the total.
-- `npm test` reports **435 passing** in 13 files (422 before WI-29a added 13; 401 before R-6 added 21; 386 before R-1 added 15; 380 before V-8 added 6; 372 before
+- `npm test` reports **456 passing** in 15 files (435 before the field-editing work added 21; 422 before WI-29a added 13; 401 before R-6 added 21; 386 before R-1 added 15; 380 before V-8 added 6; 372 before
   `formatRate` added 8; 347 before V-6 added 25; 340 before V-5 added 7; 320 before V-2 added 20; 308 before V-0
   added 12; 295 before shopping-list coverage added 13).
 - **CI exists as of 6 Sep 2026** — `.github/workflows/ci.yml`, WI-21's core gate. It runs
@@ -315,7 +347,7 @@ npm run verify
 ```
 
 That is `npm test` → `npm run baselines` → `npm run build`. The middle step is the
-interesting one. `tsc` reports **68** and `eslint` **105 errors / 28 warnings** on a healthy
+interesting one. `tsc` reports **65** and `eslint` **105 errors / 27 warnings** on a healthy
 tree, so CI cannot require a zero exit; `scripts/check-baselines.mjs` instead compares
 against the committed sets in `baselines/` and fails only on something **new**.
 
@@ -332,10 +364,10 @@ against the committed sets in `baselines/` and fails only on something **new**.
 The individual commands still work when you want one of them:
 
 ```
-npx tsc --noEmit -p tsconfig.app.json   # 68
-npx eslint .                            # 105 errors / 28 warnings
-npx vite build                          # must succeed; first paint 119.11 kB gz
-npm test                                # 435 passing, must stay green
+npx tsc --noEmit -p tsconfig.app.json   # 65
+npx eslint .                            # 105 errors / 27 warnings
+npx vite build                          # must succeed; first paint 119.16 kB gz
+npm test                                # 456 passing, must stay green
 ```
 
 **The Supabase CLI is installed as a dev dependency** (`supabase` 2.116.0, added 31 Aug

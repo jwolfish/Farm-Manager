@@ -55,6 +55,8 @@ interface FieldProgramDetailsProps {
   chemicalCostPerAcre: number;
   /** Opens the per-field plan editor. Omitted where there is nothing to edit. */
   onEditFertilizerPlan?: () => void;
+  /** Opens the per-field seed editor — U-1. Omitted where there is nothing to edit. */
+  onEditSeed?: () => void;
 }
 
 export function FieldProgramDetails({
@@ -63,6 +65,7 @@ export function FieldProgramDetails({
   fertilizerCostPerAcre,
   chemicalCostPerAcre,
   onEditFertilizerPlan,
+  onEditSeed,
 }: FieldProgramDetailsProps) {
   const [seedVariety, setSeedVariety] = useState<SeedVarietyInfo | null>(null);
   const [seedingRate, setSeedingRate] = useState<number | null>(null);
@@ -348,9 +351,27 @@ export function FieldProgramDetails({
       {/* Seed Section */}
       <div className="bg-white rounded-lg shadow-sm border border-gray-200">
         <div className="border-b border-gray-200 p-4">
-          <div className="flex items-center gap-2">
-            <Sprout className="w-5 h-5 text-green-600" />
-            <h2 className="text-lg font-semibold text-gray-900">Seed</h2>
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <Sprout className="w-5 h-5 text-green-600" />
+              <h2 className="text-lg font-semibold text-gray-900">Seed</h2>
+            </div>
+            {/*
+              U-1. Until this button existed, `field_costs.seed_variety_id` had exactly ONE
+              writer in the codebase — the template wizard — and reaching it re-applied the
+              template, which deletes every cost override and every per-field fertilizer
+              rate on the way past. Changing seed cost you your prescription.
+            */}
+            {onEditSeed && (
+              <button
+                type="button"
+                onClick={onEditSeed}
+                className="flex items-center gap-1 rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-700 transition-colors hover:bg-gray-50"
+              >
+                <Pencil className="h-3.5 w-3.5" />
+                {seedVariety ? 'Edit seed' : 'Assign seed'}
+              </button>
+            )}
           </div>
         </div>
         <div className="p-4">

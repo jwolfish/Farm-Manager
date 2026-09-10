@@ -3,6 +3,8 @@ import { X, Sprout, ChevronDown, ChevronRight, AlertCircle } from 'lucide-react'
 import { supabase } from '../lib/supabase';
 import type { CropType } from '../lib/database.types';
 import type { SeedVarietyAssignment } from '../lib/templateUtils';
+import { parseNumberField } from '../lib/mathUtils';
+import { calculateSeedCostPerAcre, describeSeedCostIssue } from '../lib/seedCostMath';
 
 interface Field {
   id: string;
@@ -87,11 +89,8 @@ export function SeedVarietyAssignmentComponent({
     const seedVariety = seedVarieties.find(sv => sv.id === seedVarietyId);
     if (!seedVariety) return;
 
-    const field = selectedFields.find(f => f.id === fieldId);
-    if (!field) return;
-
     const seedingRate = seedVariety.standard_seeding_rate?.toString() || '';
-    const cost = calculateSeedCost(seedVariety, seedingRate, field.acreage);
+    const cost = calculateSeedCost(seedVariety, seedingRate);
 
     setAssignments(prev => {
       const newMap = new Map(prev);
@@ -117,10 +116,7 @@ export function SeedVarietyAssignmentComponent({
     const seedVariety = seedVarieties.find(sv => sv.id === assignment.seedVarietyId);
     if (!seedVariety) return;
 
-    const field = selectedFields.find(f => f.id === fieldId);
-    if (!field) return;
-
-    const cost = calculateSeedCost(seedVariety, rate, field.acreage);
+    const cost = calculateSeedCost(seedVariety, rate);
 
     setAssignments(prev => {
       const newMap = new Map(prev);
@@ -133,20 +129,37 @@ export function SeedVarietyAssignmentComponent({
     });
   };
 
-  const calculateSeedCost = (seedVariety: SeedVariety, seedingRate: string, acreage: number): number => {
-    const rate = parseFloat(seedingRate);
-    if (!rate || rate <= 0) return 0;
+  /*
+   * Delegates to the one implementation — U-1, guardrail 7.
+   *
+   * This arithmetic used to live here privately. Adding the per-field seed editor would have
+   * made two copies of the number that becomes `field_costs.seed_cost_per_acre`, so it moved
+   * to `seedCostMath.ts` and this calls it.
+   *
+   * The stored behaviour is deliberately unchanged: an uncostable assignment still saves 0,
+   * because changing what the wizard writes had no business hiding inside a refactor. What
+   * is new is that the reason is now shown on the row instead of $0.00 standing there
+   * looking like an answer.
+   */
+  const calculateSeedCost = (seedVariety: SeedVariety, seedingRate: string): number => {
+    const result = calculateSeedCostPerAcre(
+      { pricePerUnit: seedVariety.price_per_unit, unitsPerBag: seedVariety.units_per_bag },
+      parseNumberField(seedingRate)
+    );
+    return result.ok ? result.costPerAcre : 0;
+  };
 
-    // Check if units_per_bag is valid to prevent division by zero
-    if (!seedVariety.units_per_bag || seedVariety.units_per_bag === 0) {
-      return 0;
-    }
-
-    // Calculate bags per acre and then cost per acre
-    const bagsPerAcre = rate / seedVariety.units_per_bag;
-    const costPerAcre = bagsPerAcre * seedVariety.price_per_unit;
-
-    return costPerAcre;
+  /** The sentence to show when a row costs 0 because it cannot be costed at all. */
+  const seedCostIssueFor = (fieldId: string): string | null => {
+    const assignment = assignments.get(fieldId);
+    if (!assignment) return null;
+    const variety = seedVarieties.find((sv) => sv.id === assignment.seedVarietyId);
+    if (!variety) return null;
+    const result = calculateSeedCostPerAcre(
+      { pricePerUnit: variety.price_per_unit, unitsPerBag: variety.units_per_bag },
+      parseNumberField(assignment.seedingRate)
+    );
+    return result.ok ? null : describeSeedCostIssue(result.reason, variety.product_name);
   };
 
   const handleBulkAssign = (cropType: CropType, seedVarietyId: string) => {
@@ -302,6 +315,16 @@ export function SeedVarietyAssignmentComponent({
                                     <div className="text-sm text-gray-600">
                                       ${(assignment.seedCostPerAcre * field.acreage).toFixed(2)} total
                                     </div>
+                                    {/*
+                                      U-1. This row still SAVES 0, as it always has — what
+                                      changed is that $0.00/acre no longer stands there
+                                      alone looking like a real answer.
+                                    */}
+                                    {seedCostIssueFor(field.id) && (
+                                      <div className="mt-1 max-w-[16rem] text-xs text-amber-700">
+                                        {seedCostIssueFor(field.id)}
+                                      </div>
+                                    )}
                                   </div>
                                 )}
                               </div>

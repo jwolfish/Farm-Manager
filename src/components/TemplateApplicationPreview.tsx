@@ -4,6 +4,8 @@ import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
 import { useNotifications } from '../contexts/NotificationContext';
 import { getTemplate, applyTemplateToFields, type SeedVarietyAssignment } from '../lib/templateUtils';
+import { describeCustomisationLoss } from '../lib/fieldCustomisation';
+import { loadFieldCustomisations } from '../lib/fieldCustomisationCrud';
 import type { CropType } from '../lib/database.types';
 
 interface Field {
@@ -40,6 +42,9 @@ export function TemplateApplicationPreview({
   const [template, setTemplate] = useState<any>(null);
   const [existingCosts, setExistingCosts] = useState<Map<string, FieldCost>>(new Map());
   const [showOverwriteWarning, setShowOverwriteWarning] = useState(false);
+  // U-2 — what these fields would lose beyond their cost figures.
+  const [customisationLoss, setCustomisationLoss] = useState<string | null>(null);
+  const [customisationError, setCustomisationError] = useState<string | null>(null);
 
   useEffect(() => {
     const loadData = async () => {
@@ -60,6 +65,15 @@ export function TemplateApplicationPreview({
 
         if (costsData && costsData.length > 0) {
           setShowOverwriteWarning(true);
+        }
+
+        try {
+          const customisations = await loadFieldCustomisations(
+            selectedFields.map((f) => ({ id: f.id, name: f.name }))
+          );
+          setCustomisationLoss(describeCustomisationLoss(customisations));
+        } catch (err) {
+          setCustomisationError(err instanceof Error ? err.message : 'the check failed');
         }
       } catch (error) {
         console.error('Error loading preview data:', error);
@@ -156,10 +170,41 @@ export function TemplateApplicationPreview({
                 <h3 className="font-semibold text-yellow-900">Existing Costs Will Be Overwritten</h3>
                 <p className="text-sm text-yellow-800 mt-1">
                   {fieldsToOverwrite} field{fieldsToOverwrite !== 1 ? 's have' : ' has'} existing cost data that will be replaced.
-                  Any custom overrides will be removed. This action cannot be undone.
+                  This action cannot be undone.
                 </p>
               </div>
             </div>
+          </div>
+        )}
+
+        {/*
+          U-2. The warning above has always been here and has always been vague: "any custom
+          overrides will be removed" does not say whose, how many, or that per-field
+          fertilizer RATES go too. Applying a template calls `deleteAllOverrides`, which
+          clears both tables, so this is where a V-5/V-6 prescription quietly dies. It is
+          rendered separately and in red because it is a different claim from "costs will be
+          replaced" — that one is the point of the operation; this one is collateral.
+        */}
+        {customisationLoss && (
+          <div className="mx-6 mt-4 bg-red-50 border border-red-200 rounded-lg p-4">
+            <div className="flex items-start gap-3">
+              <AlertTriangle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
+              <div>
+                <h3 className="font-semibold text-red-900">Custom Field Values Will Be Deleted</h3>
+                <p className="text-sm text-red-800 mt-1">{customisationLoss}</p>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {customisationError && (
+          <div className="mx-6 mt-4 bg-red-50 border border-red-200 rounded-lg p-4 text-sm text-red-800">
+            {/*
+              A failed check must not read as "nothing to lose". Applying is still allowed —
+              refusing on a failed read would block a legitimate operation — but the person
+              deciding is told the check did not run.
+            */}
+            Could not check whether these fields carry custom values: {customisationError}
           </div>
         )}
 

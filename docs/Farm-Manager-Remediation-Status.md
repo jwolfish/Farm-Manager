@@ -106,12 +106,12 @@ verified byte-for-byte. *(This paragraph used to end "the one thing left is a 5-
 in the running app." That check has been run and it passed — all nine overrides survived a
 live cascade, with the two fields that correctly moved by exactly $80 as the control.)*
 
-| Measured 6 Sep 2026 | |
+| Measured 10 Sep 2026 | |
 |---|---|
-| Tests | **435 passing**, 13 files (422 before WI-29a added 13; 401 before R-6 added 21; 386 before R-1 added 15; 380 before V-8 added 6; 347 before V-6 added 25) |
-| TypeScript | **68 errors** (103 at review, 98 before WI-19, 75 before V-8 replaced two `Json` casts with `Array.isArray` guards, 73 before the chemical path got the same four, 69 before WI-29b deleted a dead parameter). Unmoved by R-1, R-6 and WI-29a; set compared with positions stripped at every step |
-| ESLint | **105 errors, 28 warnings** (from 136/28; 109 before V-8 deleted one `prefer-const` and one `no-explicit-any`; 107 before WI-29b deleted a dead parameter and an unnecessary dependency). Unmoved by R-1, by the cast guards, by R-6 or by WI-29a |
-| Build | succeeds — **40 chunks. First paint 418.65 kB raw / 119.11 kB gzip**, which is the single `<script>` in `dist/index.html`. WI-22 landed 6 Sep and took it from 1,794.82 kB / 479.30 gz to 102.11 gz by making 12 of 13 pages `React.lazy`; WI-29a then added 16.29 kB gz of `react-router-dom`, WI-29b 0.47 kB gz of module boundaries, and the Netlify move 0.24 kB gz for `BrowserRouter`, all eager. Still inside WI-22's ≤ 300 kB gz target. **Quote first paint, not a "main chunk"** |
+| Tests | **456 passing**, 15 files (435 before the field-editing work added 21; 422 before WI-29a added 13; 401 before R-6 added 21; 386 before R-1 added 15; 380 before V-8 added 6; 347 before V-6 added 25) |
+| TypeScript | **65 errors** (103 at review, 98 before WI-19, 75 before V-8 replaced two `Json` casts with `Array.isArray` guards, 73 before the chemical path got the same four, 69 before WI-29b deleted a dead parameter, 68 before the field-editing work fixed three). Set compared with positions stripped at every step |
+| ESLint | **105 errors, 27 warnings.** **The split recorded here was wrong from 6 Sep to 10 Sep** — it said 105 / 28 while the committed baseline held 106 / 27. The total, 133, was right; only the split was not, and no work moved a warning. One error went on 10 Sep with a dead parameter. Quote **105 / 27**; the old split was never measured |
+| Build | succeeds — **42 chunks. First paint 418.78 kB raw / 119.16 kB gzip**, which is the single `<script>` in `dist/index.html`. WI-22 landed 6 Sep and took it from 1,794.82 kB / 479.30 gz to 102.11 gz by making 12 of 13 pages `React.lazy`; WI-29a then added 16.29 kB gz of `react-router-dom`, WI-29b 0.47 kB gz of module boundaries, the Netlify move 0.24 kB gz for `BrowserRouter`, and the field-editing work 0.05 kB gz — all eager. Still inside WI-22's ≤ 300 kB gz target. **Quote first paint, not a "main chunk"** |
 | Migrations | **63 files**, matching the database one-for-one |
 | Edge function | **version 19**, running source confirmed identical to the repo by sha256 immediately after the SEC-8 deploy, 6 Sep |
 | Security advisors | 14 WARN — 13 are the by-design `authenticated_security_definer_function_executable` lint that fires on every RPC, 1 is `auth_leaked_password_protection` (WI-6). No new class of finding. V-6’s internal `apply_field_fertilizer_rates` is correctly absent, being executable by neither role |
@@ -3115,6 +3115,160 @@ previews through CORS does not create that — a preview can already write to pr
 through ordinary Supabase calls — so blocking them here would have produced half-broken
 previews while protecting nothing. The actual fix is per-context environment variables, and
 it is a separate decision nobody has made yet.
+
+### Field editing — U-1, U-2, MOB-3, U-3, U-4 — 10 Sep 2026 — **U-1 confirmed against real data**
+
+**The owner's report, from real use on the phone:** two ways to edit a field and neither is
+obvious — programs by clicking the field *name*, everything else by a tiny unlabelled pencil
+beside the bin — and **seed variety cannot be changed at all**. All three confirmed by
+reading the code, and the third turned out to be worse than reported.
+
+**`field_costs.seed_variety_id` had exactly ONE writer in the codebase.**
+`templateApplication.ts:79`, reachable only by selecting the field, Apply Template, picking
+a template, assigning seed, previewing, applying. Five steps to change one dropdown — and
+applying a template calls `deleteAllOverrides`, which since 6 Sep also clears
+`field_fertilizer_rates`. So **the only way to change a field's seed destroyed its per-field
+fertilizer prescription and every cost override, silently.** `unlinkFieldFromTemplate` does
+the same thing, so the workaround the owner guessed at — "unlink and relink" — was the same
+trap by another door. On Prairie Stream 2 that would have deleted the 2-ton Rhizosorb
+prescription V-6 proved end to end four days earlier.
+
+That is why the sequence put the seed editor and the warnings ahead of the menu the owner
+actually asked about: one is a UI complaint, the other is data loss.
+
+| Step | What landed |
+|---|---|
+| **U-1** | Seed is editable on the field page. An **Edit seed** control on the Seed section opens a sheet: variety, seeding rate, live $/ac. It writes the three seed columns and re-totals, touching **no** override and **no** rate |
+| **U-2** | Unlink, reset-all and apply-template now **count both tables and name the fields** — *"Adkins has 3 custom fertilizer rates and 1 cost override."* |
+| **MOB-3** | Responsive pass on the containers this work lands in |
+| **U-3** | One `FieldDetailsModal`, shared by the Fields page and the field page |
+| **U-4** | `ActionMenu` — the third shared primitive, replacing two unlabelled icons |
+
+**One implementation of the seed cost, and the wizard was rewired onto it.** The arithmetic
+was a private `calculateSeedCost` inside `SeedVarietyAssignment.tsx`; a second copy in the
+new editor would have been two writers of `field_costs.seed_cost_per_acre`, which is
+guardrail 7 exactly. It is `seedCostMath.ts` now, pure, 11 tests. Its silent `return 0` on a
+variety with no `units_per_bag` became a typed refusal in WI-11's shape — **the wizard still
+SAVES 0, so its stored behaviour is unchanged**, but the reason is shown on the row instead
+of `$0.00/acre` standing there looking like an answer. Changing what the wizard writes had
+no business hiding inside a refactor.
+
+**`describeCustomisationLoss` is a pure function with 10 tests**, and the test that earns
+its keep is the one asserting a field with rates and *no* overrides is still caught. Reading
+one table and not the other is the defect this feature has now produced three times in both
+directions; a warning that cleared such a field would be a confirmation dialog reassuring
+someone on the way to deleting the thing it exists to protect.
+
+**MOB-3 was on the critical path, not a nice-to-have.** Measured before starting:
+`FieldDetail.tsx` carried **432 lines with zero responsive classes**, and it is where U-1 and
+U-3 both land. Its header (`flex justify-between`, a name against a four-line cost block) and
+its sticky total bar (an unguarded `grid-cols-3` with a `text-3xl` in it) were extracted as
+presentation — the `AppFullScreens` cut, and the thing that made them renderable here at all.
+The Fields page's header row was three full-label buttons in an uncontained `flex`, which is
+the shape MOB-2 found stretching Products to 1,044 px, and its filter bar was three labelled
+selects in an unguarded `grid-cols-3`.
+
+**RENDERING FOUND THREE DEFECTS, and all three were mine.** Each was a comment asserting a
+44 px tap target over a control that measured **40, 40 and 36** — including the `ActionMenu`
+trigger itself, which would have shipped the "too small to hit" complaint inside the control
+built to fix it. Measured with `getBoundingClientRect`, not asserted. After the fixes: **all
+25 controls ≥ 44 px, `scrollWidth === clientWidth === 375`, `scrollX` 0 after
+`scrollTo(999,0)`.** The desktop popover was confirmed separately at 1280 px (224 × 191,
+sheet `display:none`), and the seed editor's arithmetic was checked on screen against hand
+figures — 34,000 ÷ 80,000 = 0.425 bag/ac × $320 = **$136.00/ac**, × 83 ac = **$11,288.00**.
+
+That is a defect found by rendering in nine of the last twelve rounds.
+
+**Four things fixed in passing, each of which retires a baseline entry:**
+
+- **`Fields` never declared the `readOnly` prop `App.tsx` has always passed it**, so a viewer
+  on a shared farm saw Add Field, Apply Template, the rate grid, Edit and Delete. The
+  compiler had been reporting it as a `TS2322` sitting inside the baseline — the third time
+  reading that baseline has found a real defect, after `fetchSharedFarms` and V-8's casts.
+- The Fields form's Cancel reset `formData` without `land_rent_per_acre` or
+  `property_tax_per_acre` (the form is deleted, so the error goes with it).
+- A dead `acreage` parameter on the wizard's cost function.
+- The field page divided by `field.acreage` with no zero guard.
+
+**Floor:**
+
+| | Before | After |
+|---|---|---|
+| Tests | 435, 13 files | **456, 15 files** — +11 `seedCostMath`, +10 `fieldCustomisation` |
+| TypeScript | 68 | **65** — 0 new, 3 fixed, positions stripped |
+| Build — first paint | 418.65 kB / 119.11 gz | **418.78 kB / 119.16 gz** |
+| Chunks | 40 | **42** — `FieldDetailsModal` and `FieldSeedModal` land in the Fields and FieldDetail chunks, both already lazy |
+| Migrations | 63 | **63** — none needed |
+
+**ESLint needs a correction rather than a delta.** The committed baseline held **106 errors
+and 27 warnings**; this document and `CLAUDE.md` have said **105 / 28** since 6 Sep. The
+total, 133, was right — only the split was wrong, and nothing in this session moved a
+warning. It is **105 errors / 27 warnings** now, one error fewer. Quote that split from here
+on; the old one was never measured.
+
+*(This section shipped saying "NOT verified — nothing here has run against Supabase", with
+three checks for the owner. All three were run the same day on the deploy preview and all
+three passed. The confirmation is below; the checks are kept because they are the right ones
+to repeat if this area is touched again.)*
+
+### U-1 CONFIRMED END TO END — 10 Sep 2026
+
+**Two seed changes, and the second is the one that proves the point.**
+
+**Adkins 2027 → `4444VT2`.** The write is exactly right: 32,000 ÷ 80,000 = 0.4 bag/ac ×
+$273.36 = **$109.34**, recomputed in SQL independently of the client and matching the stored
+figure; `total_cost_per_acre` **544.55**, equal to the sum of its columns to the cent, so
+`recalculateFieldTotal` ran. `seeding_rate_override` is **NULL**, which is the U-1 rule
+working — the entered rate equalled the variety's standard, so the field goes on *tracking*
+the variety rather than pinning a copy of today's number.
+
+**But Adkins had 0 overrides and 0 rate rows, so that save had nothing to destroy.** It
+confirms the write path and the arithmetic; it does not demonstrate the guarantee U-1 exists
+for. The old path would have looked fine on that field too. Recording this rather than
+letting the pass stand unqualified, because "it worked on a field with nothing at stake" is
+the shape of a test that proves less than it appears to.
+
+**Prairie Stream 2 2027 → `4444VT2` is the real test**, and it passed. The field carries the
+only per-field prescription in production: 2 `field_fertilizer_rates` rows and the
+array-shaped `fertilizer_programs` override.
+
+| | | `updated_at` after the seed change |
+|---|---|---|
+| Rhizosorb P | **57.142857142857146** lb/ac — the exact V-6 value | 6 Sep 02:56, untouched |
+| Potash | 75 lb/ac | 6 Sep 02:56, untouched |
+| `fertilizer_programs` override | all four entries intact (39.4625 / 60.846428… / 38 / 82.75) | 6 Sep 03:52, untouched |
+| `field_costs` | the only row written | **10 Sep 14:49** |
+
+**Under the old path all three rows would be gone.** `deleteAllOverrides` clears both tables,
+and re-applying a template was the only way to change a seed variety.
+
+**The delta is the control, and it is exact.** The total fell **650.03 → 649.37**, by
+**$0.66**; the seed cost fell by **$0.66**. Nothing else moved. And the expected total
+computed from the **override array** (221.058929) rather than the `fertilizer_cost_per_acre`
+column (224.97) equals the stored 649.37 — so the re-total resolved *through*
+`applyFieldCostOverrides`, which is the 31 Aug defect staying fixed on the one field where
+it would show.
+
+**All 11 overridden fields still reconcile**, checked with the same query that found that
+defect: `expected` equals `total_cost_per_acre` on every row.
+
+**Also confirmed by the owner on the preview:** the unlink warning names the count, and the
+**⋮** menu opens as a labelled sheet on the phone.
+
+**What is still proven only by reading:** the *failure* paths in the new modules — a refused
+save keeping the sheet open with the entry intact, `loadFieldCustomisations` throwing and the
+apply-template screen saying the check did not run, and `saveFieldSeed` refusing a field with
+no `field_costs` row. Those fire only when a query fails.
+
+**The checks, kept for next time:**
+
+1. Open a field, **Edit seed**, change the variety, save. The seed $/ac and the field total
+   should move, and the field's fertilizer programs and any custom rates should be
+   **untouched** — and pick a field that HAS custom rates, or the check proves nothing.
+2. On a field that carries custom rates, press **Unlink** and read the confirmation. It
+   should name the count. Then cancel.
+3. Tap the **⋮** on a field card on the phone: a labelled sheet, not two tiny icons.
+
 
 ## Open items and standing notes
 
