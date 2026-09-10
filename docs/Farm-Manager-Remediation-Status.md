@@ -3116,7 +3116,7 @@ through ordinary Supabase calls — so blocking them here would have produced ha
 previews while protecting nothing. The actual fix is per-context environment variables, and
 it is a separate decision nobody has made yet.
 
-### Field editing — U-1, U-2, MOB-3, U-3, U-4 — 10 Sep 2026 — branch `field-editing-ux`
+### Field editing — U-1, U-2, MOB-3, U-3, U-4 — 10 Sep 2026 — **U-1 confirmed against real data**
 
 **The owner's report, from real use on the phone:** two ways to edit a field and neither is
 obvious — programs by clicking the field *name*, everything else by a tiny unlabelled pencil
@@ -3206,15 +3206,65 @@ total, 133, was right — only the split was wrong, and nothing in this session 
 warning. It is **105 errors / 27 warnings** now, one error fewer. Quote that split from here
 on; the old one was never measured.
 
-**NOT verified, and the owner's check.** Nothing here has run against Supabase — this machine
-has no credentials, which is the whole reason the presentation halves were split out. The
-four new modules that touch the database (`fieldSeedCrud`, `fieldCrud`,
-`fieldCustomisationCrud`, and the customisation read on the field page) are proven by
-reading. What would catch a mistake is ordinary use:
+*(This section shipped saying "NOT verified — nothing here has run against Supabase", with
+three checks for the owner. All three were run the same day on the deploy preview and all
+three passed. The confirmation is below; the checks are kept because they are the right ones
+to repeat if this area is touched again.)*
+
+### U-1 CONFIRMED END TO END — 10 Sep 2026
+
+**Two seed changes, and the second is the one that proves the point.**
+
+**Adkins 2027 → `4444VT2`.** The write is exactly right: 32,000 ÷ 80,000 = 0.4 bag/ac ×
+$273.36 = **$109.34**, recomputed in SQL independently of the client and matching the stored
+figure; `total_cost_per_acre` **544.55**, equal to the sum of its columns to the cent, so
+`recalculateFieldTotal` ran. `seeding_rate_override` is **NULL**, which is the U-1 rule
+working — the entered rate equalled the variety's standard, so the field goes on *tracking*
+the variety rather than pinning a copy of today's number.
+
+**But Adkins had 0 overrides and 0 rate rows, so that save had nothing to destroy.** It
+confirms the write path and the arithmetic; it does not demonstrate the guarantee U-1 exists
+for. The old path would have looked fine on that field too. Recording this rather than
+letting the pass stand unqualified, because "it worked on a field with nothing at stake" is
+the shape of a test that proves less than it appears to.
+
+**Prairie Stream 2 2027 → `4444VT2` is the real test**, and it passed. The field carries the
+only per-field prescription in production: 2 `field_fertilizer_rates` rows and the
+array-shaped `fertilizer_programs` override.
+
+| | | `updated_at` after the seed change |
+|---|---|---|
+| Rhizosorb P | **57.142857142857146** lb/ac — the exact V-6 value | 6 Sep 02:56, untouched |
+| Potash | 75 lb/ac | 6 Sep 02:56, untouched |
+| `fertilizer_programs` override | all four entries intact (39.4625 / 60.846428… / 38 / 82.75) | 6 Sep 03:52, untouched |
+| `field_costs` | the only row written | **10 Sep 14:49** |
+
+**Under the old path all three rows would be gone.** `deleteAllOverrides` clears both tables,
+and re-applying a template was the only way to change a seed variety.
+
+**The delta is the control, and it is exact.** The total fell **650.03 → 649.37**, by
+**$0.66**; the seed cost fell by **$0.66**. Nothing else moved. And the expected total
+computed from the **override array** (221.058929) rather than the `fertilizer_cost_per_acre`
+column (224.97) equals the stored 649.37 — so the re-total resolved *through*
+`applyFieldCostOverrides`, which is the 31 Aug defect staying fixed on the one field where
+it would show.
+
+**All 11 overridden fields still reconcile**, checked with the same query that found that
+defect: `expected` equals `total_cost_per_acre` on every row.
+
+**Also confirmed by the owner on the preview:** the unlink warning names the count, and the
+**⋮** menu opens as a labelled sheet on the phone.
+
+**What is still proven only by reading:** the *failure* paths in the new modules — a refused
+save keeping the sheet open with the entry intact, `loadFieldCustomisations` throwing and the
+apply-template screen saying the check did not run, and `saveFieldSeed` refusing a field with
+no `field_costs` row. Those fire only when a query fails.
+
+**The checks, kept for next time:**
 
 1. Open a field, **Edit seed**, change the variety, save. The seed $/ac and the field total
    should move, and the field's fertilizer programs and any custom rates should be
-   **untouched** — that is the whole point of U-1.
+   **untouched** — and pick a field that HAS custom rates, or the check proves nothing.
 2. On a field that carries custom rates, press **Unlink** and read the confirmation. It
    should name the count. Then cancel.
 3. Tap the **⋮** on a field card on the phone: a labelled sheet, not two tiny icons.
