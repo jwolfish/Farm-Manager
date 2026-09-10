@@ -3341,10 +3341,18 @@ A streak counted by defects rather than by severity is not measuring what it app
 unchanged, no new baseline entries. Merged as `7143a0f`, deployed to production the same
 day; entry chunk `index-CZAOzRbH.js` → `index-CAjM3Gcv.js`, `/fields` cold-loads 200.
 
-**Not verified: the fix on a real phone.** Every check above used dispatched events in a
-desktop browser at a 375 px viewport, which is the same gap in kind — narrower than the one
-that caused this, but the same kind. A real tap on a real touchscreen fires
-`touchstart`/`touchend` before the mouse events, and nobody has held the device.
+**CONFIRMED ON A REAL PHONE by the owner, 10 Sep**, minutes after the deploy. That closes
+the one gap every check here still had: they all used dispatched events in a desktop browser
+at a 375 px viewport, which is a narrower version of the same mistake that caused the defect.
+A real tap fires `touchstart`/`touchend` before the mouse events, and no dispatched sequence
+proves what a touchscreen does.
+
+**So the round ends the way it should have begun.** The control was built for touch, verified
+without touch, shipped broken, and is now verified by touch. Nothing in the tooling here can
+do that step — the device is the only instrument for it, which makes it the owner's check by
+nature rather than by omission. Worth stating for the next touch-facing control: **plan for a
+real tap, and treat everything before it as evidence about the code rather than about the
+phone.**
 
 ## Open items and standing notes
 
