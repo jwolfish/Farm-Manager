@@ -18,6 +18,8 @@ import { TemplateApplicationPreview } from '../components/TemplateApplicationPre
 import { Pagination } from '../components/Pagination';
 import { ErrorBoundary } from '../components/ErrorBoundary';
 import { FieldCard } from '../components/fields/FieldCard';
+import { FieldDetailsModal } from '../components/fields/FieldDetailsModal';
+import { deleteField } from '../lib/fieldCrud';
 import type { CropType } from '../lib/database.types';
 import type { SeedVarietyAssignment } from '../lib/templateUtils';
 import type { FieldWithCosts } from '../components/fields/FieldCard';
@@ -27,23 +29,22 @@ const FIELDS_PAGE_SIZE = 24;
 interface FieldsProps {
   seasonId: string | null;
   onViewFieldDetail?: (fieldId: string) => void;
+  /**
+   * A viewer on a shared farm. `App.tsx` has passed this since the role work; the prop was
+   * never declared here, so every mutating control on this page was shown to a viewer and
+   * the compiler had been reporting it as a TS2322 sitting inside the baseline.
+   */
+  readOnly?: boolean;
 }
 
-export function Fields({ seasonId, onViewFieldDetail }: FieldsProps) {
+export function Fields({ seasonId, onViewFieldDetail, readOnly }: FieldsProps) {
   const { user } = useAuth();
   const [fields, setFields] = useState<FieldWithCosts[]>([]);
   const [selectedFields, setSelectedFields] = useState<Set<string>>(new Set());
   const [loading, setLoading] = useState(true);
-  const [showForm, setShowForm] = useState(false);
-  const [editingField, setEditingField] = useState<FieldWithCosts | null>(null);
-  const [formData, setFormData] = useState({
-    name: '',
-    crop_type: 'corn' as CropType,
-    acreage: '',
-    land_rent_per_acre: '',
-    property_tax_per_acre: '',
-    notes: '',
-  });
+  /* U-3: one modal for both create and edit. `null` means closed. */
+  const [editing, setEditing] = useState<{ field: FieldWithCosts | null } | null>(null);
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const [templateFilter, setTemplateFilter] = useState<string>('all');
   const [overrideFilter, setOverrideFilter] = useState<string>('all');
@@ -162,76 +163,26 @@ export function Fields({ seasonId, onViewFieldDetail }: FieldsProps) {
     };
   }, [disableWizardProtection]);
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!seasonId || !user) return;
-
-    try {
-      if (editingField) {
-        const { error } = await supabase
-          .from('fields')
-          .update({
-            name: formData.name,
-            crop_type: formData.crop_type,
-            acreage: parseFloat(formData.acreage),
-            land_rent_per_acre: parseFloat(formData.land_rent_per_acre) || 0,
-            property_tax_per_acre: parseFloat(formData.property_tax_per_acre) || 0,
-            notes: formData.notes || null,
-          })
-          .eq('id', editingField.id);
-
-        if (error) throw error;
-      } else {
-        const { error } = await supabase.from('fields').insert({
-          season_id: seasonId,
-          user_id: user.id,
-          name: formData.name,
-          crop_type: formData.crop_type,
-          acreage: parseFloat(formData.acreage),
-          land_rent_per_acre: parseFloat(formData.land_rent_per_acre) || 0,
-          property_tax_per_acre: parseFloat(formData.property_tax_per_acre) || 0,
-          notes: formData.notes || null,
-        });
-
-        if (error) throw error;
-      }
-
-      setFormData({ name: '', crop_type: 'corn', acreage: '', land_rent_per_acre: '', property_tax_per_acre: '', notes: '' });
-      setEditingField(null);
-      setShowForm(false);
-      loadFields();
-    } catch (error) {
-      console.error('Error saving field:', error);
-      alert('Error saving field. Please try again.');
-    }
-  };
-
-  const handleEdit = (field: FieldWithCosts) => {
-    setEditingField(field);
-    setFormData({
-      name: field.name,
-      crop_type: field.crop_type,
-      acreage: field.acreage.toString(),
-      land_rent_per_acre: field.land_rent_per_acre.toString(),
-      property_tax_per_acre: field.property_tax_per_acre.toString(),
-      notes: field.notes || '',
-    });
-    setShowForm(true);
-  };
+  const handleEdit = (field: FieldWithCosts) => setEditing({ field });
 
   const handleDelete = async (fieldId: string) => {
-    if (!confirm('Are you sure you want to delete this field? This will also delete all associated cost data.')) {
+    const field = fields.find((f) => f.id === fieldId);
+    const name = field ? `"${field.name}"` : 'this field';
+    if (
+      !confirm(
+        `Delete ${name}?\n\nIts costs, custom values, fertilizer rates and yields go with it. This cannot be undone.`
+      )
+    ) {
       return;
     }
 
+    setDeleteError(null);
     try {
-      const { error } = await supabase.from('fields').delete().eq('id', fieldId);
-
-      if (error) throw error;
+      await deleteField(fieldId);
       loadFields();
     } catch (error) {
-      console.error('Error deleting field:', error);
-      alert('Error deleting field. Please try again.');
+      // Was `alert('Error deleting field. Please try again.')` with the reason discarded.
+      setDeleteError(error instanceof Error ? error.message : 'Could not delete the field.');
     }
   };
 
@@ -345,13 +296,18 @@ export function Fields({ seasonId, onViewFieldDetail }: FieldsProps) {
 
   return (
     <div className="p-4 sm:p-8">
-      <div className="mb-8 flex items-center justify-between">
+      {/*
+        MOB-3. Three full-label buttons in a plain `flex` row is the shape MOB-2 found
+        stretching the Products page to 1,044 px: nothing contains it, so the PAGE grows and
+        scrolls sideways. They wrap now, and the row stacks under the heading on a phone.
+      */}
+      <div className="mb-8 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
         <div>
           <h1 className="text-3xl font-bold text-gray-900">Fields</h1>
           <p className="text-gray-600 mt-2">Manage your fields and crop assignments</p>
         </div>
-        <div className="flex gap-3">
-          {selectedFields.size > 0 && (
+        <div className="flex flex-wrap gap-3">
+          {selectedFields.size > 0 && !readOnly && (
             <button
               onClick={handleApplyTemplate}
               className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors"
@@ -365,24 +321,24 @@ export function Fields({ seasonId, onViewFieldDetail }: FieldsProps) {
             reads fields down the page and because it is the surface the CSV import (V-7)
             will populate for review.
           */}
-          <button
-            onClick={() => setShowRateGrid(true)}
-            className="flex items-center gap-2 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
-          >
-            <Grid3x3 className="w-5 h-5" />
-            Fertilizer Rates
-          </button>
-          <button
-            onClick={() => {
-              setShowForm(true);
-              setEditingField(null);
-              setFormData({ name: '', crop_type: 'corn', acreage: '', land_rent_per_acre: '', property_tax_per_acre: '', notes: '' });
-            }}
-            className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
-          >
-            <Plus className="w-5 h-5" />
-            Add Field
-          </button>
+          {!readOnly && (
+            <button
+              onClick={() => setShowRateGrid(true)}
+              className="flex items-center gap-2 px-4 py-2.5 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+            >
+              <Grid3x3 className="w-5 h-5" />
+              Fertilizer Rates
+            </button>
+          )}
+          {!readOnly && (
+            <button
+              onClick={() => setEditing({ field: null })}
+              className="flex items-center gap-2 px-4 py-2.5 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+            >
+              <Plus className="w-5 h-5" />
+              Add Field
+            </button>
+          )}
         </div>
       </div>
 
@@ -404,11 +360,25 @@ export function Fields({ seasonId, onViewFieldDetail }: FieldsProps) {
         </ErrorBoundary>
       )}
 
+      {deleteError && (
+        <div className="mb-6 flex items-start justify-between gap-3 rounded-lg border border-red-200 bg-red-50 p-4 text-sm text-red-800">
+          <span>{deleteError}</span>
+          <button
+            type="button"
+            onClick={() => setDeleteError(null)}
+            className="shrink-0 font-medium underline"
+          >
+            Dismiss
+          </button>
+        </div>
+      )}
+
       {fields.length > 0 && (
         <div className="mb-6 bg-white rounded-lg border border-gray-200 p-4">
-          <div className="flex items-center gap-4">
-            <Filter className="w-5 h-5 text-gray-500" />
-            <div className="flex-1 grid grid-cols-3 gap-3">
+          {/* MOB-3: three labelled selects side by side leave ~110 px each at 375 px. */}
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:gap-4">
+            <Filter className="hidden w-5 h-5 text-gray-500 sm:block" />
+            <div className="grid flex-1 grid-cols-1 gap-3 sm:grid-cols-3">
               <div>
                 <label className="block text-xs font-medium text-gray-700 mb-1">Crop Type</label>
                 <select
@@ -453,118 +423,6 @@ export function Fields({ seasonId, onViewFieldDetail }: FieldsProps) {
         </div>
       )}
 
-      {showForm && (
-        <div className="mb-6 bg-white rounded-xl shadow-sm border border-gray-200 p-6">
-          <h2 className="text-lg font-semibold text-gray-900 mb-4">
-            {editingField ? 'Edit Field' : 'New Field'}
-          </h2>
-          <form onSubmit={handleSubmit} className="space-y-4">
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Field Name</label>
-                <input
-                  type="text"
-                  value={formData.name}
-                  onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                  placeholder="e.g., North 40, Field A"
-                  required
-                />
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Crop Type</label>
-                <select
-                  value={formData.crop_type}
-                  onChange={(e) => setFormData({ ...formData, crop_type: e.target.value as CropType })}
-                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                  required
-                >
-                  <option value="corn">Corn</option>
-                  <option value="soybeans">Soybeans</option>
-                  <option value="wheat">Wheat</option>
-                </select>
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Acreage</label>
-              <input
-                type="number"
-                step="0.01"
-                value={formData.acreage}
-                onChange={(e) => setFormData({ ...formData, acreage: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                placeholder="e.g., 120.5"
-                required
-              />
-            </div>
-
-            <div className="grid grid-cols-2 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Land Rent (per acre)</label>
-                <div className="relative">
-                  <span className="absolute left-3 top-2.5 text-gray-500">$</span>
-                  <input
-                    type="number"
-                    step="0.01"
-                    value={formData.land_rent_per_acre}
-                    onChange={(e) => setFormData({ ...formData, land_rent_per_acre: e.target.value })}
-                    className="w-full pl-8 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                    placeholder="0.00"
-                  />
-                </div>
-              </div>
-
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-2">Property Tax (per acre)</label>
-                <div className="relative">
-                  <span className="absolute left-3 top-2.5 text-gray-500">$</span>
-                  <input
-                    type="number"
-                    step="0.01"
-                    value={formData.property_tax_per_acre}
-                    onChange={(e) => setFormData({ ...formData, property_tax_per_acre: e.target.value })}
-                    className="w-full pl-8 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                    placeholder="0.00"
-                  />
-                </div>
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">Notes (Optional)</label>
-              <textarea
-                value={formData.notes}
-                onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-                placeholder="Soil type, rotation history, etc."
-                rows={3}
-              />
-            </div>
-
-            <div className="flex gap-3">
-              <button
-                type="submit"
-                className="px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
-              >
-                {editingField ? 'Update Field' : 'Create Field'}
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setShowForm(false);
-                  setEditingField(null);
-                  setFormData({ name: '', crop_type: 'corn', acreage: '', notes: '' });
-                }}
-                className="px-4 py-2 bg-gray-100 text-gray-700 rounded-lg hover:bg-gray-200 transition-colors"
-              >
-                Cancel
-              </button>
-            </div>
-          </form>
-        </div>
-      )}
 
       {loading ? (
         <div className="text-center text-gray-500">Loading fields...</div>
@@ -574,8 +432,8 @@ export function Fields({ seasonId, onViewFieldDetail }: FieldsProps) {
           <h3 className="text-lg font-medium text-gray-900 mb-2">No fields yet</h3>
           <p className="text-gray-600 mb-4">Add your first field to start tracking costs</p>
           <button
-            onClick={() => setShowForm(true)}
-            className="inline-flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
+            onClick={() => setEditing({ field: null })}
+            className="inline-flex items-center gap-2 px-4 py-3 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors"
           >
             <Plus className="w-5 h-5" />
             Add Field
@@ -619,6 +477,8 @@ export function Fields({ seasonId, onViewFieldDetail }: FieldsProps) {
                   onEdit={handleEdit}
                   onDelete={handleDelete}
                   onViewDetail={onViewFieldDetail}
+                  onEditRates={() => setShowRateGrid(true)}
+                  readOnly={readOnly}
                 />
               ))}
             </div>
@@ -633,6 +493,28 @@ export function Fields({ seasonId, onViewFieldDetail }: FieldsProps) {
             />
           )}
         </>
+      )}
+
+      {editing && seasonId && user && (
+        <FieldDetailsModal
+          fieldId={editing.field?.id}
+          seasonId={seasonId}
+          userId={user.id}
+          initial={
+            editing.field
+              ? {
+                  name: editing.field.name,
+                  cropType: editing.field.crop_type,
+                  acreage: editing.field.acreage,
+                  landRentPerAcre: editing.field.land_rent_per_acre,
+                  propertyTaxPerAcre: editing.field.property_tax_per_acre,
+                  notes: editing.field.notes,
+                }
+              : undefined
+          }
+          onClose={() => setEditing(null)}
+          onSaved={loadFields}
+        />
       )}
 
       {showTemplateSelector && seasonId && user && (

@@ -3,7 +3,6 @@ src/components/ChemicalPrograms.tsx | warning | react-hooks/exhaustive-deps | Re
 src/components/CrossFarmCopyModal.tsx | error | @typescript-eslint/no-unused-vars | 'currentSeasonId' is defined but never used.
 src/components/FertilizerPrograms.tsx | warning | react-hooks/exhaustive-deps | React Hook useEffect has missing dependencies: 'loadProducts', 'loadPrograms', and 'user'. Either include them or remove the dependency array.
 src/components/NotificationBell.tsx | warning | react-hooks/exhaustive-deps | React Hook useEffect has a missing dependency: 'load'. Either include it or remove the dependency array.
-src/components/SeedVarietyAssignment.tsx | error | @typescript-eslint/no-unused-vars | 'acreage' is defined but never used.
 src/components/SeedVarietyAssignment.tsx | warning | react-hooks/exhaustive-deps | React Hook useEffect has a missing dependency: 'selectedFields'. Either include it or remove the dependency array.
 src/components/TemplateApplicationPreview.tsx | error | @typescript-eslint/no-explicit-any | Unexpected any. Specify a different type.
 src/components/TemplateApplicationPreview.tsx | error | @typescript-eslint/no-explicit-any | Unexpected any. Specify a different type.

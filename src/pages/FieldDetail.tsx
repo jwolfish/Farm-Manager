@@ -1,9 +1,15 @@
 import { useEffect, useState } from 'react';
-import { ArrowLeft, Sprout, FileText, AlertCircle, Unlink } from 'lucide-react';
+import { ArrowLeft, FileText, AlertCircle, Unlink } from 'lucide-react';
 import { FieldApplicationHistory } from '../components/fields/FieldApplicationHistory';
 import { FieldProgramDetails } from '../components/fields/FieldProgramDetails';
 import { FieldFertilizerPlanModal } from '../components/fields/FieldFertilizerPlanModal';
+import { FieldSeedModal } from '../components/fields/FieldSeedModal';
+import { FieldDetailsModal } from '../components/fields/FieldDetailsModal';
+import { FieldDetailHeader } from '../components/fields/FieldDetailHeader';
+import { FieldCostSummaryBar } from '../components/fields/FieldCostSummaryBar';
 import { supabase } from '../lib/supabase';
+import { describeCustomisationLoss, type FieldCustomisation } from '../lib/fieldCustomisation';
+import { loadFieldCustomisations } from '../lib/fieldCustomisationCrud';
 import {
   getTemplate,
   getResolvedFieldCosts,
@@ -25,6 +31,7 @@ interface Field {
   land_rent_per_acre: number;
   property_tax_per_acre: number;
   notes: string | null;
+  user_id: string;
 }
 
 interface FieldDetailProps {
@@ -33,14 +40,21 @@ interface FieldDetailProps {
   onBack: () => void;
 }
 
-export function FieldDetail({ fieldId, onBack }: FieldDetailProps) {
+export function FieldDetail({ fieldId, seasonId, onBack }: FieldDetailProps) {
   const [field, setField] = useState<Field | null>(null);
   const [fieldCosts, setFieldCosts] = useState<ResolvedFieldCosts | null>(null);
   const [template, setTemplate] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [planOpen, setPlanOpen] = useState(false);
+  const [seedOpen, setSeedOpen] = useState(false);
+  const [editOpen, setEditOpen] = useState(false);
   // Bumped after a plan save so FieldProgramDetails re-reads the override it renders from.
   const [programsRefresh, setProgramsRefresh] = useState(0);
+  /*
+   * What this field would lose to a reset or an unlink — U-2. Held in state rather than read
+   * inside the handler so the confirm can be synchronous and still name the numbers.
+   */
+  const [customisation, setCustomisation] = useState<FieldCustomisation | null>(null);
 
   useEffect(() => {
     loadFieldData();
@@ -57,6 +71,11 @@ export function FieldDetail({ fieldId, onBack }: FieldDetailProps) {
 
       if (fieldError) throw fieldError;
       setField(fieldData);
+
+      if (fieldData) {
+        const [summary] = await loadFieldCustomisations([{ id: fieldId, name: fieldData.name }]);
+        setCustomisation(summary ?? null);
+      }
 
       const costs = await getResolvedFieldCosts(fieldId);
       setFieldCosts(costs);
@@ -84,15 +103,29 @@ export function FieldDetail({ fieldId, onBack }: FieldDetailProps) {
     await loadFieldData();
   };
 
+  /*
+   * U-2. Both of these call `deleteAllOverrides`, which clears `field_cost_overrides` AND
+   * `field_fertilizer_rates`. The old copy said "this cannot be undone" without saying what
+   * "this" was, and unlink said "cost data will be preserved" — which is true of
+   * `field_costs` and false of the per-field prescription. Both now name the count.
+   */
+  const lossWarning = customisation ? describeCustomisationLoss([customisation]) : null;
+
   const handleResetAllOverrides = async () => {
-    if (confirm('Reset all custom values to template defaults? This cannot be undone.')) {
+    const message = lossWarning
+      ? `Reset all custom values to template defaults?\n\n${lossWarning}\n\nThis cannot be undone.`
+      : 'Reset all custom values to template defaults? This cannot be undone.';
+    if (confirm(message)) {
       await deleteAllOverrides(fieldId);
       await loadFieldData();
     }
   };
 
   const handleUnlinkTemplate = async () => {
-    if (confirm('Unlink this field from its template? Cost data will be preserved but the field will no longer update with template changes.')) {
+    const base =
+      'Unlink this field from its template?\n\nIts cost figures are kept, but it will no longer follow template changes.';
+    const message = lossWarning ? `${base}\n\n${lossWarning}` : base;
+    if (confirm(message)) {
       await unlinkFieldFromTemplate(fieldId);
       await loadFieldData();
     }
@@ -174,6 +207,39 @@ export function FieldDetail({ fieldId, onBack }: FieldDetailProps) {
           }}
         />
       )}
+      {editOpen && (
+        /*
+          U-3. The same editor the Fields page opens, so a field's own details have one home
+          rather than two — land rent and property tax were editable here AND on the card's
+          inline form, while name, crop and acreage were only reachable from a bare pencil.
+          `seasonId` and `userId` are required by the create path and unused on this one.
+        */
+        <FieldDetailsModal
+          fieldId={fieldId}
+          seasonId={seasonId}
+          userId={field.user_id}
+          initial={{
+            name: field.name,
+            cropType: field.crop_type,
+            acreage: field.acreage,
+            landRentPerAcre: field.land_rent_per_acre,
+            propertyTaxPerAcre: field.property_tax_per_acre,
+            notes: field.notes,
+          }}
+          onClose={() => setEditOpen(false)}
+          onSaved={loadFieldData}
+        />
+      )}
+      {seedOpen && (
+        <FieldSeedModal
+          fieldId={fieldId}
+          onClose={() => setSeedOpen(false)}
+          onSaved={() => {
+            setProgramsRefresh((n) => n + 1);
+            loadFieldData();
+          }}
+        />
+      )}
       <div className="max-w-6xl mx-auto p-6">
         <button
           onClick={onBack}
@@ -183,59 +249,47 @@ export function FieldDetail({ fieldId, onBack }: FieldDetailProps) {
           <span>Back to Fields</span>
         </button>
 
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 mb-6">
-          <div className="flex items-start justify-between">
-            <div>
-              <h1 className="text-3xl font-bold text-gray-900 mb-2">{field.name}</h1>
-              <div className="flex items-center gap-4 text-gray-600">
-                <div className="flex items-center gap-1">
-                  <Sprout className="w-4 h-4" />
-                  <span className="capitalize">{field.crop_type}</span>
-                </div>
-                <div>{field.acreage} acres</div>
-              </div>
-              {field.notes && (
-                <p className="text-sm text-gray-600 mt-2">{field.notes}</p>
-              )}
-            </div>
-            <div className="text-right">
-              <div className="text-sm text-gray-600">Total Cost Per Acre</div>
-              <div className="text-3xl font-bold text-green-600">${(totalCostPerAcre + landCostPerAcre).toFixed(2)}</div>
-              <div className="text-xs text-gray-500 mt-1">
-                Operational: ${totalCostPerAcre.toFixed(2)} + Land: ${landCostPerAcre.toFixed(2)}
-              </div>
-              <div className="text-sm text-gray-600 mt-1">
-                ${totalWithLand.toFixed(2)} total for field
-              </div>
-            </div>
-          </div>
-        </div>
+        <FieldDetailHeader
+          name={field.name}
+          cropType={field.crop_type}
+          acreage={field.acreage}
+          notes={field.notes}
+          operationalCostPerAcre={totalCostPerAcre}
+          landCostPerAcre={landCostPerAcre}
+          totalForField={totalWithLand}
+          onEdit={() => setEditOpen(true)}
+        />
 
+        {/* MOB-3: stacked on a phone. Two labelled buttons and a two-line paragraph do not
+            fit beside each other at 375 px, and `Reset All Custom Values` is the longest
+            label on the screen. */}
         {template && (
           <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
-            <div className="flex items-start justify-between">
-              <div className="flex items-start gap-3">
-                <FileText className="w-5 h-5 text-blue-600 mt-0.5" />
-                <div>
-                  <h3 className="font-semibold text-blue-900">Linked to Template: {template.name}</h3>
+            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+              <div className="flex items-start gap-3 min-w-0">
+                <FileText className="w-5 h-5 text-blue-600 mt-0.5 shrink-0" />
+                <div className="min-w-0">
+                  <h3 className="font-semibold text-blue-900 break-words">
+                    Linked to Template: {template.name}
+                  </h3>
                   <p className="text-sm text-blue-700 mt-1">
                     This field uses the template for its cost structure.
                     {hasOverrides && ` ${overrides.size} custom value${overrides.size !== 1 ? 's' : ''} set.`}
                   </p>
                 </div>
               </div>
-              <div className="flex gap-2">
+              <div className="flex flex-wrap gap-2 shrink-0">
                 {hasOverrides && (
                   <button
                     onClick={handleResetAllOverrides}
-                    className="px-3 py-1.5 text-sm bg-amber-600 text-white rounded hover:bg-amber-700 transition-colors"
+                    className="px-3 py-2.5 text-sm bg-amber-600 text-white rounded hover:bg-amber-700 transition-colors"
                   >
                     Reset All Custom Values
                   </button>
                 )}
                 <button
                   onClick={handleUnlinkTemplate}
-                  className="px-3 py-1.5 text-sm bg-red-600 text-white rounded hover:bg-red-700 transition-colors flex items-center gap-1"
+                  className="px-3 py-2.5 text-sm bg-red-600 text-white rounded hover:bg-red-700 transition-colors flex items-center gap-1"
                 >
                   <Unlink className="w-4 h-4" />
                   Unlink
@@ -268,6 +322,7 @@ export function FieldDetail({ fieldId, onBack }: FieldDetailProps) {
               fertilizerCostPerAcre={costs.fertilizer_cost_per_acre || 0}
               chemicalCostPerAcre={costs.chemical_cost_per_acre || 0}
               onEditFertilizerPlan={() => setPlanOpen(true)}
+              onEditSeed={() => setSeedOpen(true)}
             />
 
             <div className="bg-white rounded-lg shadow-sm border border-gray-200">
@@ -401,31 +456,14 @@ export function FieldDetail({ fieldId, onBack }: FieldDetailProps) {
           <FieldApplicationHistory fieldId={fieldId} />
         </div>
 
-        <div className="bg-gray-900 text-white rounded-lg shadow-lg p-6 mt-6 sticky bottom-6">
-          <div className="grid grid-cols-3 gap-6">
-            <div>
-              <div className="text-sm text-gray-400">Operational Costs</div>
-              <div className="text-2xl font-bold">${totalFieldCost.toFixed(2)}</div>
-              <div className="text-xs text-gray-400 mt-1">
-                ${totalCostPerAcre.toFixed(2)}/acre
-              </div>
-            </div>
-            <div>
-              <div className="text-sm text-gray-400">Land Costs</div>
-              <div className="text-2xl font-bold">${(landCostPerAcre * field.acreage).toFixed(2)}</div>
-              <div className="text-xs text-gray-400 mt-1">
-                ${landCostPerAcre.toFixed(2)}/acre
-              </div>
-            </div>
-            <div className="border-l border-gray-700 pl-6">
-              <div className="text-sm text-gray-400">Total Cost</div>
-              <div className="text-3xl font-bold text-green-400">${totalWithLand.toFixed(2)}</div>
-              <div className="text-xs text-gray-400 mt-1">
-                ${(totalWithLand / field.acreage).toFixed(2)}/acre
-              </div>
-            </div>
-          </div>
-        </div>
+        <FieldCostSummaryBar
+          operationalTotal={totalFieldCost}
+          landTotal={landCostPerAcre * field.acreage}
+          grandTotal={totalWithLand}
+          operationalPerAcre={totalCostPerAcre}
+          landPerAcre={landCostPerAcre}
+          perAcre={field.acreage > 0 ? totalWithLand / field.acreage : 0}
+        />
       </div>
     </div>
   );
