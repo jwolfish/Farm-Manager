@@ -34,6 +34,7 @@ const FieldDetail = lazy(() => import('./pages/FieldDetail').then((m) => ({ defa
 const Products = lazy(() => import('./pages/Products').then((m) => ({ default: m.Products })));
 const CostTemplates = lazy(() => import('./pages/CostTemplates').then((m) => ({ default: m.CostTemplates })));
 const Yields = lazy(() => import('./pages/Yields').then((m) => ({ default: m.Yields })));
+const Harvest = lazy(() => import('./pages/Harvest').then((m) => ({ default: m.Harvest })));
 const SalesTracking = lazy(() => import('./pages/SalesTracking').then((m) => ({ default: m.SalesTracking })));
 const Reports = lazy(() => import('./pages/Reports').then((m) => ({ default: m.Reports })));
 const SprayPlanner = lazy(() => import('./pages/SprayPlanner').then((m) => ({ default: m.SprayPlanner })));
@@ -77,6 +78,7 @@ const PAGE_LABELS: Record<string, string> = {
   products: 'the Products page',
   templates: 'the Cost Templates page',
   yields: 'the Yields page',
+  harvest: 'the Harvest page',
   sales: 'the Sales page',
   'spray-planner': 'the Spray Planner',
   reports: 'the Reports page',
@@ -456,6 +458,10 @@ function AppContent() {
         <Route
           path={PAGE_PATHS.yields}
           element={<Yields seasonId={currentSeason?.id || null} readOnly={activeRole === 'viewer'} />}
+        />
+        <Route
+          path={PAGE_PATHS.harvest}
+          element={<Harvest seasonId={currentSeason?.id || null} readOnly={activeRole === 'viewer'} />}
         />
         <Route
           path={PAGE_PATHS.sales}

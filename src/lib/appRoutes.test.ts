@@ -103,3 +103,39 @@ describe('fieldDetailPath', () => {
     expect(fieldDetailPath('a/b?c')).toBe('/fields/a%2Fb%3Fc');
   });
 });
+
+/*
+ * Guardrail 13, made checkable.
+ *
+ * "Add a page in both places or not at all" has been a sentence in CLAUDE.md and nothing
+ * more. A sidebar key with no route navigates to a URL that falls through the catch-all and
+ * bounces to the dashboard, which presents to the user as a click that does nothing — the
+ * least debuggable class of navigation bug, and the one that appears the moment somebody
+ * adds a page to one list and not the other.
+ *
+ * `DashboardLayout` cannot be imported here: it reaches the Supabase client through its
+ * contexts and throws at module load on a machine with no credentials. So the nav array is
+ * read out of the source instead. That is a blunt instrument, and it is a check that can
+ * return "no", which is the standard this project holds policies to.
+ */
+describe('the sidebar and the route table agree', () => {
+  it('every id in DashboardLayout\'s nav array has a route', async () => {
+    const { readFileSync } = await import('node:fs');
+    const source = readFileSync(new URL('../components/DashboardLayout.tsx', import.meta.url), 'utf8');
+
+    const navBlock = source.match(/const navigation = \[([\s\S]*?)\];/);
+    expect(navBlock, 'the nav array moved — this test needs updating with it').not.toBeNull();
+
+    const ids = [...(navBlock as RegExpMatchArray)[1].matchAll(/id:\s*'([^']+)'/g)].map(m => m[1]);
+    expect(ids.length).toBeGreaterThan(5);
+
+    for (const id of ids) {
+      expect(Object.keys(PAGE_PATHS), `sidebar item '${id}' has no route`).toContain(id);
+    }
+  });
+
+  it('includes harvest, in both places', () => {
+    expect(PAGE_PATHS.harvest).toBe('/harvest');
+    expect(pageKeyFromPath('/harvest')).toBe('harvest');
+  });
+});

@@ -1058,8 +1058,10 @@ export type Database = {
       field_yields: {
         Row: {
           created_at: string | null
+          estimated_yield_bushels_per_acre: number | null
           field_id: string
           harvest_date: string | null
+          harvested_at: string | null
           id: string
           moisture_percentage: number | null
           notes: string | null
@@ -1070,8 +1072,10 @@ export type Database = {
         }
         Insert: {
           created_at?: string | null
+          estimated_yield_bushels_per_acre?: number | null
           field_id: string
           harvest_date?: string | null
+          harvested_at?: string | null
           id?: string
           moisture_percentage?: number | null
           notes?: string | null
@@ -1082,8 +1086,10 @@ export type Database = {
         }
         Update: {
           created_at?: string | null
+          estimated_yield_bushels_per_acre?: number | null
           field_id?: string
           harvest_date?: string | null
+          harvested_at?: string | null
           id?: string
           moisture_percentage?: number | null
           notes?: string | null

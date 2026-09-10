@@ -1,11 +1,19 @@
 import { useState } from 'react';
 import { Wheat, Save, Calendar, DollarSign, Check, AlertCircle, RefreshCw } from 'lucide-react';
 import type { CropType } from '../lib/database.types';
+import { isHarvestedRow } from '../lib/harvestProgress';
 import { useYieldEntry } from '../hooks/useYieldEntry';
 import type { FieldWithYield, SaveStatus } from '../hooks/useYieldEntry';
 
 interface YieldsProps {
   seasonId: string | null;
+  /**
+   * `App.tsx` has always passed this and this component never declared it, so a viewer on a
+   * shared farm could edit every yield on the farm. The compiler had been reporting it as a
+   * TS2322 inside the baseline — the same defect, and the same discovery, as `Fields` on
+   * 10 Sep. That is the fourth real bug read out of that baseline.
+   */
+  readOnly?: boolean;
 }
 
 function SaveStatusIndicator({ status }: { status: SaveStatus }) {
@@ -29,12 +37,18 @@ interface FieldYieldCardProps {
   field: FieldWithYield;
   saveStatus: SaveStatus;
   saving: string | null;
+  readOnly?: boolean;
   onYieldChange: (fieldId: string, yieldPerAcre: number) => void;
   onFieldUpdate: (fieldId: string, updates: Record<string, unknown>) => void;
   onSave: (field: FieldWithYield) => void;
 }
 
-function FieldYieldCard({ field, saveStatus, saving, onYieldChange, onFieldUpdate, onSave }: FieldYieldCardProps) {
+function FieldYieldCard({ field, saveStatus, saving, readOnly, onYieldChange, onFieldUpdate, onSave }: FieldYieldCardProps) {
+  // H-5. A harvested field's number was measured, not forecast, and this screen must not
+  // overwrite it. The refusal that counts is in the hook's autosave; this is the affordance.
+  const harvested = isHarvestedRow(field.yield);
+  const locked = harvested || !!readOnly;
+
   return (
     <div className="bg-gray-50 rounded-lg p-6 border border-gray-200">
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -44,7 +58,14 @@ function FieldYieldCard({ field, saveStatus, saving, onYieldChange, onFieldUpdat
               <h3 className="text-lg font-semibold text-gray-900">{field.name}</h3>
               <p className="text-sm text-gray-600">{field.crop_type} • {field.acreage} acres</p>
             </div>
-            <SaveStatusIndicator status={saveStatus} />
+            {harvested ? (
+              <span className="flex items-center gap-1.5 rounded-full bg-emerald-100 px-3 py-1 text-xs font-semibold text-emerald-800">
+                <Check className="w-3.5 h-3.5" />
+                Actual
+              </span>
+            ) : (
+              <SaveStatusIndicator status={saveStatus} />
+            )}
           </div>
 
           <div className="space-y-4">
@@ -53,10 +74,20 @@ function FieldYieldCard({ field, saveStatus, saving, onYieldChange, onFieldUpdat
               <input
                 type="number" step="0.1"
                 value={field.yield?.yield_bushels_per_acre || ''}
+                disabled={locked}
                 onChange={(e) => onYieldChange(field.id, parseFloat(e.target.value) || 0)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
+                className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent disabled:bg-gray-100 disabled:text-gray-500"
                 placeholder="Enter yield"
               />
+              {harvested && (
+                <p className="mt-1.5 text-xs text-gray-600">
+                  Harvested{field.yield?.harvest_date ? ` ${field.yield.harvest_date}` : ''} — this is the
+                  measured yield. Change it on the Harvest page.
+                  {field.yield?.estimated_yield_bushels_per_acre != null && (
+                    <> You estimated {field.yield.estimated_yield_bushels_per_acre} bu/ac.</>
+                  )}
+                </p>
+              )}
             </div>
 
             {field.yield && field.yield.yield_bushels_per_acre > 0 && (
@@ -79,7 +110,11 @@ function FieldYieldCard({ field, saveStatus, saving, onYieldChange, onFieldUpdat
                         ${field.yield.profit_per_acre.toFixed(2)}
                       </span>
                     </div>
-                    <div className="text-xs text-gray-600 mt-1">Cost/Acre: ${field.field_cost.total_cost_per_acre.toFixed(2)}</div>
+                    <div className="text-xs text-gray-600 mt-1">
+                      Cost/Acre: {field.field_cost.total_cost_per_acre === null
+                        ? 'not costed'
+                        : `$${field.field_cost.total_cost_per_acre.toFixed(2)}`}
+                    </div>
                   </div>
                 )}
               </div>
@@ -97,6 +132,7 @@ function FieldYieldCard({ field, saveStatus, saving, onYieldChange, onFieldUpdat
               <input
                 type="date"
                 value={field.yield?.harvest_date || ''}
+                disabled={locked}
                 onChange={(e) => onFieldUpdate(field.id, { harvest_date: e.target.value || null })}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
               />
@@ -106,6 +142,7 @@ function FieldYieldCard({ field, saveStatus, saving, onYieldChange, onFieldUpdat
               <input
                 type="number" step="0.1" min="0" max="100"
                 value={field.yield?.moisture_percentage || ''}
+                disabled={locked}
                 onChange={(e) => onFieldUpdate(field.id, { moisture_percentage: e.target.value ? parseFloat(e.target.value) : null })}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
                 placeholder="e.g., 15.5"
@@ -115,6 +152,7 @@ function FieldYieldCard({ field, saveStatus, saving, onYieldChange, onFieldUpdat
               <label className="block text-sm font-medium text-gray-700 mb-2">Notes</label>
               <textarea
                 value={field.yield?.notes || ''}
+                disabled={locked}
                 onChange={(e) => onFieldUpdate(field.id, { notes: e.target.value })}
                 rows={2}
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
@@ -128,7 +166,7 @@ function FieldYieldCard({ field, saveStatus, saving, onYieldChange, onFieldUpdat
       <div className="mt-4 flex justify-end">
         <button
           onClick={() => onSave(field)}
-          disabled={saving === field.id || saveStatus === 'saving' || !field.yield || field.yield.yield_bushels_per_acre <= 0}
+          disabled={locked || saving === field.id || saveStatus === 'saving' || !field.yield || field.yield.yield_bushels_per_acre <= 0}
           className="px-6 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 disabled:bg-gray-300 disabled:cursor-not-allowed font-medium flex items-center gap-2"
         >
           <Save className="w-4 h-4" />
@@ -184,7 +222,7 @@ function PriceInput({ label, colorScheme, value, loadingAvg, onChange, onBlur, o
   );
 }
 
-export function Yields({ seasonId }: YieldsProps) {
+export function Yields({ seasonId, readOnly }: YieldsProps) {
   const {
     fields, loading, saving, saveStatus, loadingSalesAvg, priceInputs,
     handleYieldChange, handleFieldUpdate, saveYield,
@@ -260,6 +298,7 @@ export function Yields({ seasonId }: YieldsProps) {
                 field={field}
                 saveStatus={saveStatus[field.id] || 'idle'}
                 saving={saving}
+                readOnly={readOnly}
                 onYieldChange={handleYieldChange}
                 onFieldUpdate={handleFieldUpdate as any}
                 onSave={saveYield}
