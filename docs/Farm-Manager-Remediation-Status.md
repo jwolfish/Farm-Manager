@@ -108,7 +108,7 @@ live cascade, with the two fields that correctly moved by exactly $80 as the con
 
 | Measured 10 Sep 2026 | |
 |---|---|
-| Tests | **456 passing**, 15 files (435 before the field-editing work added 21; 422 before WI-29a added 13; 401 before R-6 added 21; 386 before R-1 added 15; 380 before V-8 added 6; 347 before V-6 added 25) |
+| Tests | **463 passing**, 16 files (456 before the ActionMenu fix added 7; 435 before the field-editing work added 21; 422 before WI-29a added 13; 401 before R-6 added 21; 386 before R-1 added 15; 380 before V-8 added 6; 347 before V-6 added 25) |
 | TypeScript | **65 errors** (103 at review, 98 before WI-19, 75 before V-8 replaced two `Json` casts with `Array.isArray` guards, 73 before the chemical path got the same four, 69 before WI-29b deleted a dead parameter, 68 before the field-editing work fixed three). Set compared with positions stripped at every step |
 | ESLint | **105 errors, 27 warnings.** **The split recorded here was wrong from 6 Sep to 10 Sep** — it said 105 / 28 while the committed baseline held 106 / 27. The total, 133, was right; only the split was not, and no work moved a warning. One error went on 10 Sep with a dead parameter. Quote **105 / 27**; the old split was never measured |
 | Build | succeeds — **42 chunks. First paint 418.78 kB raw / 119.16 kB gzip**, which is the single `<script>` in `dist/index.html`. WI-22 landed 6 Sep and took it from 1,794.82 kB / 479.30 gz to 102.11 gz by making 12 of 13 pages `React.lazy`; WI-29a then added 16.29 kB gz of `react-router-dom`, WI-29b 0.47 kB gz of module boundaries, the Netlify move 0.24 kB gz for `BrowserRouter`, and the field-editing work 0.05 kB gz — all eager. Still inside WI-22's ≤ 300 kB gz target. **Quote first paint, not a "main chunk"** |
@@ -3179,6 +3179,11 @@ figures — 34,000 ÷ 80,000 = 0.425 bag/ac × $320 = **$136.00/ac**, × 83 ac =
 
 That is a defect found by rendering in nine of the last twelve rounds.
 
+**A FOURTH DEFECT REACHED PRODUCTION AND THE OWNER FOUND IT, NOT THIS CHECK** — the
+`ActionMenu` did nothing at all on a phone. See *The menu that opened and did nothing*
+below. The three above were caught; the one that mattered most was not, and the reason is a
+hole in the method rather than in the code.
+
 **Four things fixed in passing, each of which retires a baseline entry:**
 
 - **`Fields` never declared the `readOnly` prop `App.tsx` has always passed it**, so a viewer
@@ -3269,6 +3274,77 @@ no `field_costs` row. Those fire only when a query fails.
    should name the count. Then cancel.
 3. Tap the **⋮** on a field card on the phone: a labelled sheet, not two tiny icons.
 
+
+### The menu that opened and did nothing — 10 Sep 2026, found in production
+
+**The owner, from real use on the phone: the ⋮ menu opens, and tapping any option has no
+effect. Desktop was fine.** Shipped in the field-editing round hours earlier, in the one
+control that round built specifically for touch.
+
+**The cause.** The outside-press listener fires on **`mousedown`**, and it was registered
+against `popoverRef` only — the *desktop* popover. The bottom sheet had no ref, so on a
+phone every press on a menu row was judged "outside":
+
+> mousedown → menu closes → row unmounts → mouseup lands on nothing → **the browser never
+> dispatches a `click` at all.**
+
+Desktop worked because there the press lands inside the one container that *was* registered.
+Nothing was blocking the click; the button was being removed before a click could exist.
+
+**The fix.** Both renderings are registered, and the decision is `isOutsideAll` in
+`src/lib/outsidePointer.ts` — pure, 7 tests, the `resolveAppLoadPresentation` /
+`describeRenderError` pattern. The test that earns its keep asserts that a press inside an
+**unregistered** container reads as outside: that assertion *is* the defect, kept as the
+reason the container list must be complete.
+
+### THE VERIFICATION METHOD WAS WRONG, AND THAT IS THE PART TO REMEMBER
+
+This round rendered the menu at 375 px, drove it, and reported it working. It was not. Three
+separate things had to be true before the defect would show, and the check satisfied none of
+them:
+
+| What was done | Why it could not fail |
+|---|---|
+| `element.click()` in JS | Dispatches a `click` with **no preceding `mousedown`**. The listener never ran |
+| A synthetic `mousedown` + `mouseup` + `click` in **one task** | React has not re-rendered between them, so the row is still mounted when the click lands. **This passed too**, and nearly sent the diagnosis down the wrong path |
+| The same three events **spaced across tasks** | Reproduces. This is what a real browser does |
+
+**`element.click()` is not a click.** It skips `mousedown` entirely, so anything keyed to
+press-down — outside-close, drag start, focus management — goes unexercised. Any browser
+check of an interactive control needs the full sequence, spaced.
+
+**PROVED TO FAIL, NOT MERELY TO PASS**, which is the standard this project holds RLS to and
+should have held this to the first time. With the defect deliberately reinstated and the
+events spaced:
+
+| | `document.contains(row)` after mousedown | Selection fired |
+|---|---|---|
+| Defect reinstated | **false** — the row was already gone | **none** |
+| With the fix | true | yes, and the sheet closes |
+
+Also re-checked that an overlay press still dismisses **without** selecting, and that the
+desktop popover is unaffected at 1280 px.
+
+**Two honest observations about the streak this document has been keeping.**
+
+Rendering has now found a defect in nine of the last twelve rounds, and that count is still
+true — but it flatters the method. Rendering catches what is *visible*: a wrapped label, a
+column off the right edge, a tap target measured too small. It caught three of those here.
+What it does not catch is **behaviour under a real input sequence**, and that is where the
+only defect to reach production came from.
+
+And the three it did catch were all cosmetic-to-moderate. The one it missed made the
+feature's headline control **completely inert on the platform the round existed to serve**.
+A streak counted by defects rather than by severity is not measuring what it appears to.
+
+**Floor:** tests 456 → **463** (+7). TypeScript **65** and ESLint **132 entries**, both
+unchanged, no new baseline entries. Merged as `7143a0f`, deployed to production the same
+day; entry chunk `index-CZAOzRbH.js` → `index-CAjM3Gcv.js`, `/fields` cold-loads 200.
+
+**Not verified: the fix on a real phone.** Every check above used dispatched events in a
+desktop browser at a 375 px viewport, which is the same gap in kind — narrower than the one
+that caused this, but the same kind. A real tap on a real touchscreen fires
+`touchstart`/`touchend` before the mouse events, and nobody has held the device.
 
 ## Open items and standing notes
 

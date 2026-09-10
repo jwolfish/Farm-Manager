@@ -35,6 +35,13 @@ rounds**, across both this feature and field-level rates — so if something mis
 open the screen before reading the code. Splitting presentation from the Supabase-importing
 container is what makes that possible on a machine with no credentials.
 
+**But do not over-trust that streak.** Rendering catches what is *visible* — a wrapped
+label, a column off the right edge, a tap target measured too small. It does not catch
+behaviour under a real input sequence, and the only defect from this work to reach
+production was of that kind: a menu that opened and did nothing on a phone, found by the
+owner after three cosmetic defects had been caught on the same screen. A streak counted by
+defects rather than by severity is not measuring what it appears to.
+
 Rules this feature keeps re-learning the hard way:
 
 - **A contract is denominated in its product's own unit.** F-3 dropped
@@ -116,6 +123,17 @@ already cost defects:
   phone), `NumberField` (decimal keypad, 46 px), and `ActionMenu` (popover on desktop,
   bottom sheet on a phone). The menu is a sheet on a phone on purpose — a popover anchored
   to a card in a scrolling grid has three ways to render half off-screen.
+- **`element.click()` IS NOT A CLICK, and a browser check that uses it proves almost
+  nothing about an interactive control.** It dispatches a `click` with no preceding
+  `mousedown`, so anything keyed to press-down — outside-close, drag start, focus
+  management — never runs. Nor is a synthetic `mousedown`+`mouseup`+`click` in **one task**
+  enough: React has not re-rendered between them, so a row that the press *should* have
+  unmounted is still there when the click lands, and the check passes. Both of those passed
+  over an `ActionMenu` that was **completely inert on a phone** — the menu opened, the
+  outside-close listener fired on `mousedown` against a container it did not know about, the
+  row unmounted before `mouseup`, and no `click` was ever dispatched. The owner found it in
+  production. **Space the three events across tasks, and assert the element survived the
+  mousedown.**
 - **≥ 44 px is a measurement, not a comment.** Three controls in this round carried a
   comment claiming 44 and rendered at 40, 40 and 36. `p-3` on a `w-5` icon is 44; `p-2.5`
   is 40; `p-2` is 36. Check with `getBoundingClientRect`, in the browser.
@@ -166,7 +184,7 @@ The status doc is the source of truth for what is done. Update it when a round l
   are `App.tsx` and `main.tsx`; a change confined to one page no longer does. Total across all chunks went
   593 → 612 kB gzip from chunking overhead, which is the correct trade and not a
   regression — quote first paint, not the total.
-- `npm test` reports **456 passing** in 15 files (435 before the field-editing work added 21; 422 before WI-29a added 13; 401 before R-6 added 21; 386 before R-1 added 15; 380 before V-8 added 6; 372 before
+- `npm test` reports **463 passing** in 16 files (456 before the ActionMenu fix added 7; 435 before the field-editing work added 21; 422 before WI-29a added 13; 401 before R-6 added 21; 386 before R-1 added 15; 380 before V-8 added 6; 372 before
   `formatRate` added 8; 347 before V-6 added 25; 340 before V-5 added 7; 320 before V-2 added 20; 308 before V-0
   added 12; 295 before shopping-list coverage added 13).
 - **CI exists as of 6 Sep 2026** — `.github/workflows/ci.yml`, WI-21's core gate. It runs
@@ -367,7 +385,7 @@ The individual commands still work when you want one of them:
 npx tsc --noEmit -p tsconfig.app.json   # 65
 npx eslint .                            # 105 errors / 27 warnings
 npx vite build                          # must succeed; first paint 119.16 kB gz
-npm test                                # 456 passing, must stay green
+npm test                                # 463 passing, must stay green
 ```
 
 **The Supabase CLI is installed as a dev dependency** (`supabase` 2.116.0, added 31 Aug
