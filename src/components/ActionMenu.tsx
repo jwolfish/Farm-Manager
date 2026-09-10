@@ -1,5 +1,6 @@
 import { useEffect, useId, useRef, useState, type ReactNode } from 'react';
 import { MoreVertical } from 'lucide-react';
+import { isOutsideAll } from '../lib/outsidePointer';
 
 /**
  * A labelled action menu — U-4. The third shared primitive, after `ResponsiveModal` and
@@ -39,6 +40,8 @@ export function ActionMenu({ items, label, sheetTitle }: Props) {
   const [open, setOpen] = useState(false);
   const triggerRef = useRef<HTMLButtonElement>(null);
   const popoverRef = useRef<HTMLDivElement>(null);
+  /* The phone sheet's panel. Registered with the popover above — see the effect below. */
+  const sheetRef = useRef<HTMLDivElement>(null);
   const menuId = useId();
 
   // Escape closes and focus goes back to the trigger, or a keyboard user is stranded.
@@ -54,13 +57,21 @@ export function ActionMenu({ items, label, sheetTitle }: Props) {
     return () => document.removeEventListener('keydown', onKey);
   }, [open]);
 
-  // Click outside closes the desktop popover. The sheet has its own overlay.
+  /*
+   * A press outside closes. BOTH renderings must be registered — this listener fires on
+   * `mousedown`, so a container it does not know about is judged outside, the menu unmounts
+   * before `mouseup`, and the browser never dispatches a `click` at all.
+   *
+   * That is exactly what shipped: only `popoverRef` was registered, so on a phone the menu
+   * opened and every option did nothing, while desktop was fine. The decision is
+   * `isOutsideAll` now, with the missing-container case pinned as a test.
+   */
   useEffect(() => {
     if (!open) return;
     const onPointer = (e: MouseEvent) => {
-      const target = e.target as Node;
-      if (popoverRef.current?.contains(target) || triggerRef.current?.contains(target)) return;
-      setOpen(false);
+      if (isOutsideAll(e.target, [popoverRef.current, sheetRef.current, triggerRef.current])) {
+        setOpen(false);
+      }
     };
     document.addEventListener('mousedown', onPointer);
     return () => document.removeEventListener('mousedown', onPointer);
@@ -131,7 +142,10 @@ export function ActionMenu({ items, label, sheetTitle }: Props) {
           {/* Phone: a bottom sheet, matching ResponsiveModal's overlay and grab handle. */}
           <div className="fixed inset-0 z-50 flex items-end sm:hidden" role="dialog" aria-modal="true">
             <div className="absolute inset-0 bg-black/40" onClick={() => setOpen(false)} />
-            <div className="relative flex w-full flex-col rounded-t-2xl bg-white pb-6 shadow-xl">
+            <div
+              ref={sheetRef}
+              className="relative flex w-full flex-col rounded-t-2xl bg-white pb-6 shadow-xl"
+            >
               <div className="flex justify-center pb-1 pt-3">
                 <div className="h-1.5 w-10 rounded-full bg-gray-300" />
               </div>
