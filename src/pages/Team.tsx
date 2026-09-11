@@ -85,10 +85,7 @@ export function Team({ onSwitchToFarm, onSwitchToOwnFarm, sharedFarms, onRefresh
 
     const { error: err } = await sendInvitation(
       user.id,
-      activeFarmName ?? user.email ?? 'Unknown',
-      user.email ?? '',
       activeFarmId,
-      activeFarmName,
       inviteEmail.trim(),
       inviteRole
     );
