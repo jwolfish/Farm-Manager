@@ -38,6 +38,12 @@ interface SalesCommoditySectionProps {
     notes: string;
   }) => Promise<void>;
   onDeleteSale: (saleId: string) => Promise<void>;
+  /**
+   * A viewer on a shared farm may read sales and may not change them. The write
+   * would be refused by RLS anyway; this removes the affordance rather than
+   * offering a control that fails.
+   */
+  readOnly?: boolean;
 }
 
 
@@ -47,6 +53,7 @@ export function SalesCommoditySection({
   onAddSale,
   onUpdateSale,
   onDeleteSale,
+  readOnly = false,
 }: SalesCommoditySectionProps) {
   const [expanded, setExpanded] = useState(true);
   const [showAddForm, setShowAddForm] = useState(false);
@@ -146,7 +153,7 @@ export function SalesCommoditySection({
                     <th className="text-right py-3 px-3 font-medium text-gray-600">Bushels</th>
                     <th className="text-right py-3 px-3 font-medium text-gray-600">Price/Bu</th>
                     <th className="text-right py-3 px-3 font-medium text-gray-600">Revenue</th>
-                    <th className="text-right py-3 px-3 font-medium text-gray-600">Actions</th>
+                    {!readOnly && <th className="text-right py-3 px-3 font-medium text-gray-600">Actions</th>}
                   </tr>
                 </thead>
                 <tbody>
@@ -158,24 +165,26 @@ export function SalesCommoditySection({
                       <td className="py-3 px-3 text-right text-gray-900 font-medium">{formatBushels(sale.bushels_sold)}</td>
                       <td className="py-3 px-3 text-right text-gray-900">{formatCurrency(sale.price_per_bushel)}</td>
                       <td className="py-3 px-3 text-right text-gray-900 font-semibold">{formatCurrency(sale.total_revenue)}</td>
-                      <td className="py-3 px-3 text-right">
-                        <div className="flex items-center justify-end gap-1">
-                          <button
-                            onClick={() => setEditingSale(sale)}
-                            className="p-1.5 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-                            title="Edit sale"
-                          >
-                            <Pencil className="w-4 h-4" />
-                          </button>
-                          <button
-                            onClick={() => handleDelete(sale.id)}
-                            className="p-1.5 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                            title="Delete sale"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </div>
-                      </td>
+                      {!readOnly && (
+                        <td className="py-3 px-3 text-right">
+                          <div className="flex items-center justify-end gap-1">
+                            <button
+                              onClick={() => setEditingSale(sale)}
+                              className="p-1.5 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                              title="Edit sale"
+                            >
+                              <Pencil className="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={() => handleDelete(sale.id)}
+                              className="p-1.5 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                              title="Delete sale"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                        </td>
+                      )}
                     </tr>
                   ))}
                 </tbody>
@@ -196,15 +205,17 @@ export function SalesCommoditySection({
             </div>
           )}
 
-          <div className="mt-4 flex justify-end">
-            <button
-              onClick={() => setShowAddForm(true)}
-              className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors font-medium text-sm"
-            >
-              <Plus className="w-4 h-4" />
-              Add {config.label} Sale
-            </button>
-          </div>
+          {!readOnly && (
+            <div className="mt-4 flex justify-end">
+              <button
+                onClick={() => setShowAddForm(true)}
+                className="flex items-center gap-2 px-4 py-2 bg-green-600 text-white rounded-lg hover:bg-green-700 transition-colors font-medium text-sm"
+              >
+                <Plus className="w-4 h-4" />
+                Add {config.label} Sale
+              </button>
+            </div>
+          )}
         </div>
       )}
 

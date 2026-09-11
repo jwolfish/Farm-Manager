@@ -14,7 +14,8 @@
     "test:coverage": "vitest run --coverage",
     "baselines": "node scripts/check-baselines.mjs",
     "baselines:update": "node scripts/check-baselines.mjs --update",
-    "verify": "npm test && npm run baselines && npm run build",
+    "check:readonly": "node scripts/check-readonly-props.mjs",
+    "verify": "npm test && npm run check:readonly && npm run baselines && npm run build",
     "deploy:cascade": "supabase functions deploy process-cascade-task --project-ref wvccxjakqwqfmyewclue --use-api"
   },
   "dependencies": {

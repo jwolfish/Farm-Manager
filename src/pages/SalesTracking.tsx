@@ -11,7 +11,7 @@ interface SalesTrackingProps {
 
 type Tab = 'sales' | 'hedges';
 
-export function SalesTracking({ seasonId }: SalesTrackingProps) {
+export function SalesTracking({ seasonId, readOnly = false }: SalesTrackingProps) {
   const [activeTab, setActiveTab] = useState<Tab>('sales');
   const {
     sales, hedges, loading,
@@ -117,9 +117,9 @@ export function SalesTracking({ seasonId }: SalesTrackingProps) {
               </div>
             </div>
           )}
-          <SalesCommoditySection cropType="corn" sales={salesByCrop('corn')} onAddSale={handleAddSale} onUpdateSale={handleUpdateSale} onDeleteSale={handleDeleteSale} />
-          <SalesCommoditySection cropType="soybeans" sales={salesByCrop('soybeans')} onAddSale={handleAddSale} onUpdateSale={handleUpdateSale} onDeleteSale={handleDeleteSale} />
-          <SalesCommoditySection cropType="wheat" sales={salesByCrop('wheat')} onAddSale={handleAddSale} onUpdateSale={handleUpdateSale} onDeleteSale={handleDeleteSale} />
+          <SalesCommoditySection cropType="corn" sales={salesByCrop('corn')} onAddSale={handleAddSale} onUpdateSale={handleUpdateSale} onDeleteSale={handleDeleteSale} readOnly={readOnly} />
+          <SalesCommoditySection cropType="soybeans" sales={salesByCrop('soybeans')} onAddSale={handleAddSale} onUpdateSale={handleUpdateSale} onDeleteSale={handleDeleteSale} readOnly={readOnly} />
+          <SalesCommoditySection cropType="wheat" sales={salesByCrop('wheat')} onAddSale={handleAddSale} onUpdateSale={handleUpdateSale} onDeleteSale={handleDeleteSale} readOnly={readOnly} />
         </>
       )}
 
@@ -148,9 +148,9 @@ export function SalesTracking({ seasonId }: SalesTrackingProps) {
               </div>
             </div>
           )}
-          <HedgeCommoditySection cropType="corn" hedges={hedgesByCrop('corn')} onAddHedge={handleAddHedge} onUpdateHedge={handleUpdateHedge} onDeleteHedge={handleDeleteHedge} />
-          <HedgeCommoditySection cropType="soybeans" hedges={hedgesByCrop('soybeans')} onAddHedge={handleAddHedge} onUpdateHedge={handleUpdateHedge} onDeleteHedge={handleDeleteHedge} />
-          <HedgeCommoditySection cropType="wheat" hedges={hedgesByCrop('wheat')} onAddHedge={handleAddHedge} onUpdateHedge={handleUpdateHedge} onDeleteHedge={handleDeleteHedge} />
+          <HedgeCommoditySection cropType="corn" hedges={hedgesByCrop('corn')} onAddHedge={handleAddHedge} onUpdateHedge={handleUpdateHedge} onDeleteHedge={handleDeleteHedge} readOnly={readOnly} />
+          <HedgeCommoditySection cropType="soybeans" hedges={hedgesByCrop('soybeans')} onAddHedge={handleAddHedge} onUpdateHedge={handleUpdateHedge} onDeleteHedge={handleDeleteHedge} readOnly={readOnly} />
+          <HedgeCommoditySection cropType="wheat" hedges={hedgesByCrop('wheat')} onAddHedge={handleAddHedge} onUpdateHedge={handleUpdateHedge} onDeleteHedge={handleDeleteHedge} readOnly={readOnly} />
         </>
       )}
     </div>

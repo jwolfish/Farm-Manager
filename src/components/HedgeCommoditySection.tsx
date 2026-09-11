@@ -44,6 +44,12 @@ interface HedgeCommoditySectionProps {
     notes: string;
   }) => Promise<void>;
   onDeleteHedge: (hedgeId: string) => Promise<void>;
+  /**
+   * A viewer on a shared farm may read hedge positions and may not change them.
+   * The write would be refused by RLS anyway; this removes the affordance rather
+   * than offering a control that fails.
+   */
+  readOnly?: boolean;
 }
 
 export function HedgeCommoditySection({
@@ -52,6 +58,7 @@ export function HedgeCommoditySection({
   onAddHedge,
   onUpdateHedge,
   onDeleteHedge,
+  readOnly = false,
 }: HedgeCommoditySectionProps) {
   const [expanded, setExpanded] = useState(true);
   const [showAddForm, setShowAddForm] = useState(false);
@@ -165,7 +172,7 @@ export function HedgeCommoditySection({
                     <th className="text-right py-3 px-3 font-medium text-gray-600">Futures</th>
                     <th className="text-right py-3 px-3 font-medium text-gray-600">Basis</th>
                     <th className="text-right py-3 px-3 font-medium text-gray-600">Net Price</th>
-                    <th className="text-right py-3 px-3 font-medium text-gray-600">Actions</th>
+                    {!readOnly && <th className="text-right py-3 px-3 font-medium text-gray-600">Actions</th>}
                   </tr>
                 </thead>
                 <tbody>
@@ -185,24 +192,26 @@ export function HedgeCommoditySection({
                         {Number(hedge.basis) >= 0 ? '+' : ''}{formatCurrency(hedge.basis)}
                       </td>
                       <td className="py-3 px-3 text-right text-gray-900 font-semibold">{formatCurrency(hedge.net_price)}</td>
-                      <td className="py-3 px-3 text-right">
-                        <div className="flex items-center justify-end gap-1">
-                          <button
-                            onClick={() => setEditingHedge(hedge)}
-                            className="p-1.5 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-                            title="Edit hedge"
-                          >
-                            <Pencil className="w-4 h-4" />
-                          </button>
-                          <button
-                            onClick={() => handleDelete(hedge.id)}
-                            className="p-1.5 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                            title="Delete hedge"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </div>
-                      </td>
+                      {!readOnly && (
+                        <td className="py-3 px-3 text-right">
+                          <div className="flex items-center justify-end gap-1">
+                            <button
+                              onClick={() => setEditingHedge(hedge)}
+                              className="p-1.5 text-gray-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                              title="Edit hedge"
+                            >
+                              <Pencil className="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={() => handleDelete(hedge.id)}
+                              className="p-1.5 text-gray-500 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                              title="Delete hedge"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                        </td>
+                      )}
                     </tr>
                   ))}
                 </tbody>
@@ -223,15 +232,17 @@ export function HedgeCommoditySection({
             </div>
           )}
 
-          <div className="mt-4 flex justify-end">
-            <button
-              onClick={() => setShowAddForm(true)}
-              className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium text-sm"
-            >
-              <Plus className="w-4 h-4" />
-              Add {config.label} Hedge
-            </button>
-          </div>
+          {!readOnly && (
+            <div className="mt-4 flex justify-end">
+              <button
+                onClick={() => setShowAddForm(true)}
+                className="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors font-medium text-sm"
+              >
+                <Plus className="w-4 h-4" />
+                Add {config.label} Hedge
+              </button>
+            </div>
+          )}
         </div>
       )}
 
