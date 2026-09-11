@@ -516,3 +516,19 @@ with no source rows inserts nothing and fires no trigger, which reads as "allowe
   viewer's. Queries filtering on the viewer's `user_id` break collaboration.
 - Errors are frequently swallowed with `console.error` and no user-visible result. When
   touching a write path, surface failures to the user.
+- **An RLS-empty result is not a fact. This has now cost three defects.** A `select` that
+  returns zero rows because the policy hid them is indistinguishable from one that found
+  nothing — and the code has three times read the second meaning into the first.
+  `fetchSharedFarms` returned `[]` and no shared farm appeared for months; V-8 iterated a
+  non-array `override_value`; and on 11 Sep `sendInvitation` read `user_profiles` for an
+  invitee it could not see, so signup-then-invite produced an invitation the invitee could
+  never accept. **Never branch on "no rows" for a table whose policy can hide the row from
+  this caller.** Resolve it in a `SECURITY DEFINER` function that can see what the caller
+  cannot — `link_invitation_to_account` is the worked example — and always destructure
+  `error`, because all three of these discarded it.
+- **Invitations have two orders and both must work.** Invite-then-signup is handled by the
+  `resolve_pending_invitations_for_new_user` trigger; signup-then-invite by the
+  `link_invitation_to_account` RPC. **They share one body**
+  (`link_pending_invitations_for_user`, executable by neither role) on purpose — the
+  trigger's old body *was* that body, and a second copy is the guardrail 7 shape. No email
+  is ever sent by this app, by the owner's decision; the invitation waits in-app.

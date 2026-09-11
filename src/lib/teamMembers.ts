@@ -35,12 +35,16 @@ export interface AppNotification {
 
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
+/*
+ * `ownerName`, `ownerEmail` and `farmName` used to be parameters here, solely to build
+ * the notification payload client-side. `link_invitation_to_account` now builds it in
+ * SQL from `user_profiles` and `farms`, which is both truthful (the database's own names
+ * rather than whatever the caller passed) and identical to what the signup trigger
+ * produces — the two paths share one body. They are dropped rather than left unused.
+ */
 export async function sendInvitation(
   ownerUserId: string,
-  ownerName: string,
-  ownerEmail: string,
   farmId: string,
-  farmName: string | null,
   invitedEmail: string,
   role: TeamRole
 ): Promise<{ error: string | null }> {
@@ -87,34 +91,39 @@ export async function sendInvitation(
     return { error: 'Failed to send invitation. Please try again.' };
   }
 
-  const { data: invitedProfile } = await supabase
-    .from('user_profiles')
-    .select('id')
-    .eq('email', trimmedEmail)
-    .maybeSingle();
+  /*
+   * Link the invitation to an existing account, if the invitee already has one.
+   *
+   * This USED to read `user_profiles` directly and link it here. That query returns
+   * ZERO ROWS for anyone who is not already a collaborator, because the RLS policy on
+   * `user_profiles` is "you, or someone who owns a farm you can view" — and a new
+   * account owns only its own default farm, which the inviter cannot view. The branch
+   * was therefore skipped silently, and the invitation could never be accepted: with
+   * `invited_user_id` NULL the invitee cannot SEE the row, so it never reaches their
+   * Team page. Same shape as the `fetchSharedFarms` defect — an RLS-empty result read
+   * as a fact rather than as "I cannot see".
+   *
+   * `link_invitation_to_account` is SECURITY DEFINER so it can resolve the address
+   * against `auth.users` without exposing profiles, and it re-checks that the caller
+   * owns the invitation so it cannot be used to probe whether an address has an
+   * account. It shares one body with the signup trigger, so invite-then-signup and
+   * signup-then-invite cannot drift into meaning different things.
+   *
+   * `false` is the ordinary "no account yet" answer, not a failure — the signup
+   * trigger links it when they register. A real error is surfaced, because a silently
+   * discarded one is what let this run broken.
+   */
+  const { error: linkError } = await supabase.rpc('link_invitation_to_account', {
+    p_invitation_id: inviteRecord.id,
+  });
 
-  if (invitedProfile?.id) {
-    await supabase
-      .from('team_members')
-      .update({ invited_user_id: invitedProfile.id })
-      .eq('id', inviteRecord.id);
-
-    await supabase
-      .from('app_notifications')
-      .insert({
-        recipient_user_id: invitedProfile.id,
-        sender_user_id: ownerUserId,
-        type: 'team_invite',
-        payload: {
-          invitation_id: inviteRecord.id,
-          farm_id: farmId,
-          owner_name: ownerName || ownerEmail,
-          owner_email: ownerEmail,
-          farm_name: farmName,
-          role,
-        },
-        is_read: false,
-      });
+  if (linkError) {
+    console.error('Error linking invitation to an existing account:', linkError);
+    return {
+      error:
+        'The invitation was created, but linking it to an existing account failed. ' +
+        'If they already have an account, ask them to sign out and back in.',
+    };
   }
 
   return { error: null };

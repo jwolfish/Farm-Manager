@@ -1899,6 +1899,14 @@ export type Database = {
       can_edit_farm: { Args: { p_farm_id: string }; Returns: boolean }
       can_view_farm: { Args: { p_farm_id: string }; Returns: boolean }
       delete_fertilizer_contract: { Args: { p_id: string }; Returns: Json }
+      link_invitation_to_account: {
+        Args: { p_invitation_id: string }
+        Returns: boolean
+      }
+      link_pending_invitations_for_user: {
+        Args: { p_user_id: string }
+        Returns: number
+      }
       record_purchase: {
         Args: {
           p_line_id: string

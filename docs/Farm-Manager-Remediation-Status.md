@@ -3908,3 +3908,128 @@ for a real invited account. That is the loose end this round narrows and does no
 All four collaboration defects this project has ever found lived in the client, not the
 database — so this is the same exposure shape as the 30 Aug cluster, and the same reason:
 nobody has run it.
+
+### Invitations broke in ONE of the two orders — found and fixed 11 Sep 2026
+
+**Found while setting up the viewer account the round above asks for.** The owner created
+`testing@jdoolittle.net`, invited it as a viewer, and reported that invitation sending does
+not work.
+
+**Half of that is by design and is not a bug.** There is still no email-sending code
+anywhere in this project (see *Invitations never reached anyone*, 30 Aug) — the owner chose
+the no-email route, and the invitation is meant to be waiting in-app when the invitee signs
+in. Nothing will ever arrive in an inbox.
+
+**The other half was a real defect, and it made the invitation impossible to accept.**
+
+```
+testing@jdoolittle.net   account created  12:26:03
+                         invited          12:26:47   <- 44 seconds LATER
+                         invited_user_id  NULL
+```
+
+The contrast with the one working collaborator is the whole diagnosis, and it is in the
+data:
+
+| | order | linked |
+|---|---|---|
+| `jim@doolittleair.com` (30 Aug) | invited, **then** signed up | yes |
+| `testing@jdoolittle.net` | signed up, **then** invited | **no** |
+
+**The cause.** `sendInvitation()` inserted the row, then looked the invitee up to link it:
+
+```ts
+const { data: invitedProfile } = await supabase
+  .from('user_profiles').select('id').eq('email', trimmedEmail).maybeSingle();
+if (invitedProfile?.id) { /* link + notify */ }
+```
+
+That query returns **zero rows** for anyone who is not already a collaborator, because the
+RLS policy on `user_profiles` is *"you, or someone who owns a farm you can view"* — and a
+new account owns only its own default farm, which the inviter cannot view. So the branch was
+skipped, and because **the error was discarded** (`const { data }`, no `error`) it was
+silent.
+
+A chicken-and-egg: profile visibility is granted **through** membership, but the code needed
+profile visibility **to create** the membership link.
+
+**Why nothing caught it.** `resolve_pending_invitations_for_new_user` (`20260830033819`)
+links pending invitations when an account appears — so invite-then-signup works, and that is
+the path 30 Aug tested and the path the only working collaborator took. Signup-then-invite
+has no second chance: the trigger already ran, and nothing re-runs.
+
+**The consequence was total, not cosmetic.** `team_members` SELECT is
+`user_id = auth.uid() OR invited_user_id = auth.uid()`. With `invited_user_id` NULL the
+invitee **cannot see the row at all** — it never reaches their Team page and can never be
+accepted. It presents exactly as *"no invitation was sent"*, which is why it read as the
+known no-email behaviour.
+
+**This is `fetchSharedFarms` a third time**: a query silently returning nothing because of
+RLS, with the empty result read as a fact rather than as *"I cannot see"*. The first cost
+six months of shared farms never appearing; the second was V-8's `Json` casts; this one
+makes collaboration unreachable in the natural setup order.
+
+*(A detail worth keeping: `respond_to_invitation` already has an email fallback —
+`invited_user_id IS NULL AND lower(v_row.email) = jwt email` — so the ACCEPT path would have
+worked fine. The invitee simply had no way to reach it, because the row was invisible and
+there was no button to press. The RPC was correct and unreachable.)*
+
+**The fix — `20260911123257`, one body and two callers.**
+
+```
+link_pending_invitations_for_user(uuid)        internal, executable by NEITHER role
+  |- resolve_pending_invitations_for_new_user()  the signup trigger, rewritten to delegate
+  `- link_invitation_to_account(uuid)            the new RPC, called by sendInvitation()
+```
+
+That is the V-6 `apply_field_fertilizer_rates` pattern, and it is the point rather than
+tidiness: the trigger's old body **was** the new shared body, so leaving a second copy is
+exactly the shape guardrail 7 exists to prevent — two paths that must mean the same thing
+and would eventually not.
+
+Three decisions inside it:
+
+| | |
+|---|---|
+| The RPC re-checks that the **caller owns the invitation** | Otherwise it is an oracle for *"does this address have an account?"*. Not-found and not-yours return the same `false` |
+| `false` is the ordinary answer, not an error | No account yet is the normal case; the signup trigger links it later. Only a real failure is surfaced |
+| The notification payload is built **in SQL** | From `user_profiles` and `farms`, not from whatever the client passed. That made `ownerName`, `ownerEmail` and `farmName` dead parameters on `sendInvitation`, and they are removed rather than left unused |
+
+**Rehearsed before applying — 12 assertions, 0 failures**, rollback confirmed (no functions,
+no fixture users, farms or invitations left), then applied for real. The ones that earn their
+keep: the defect case links and notifies; a **second call is refused and creates no duplicate
+notification**; an unregistered address returns `false` without error; a **stranger gets
+`false` and changes nothing**; and — the regression guard — **invite-then-signup still works
+after the trigger was rewritten to delegate**, including its notification.
+
+**Post-apply, measured:** both functions `SECURITY DEFINER` with `search_path` pinned; the
+internal executable by **neither** `authenticated` nor `anon`; the RPC by `authenticated` and
+not `anon`. Advisor **15 WARN** — the documented 14 plus exactly one more by-design
+`authenticated_security_definer_function_executable`, which is what adding an RPC does. The
+internal is correctly **absent** from that lint, like V-6's.
+
+**The stuck row was repaired**, rehearsed the same way: the repair ran inside a transaction
+that was rolled back and checked first, then applied. Verified **as the invitee**, by setting
+the JWT claims and reading through RLS — 1 invitation visible (viewer, pending), 1
+notification, and **0 fields**, which is the control: they can see the invitation and none of
+the farm's data until they accept.
+
+**Then the deployed RPC was called against that real row**, as the real farm owner: returns
+`false` (already linked), leaves exactly one notification, row still linked. Idempotency
+proven against production data rather than fixtures.
+
+**`database.types.ts` regenerated with the local CLI** — which writes to disk, avoiding the
+transcription risk of pulling 2,100 lines through a conversation — and spliced on the `// ---`
+marker rather than a line count. **8 insertions, 0 deletions**, purely the two new function
+signatures, which also re-confirms the file carried no other drift.
+
+**Floor:** tests **489** unchanged · TypeScript **63** unchanged — the three dead parameters
+briefly took it to 66 and **the ratchet caught them**, which is the gate doing its job on
+work done the same day it was extended · ESLint **132** unchanged · build succeeds, 45
+chunks, first paint **409.92 kB raw / 116.54 kB gzip** · migrations 64 → **65**.
+
+**NOT verified: the fixed path has never run from the UI.** The RPC is proven by rehearsal,
+by the grants, and by a live idempotency call; `sendInvitation` calling it is proven by
+reading. The check is to invite a **second** new address that already has an account and
+watch it link without any repair — which is also the check that this defect is actually gone
+rather than worked around on one row.
