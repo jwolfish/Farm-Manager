@@ -32,7 +32,14 @@ jobs:
       - name: Tests
         run: npm test
 
-      # tsc and eslint are NOT zero on a healthy tree (69 and 107/28), so this compares
+      # A props type that declares `readOnly` and never binds it renders every control
+      # to a viewer on a shared farm. tsc cannot see it (the prop IS declared) and
+      # eslint cannot see it (an interface member is not an unused variable), so the
+      # ratchet below would never catch it. SalesTracking sat like that until 10 Sep.
+      - name: Read-only props — a viewer sees no control that writes
+        run: node scripts/check-readonly-props.mjs
+
+      # tsc and eslint are NOT zero on a healthy tree (63 and 105/27), so this compares
       # against committed baselines and fails only on something NEW. Sets, not counts —
       # one error fixed and one introduced leaves the total unchanged.
       - name: Baselines — no new type or lint problems

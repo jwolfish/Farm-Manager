@@ -28,6 +28,8 @@ interface Props {
   onApply: (wo: SavedWorkOrder) => void;
   onUnapply: (wo: SavedWorkOrder) => void;
   onClose: () => void;
+  /** A viewer may read a work order and may not apply or unapply it. */
+  readOnly?: boolean;
 }
 
 function fmtAcres(n: number) {
@@ -39,7 +41,7 @@ function fmtDate(dateStr: string | null) {
   return new Date(dateStr).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit' });
 }
 
-export function WorkOrderDetailModal({ workOrder: wo, onApply, onUnapply, onClose }: Props) {
+export function WorkOrderDetailModal({ workOrder: wo, onApply, onUnapply, onClose, readOnly = false }: Props) {
   const [invMap, setInvMap] = useState<Map<string, InventoryInfo>>(new Map());
 
   useEffect(() => {
@@ -205,7 +207,7 @@ export function WorkOrderDetailModal({ workOrder: wo, onApply, onUnapply, onClos
             Close
           </button>
 
-          {wo.status === 'draft' && (
+          {!readOnly && wo.status === 'draft' && (
             <button
               onClick={() => onApply(wo)}
               disabled={hasUnlinked}
@@ -221,7 +223,7 @@ export function WorkOrderDetailModal({ workOrder: wo, onApply, onUnapply, onClos
             </button>
           )}
 
-          {wo.status === 'applied' && (
+          {!readOnly && wo.status === 'applied' && (
             <button
               onClick={() => onUnapply(wo)}
               className="flex items-center gap-2 px-5 py-2 text-sm font-semibold text-amber-700 bg-amber-50 border border-amber-200 rounded-lg hover:bg-amber-100 transition-colors"

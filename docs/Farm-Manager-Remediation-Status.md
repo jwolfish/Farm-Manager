@@ -326,6 +326,14 @@ The query in *The override defect* above answers it in one shot — every row sh
 still has **0** viewer rows). *(The other was `ALLOWED_ORIGIN`, which needed a stable
 production URL. It has one now — closed 6 Sep, see* SEC-8 closed *below.)*
 
+> **Narrowed, not closed — 10 Sep.** This was treated as "untested" until it was actually
+> looked at, and the client had **four** holes: `Fields` and `Yields` never declared the
+> `readOnly` prop, `SalesTracking` declared it and never bound it, and `SprayPlanner` was
+> never passed it. All four are fixed and the declared-but-unbound case now has a check of
+> its own, because no tool in this repo can see it. **Still 0 viewer rows**, so nothing has
+> been driven by a real viewer account — see *The viewer role* at the end of this document
+> for the three-step check, which is the owner's.
+
 ## How this work is being run
 
 **This changed at Round 3 and the document had not caught up.** Rounds 1–2 were written by
@@ -3777,3 +3785,126 @@ drop wheat to 0 %; it is the one write path with no real-data proof, and the one
 if a harvest is ever tagged to the wrong field. And **no dispatched-versus-tapped gap has been
 closed on this screen**: the owner used it in a browser, not by thumb on a phone, and the
 ActionMenu post-mortem is explicit that those are different tests.
+
+### The viewer role — a third `readOnly` hole, and a check for the one no tool can see — 10 Sep 2026
+
+**Two of the four defects ever read out of the TypeScript baseline were the same defect,
+found hours apart on the same day.** `Fields` (field-editing round) and `Yields` (harvest
+round) both failed to declare the `readOnly` prop `App.tsx` has always passed them, so a
+viewer on a shared farm saw Add Field, Apply Template, Edit, Delete, and every yield box
+editable. Both were found *incidentally*, while doing something else.
+
+That is a pattern rather than a coincidence, so this round went looking for the third.
+
+**There is one, and neither `tsc` nor `eslint` can see it.** `SalesTracking.tsx` declared
+`readOnly?: boolean` in its props interface and destructured only `{ seasonId }`. The prop
+was passed, accepted and never read. Six commodity sections — three sales crops, three
+hedge crops — rendered full add / edit / delete to a viewer.
+
+**Why it survived two sweeps of the baseline, which is the point of this round:**
+
+| | |
+|---|---|
+| `tsc` | silent. The prop **is** declared, so there is no TS2322. Declaring it is exactly what turns the compiler off |
+| `eslint` | silent. An interface member is not an unused variable, and nothing was bound to go unused |
+| The ratchet | silent, because it only compares what those two report |
+
+So it was not carelessness. Somebody did the correct thing by declaring the prop, and in
+doing so removed the only signal that would have caught it. **A lesson that does not become
+a check that can fail gets re-learned at full price.**
+
+**And a fourth gap, in the other direction:** `SprayPlanner` was never passed `readOnly` at
+all — so a viewer saw Save, Edit, and apply / unapply / delete on saved work orders, which
+move the inventory ledger.
+
+**What this is and is not.** It is **not** a security hole. The SEC-5 matrix proves a viewer
+cannot write to any table, the work-order RPCs re-check `can_edit_farm`, and
+`useSalesTracking` surfaces its failures rather than swallowing them — a viewer pressing
+Add Sale got a red *"Failed to add sale"*. It is offer-then-refuse: controls that exist, get
+pressed, and fail. Which is the `ActionMenu` defect in a different costume, and a **Delete**
+button on a screen someone was given read-only access to is the worst of it.
+
+**As fixed.**
+
+| File | Change |
+|---|---|
+| `SalesTracking.tsx` | binds `readOnly` and threads it to all six sections |
+| `SalesCommoditySection`, `HedgeCommoditySection` | accept it; Add, Edit and Delete gated, **and the Actions `<th>` gated with its `<td>`** |
+| `SprayPlanner.tsx` | takes it from `App.tsx`; Save and Edit gated |
+| `SavedWorkOrdersList`, `WorkOrderDetailModal` | apply / unapply / delete gated |
+
+**A viewer keeps the whole planning half of Spray Planner** — field and program selection,
+Generate, all three exports, View details, Generate Spray Logs. Read-only access should
+still be able to *read* the plan and print it; the round removes writes, not usefulness.
+
+**`scripts/check-readonly-props.mjs`, wired into `npm run verify` and CI.** If a props type
+declares `readOnly`, the file must read it somewhere. Deliberately generous — a destructure,
+`props.readOnly`, or passing it to a child all count — because a check that cries wolf gets
+ignored, and the failure it is aimed at is the total one. The declared-but-never-bound
+direction is the gap; the never-declared direction is a TS2322 and the ratchet already has
+it, so the script does not duplicate it.
+
+**PROVED TO FAIL, NOT MERELY TO PASS**, which is the standard the RLS work has always been
+held to and which this document says a check is worth nothing without. With the defect
+deliberately reinstated it named the file and the line and exited 1; restored, it exits 0
+across the 18 component files that declare the prop.
+
+**RENDERED, and the gating measured rather than eyeballed.** A throwaway harness mounted
+`SalesCommoditySection`, `HedgeCommoditySection` and `SavedWorkOrdersList` side by side in
+both modes, then was deleted. (`WorkOrderDetailModal` imports the Supabase client at module
+load and could not be mounted here — proven by reading, like every other component that
+does.)
+
+| | editor | viewer |
+|---|---|---|
+| Edit / Delete sale | 2 / 2 | **0 / 0** |
+| Edit / Delete hedge | 1 / 1 | **0 / 0** |
+| Add buttons | 2 | **0** |
+| Work order apply / unapply / delete | 1 / 1 / 1 | **0 / 0 / 0** |
+| View details · Generate Spray Logs | 2 · 1 | **2 · 1** — deliberately kept |
+
+**The column-count trap was the one worth checking, and it holds.** Hiding the Actions
+`<td>` while leaving its `<th>` shifts every column one cell left in every row — it renders
+as garbage and reads as fine in a diff. Measured: header and body agree in both panes,
+7 → 6 columns on sales and 9 → 8 on hedges.
+
+**Rendering did NOT find a defect this round — the fourth time in fourteen.** Said plainly
+rather than dropped, per the standing note that this streak flatters the method. What
+rendering did do is let the gating be *measured*; the defect itself was found by grep and
+by reading, which is the instrument this round actually turned on.
+
+**A correction this round owes, and it is the useful part.** First paint appeared to *drop*
+9.77 kB raw from a change that gates a few buttons, which is not possible. Building `main`
+(`4e9b451`) directly settles it: **main is 409.98 kB raw / 116.54 kB gzip, not the
+419.77 / 119.43 this document recorded for the harvest tracker.** The discrepancy was in
+the record, not the diff. Same class as the edge-function version being wrong five times
+and the ESLint split being wrong for four days — and the same conclusion: **build it and
+read `dist/index.html`.** The per-round deltas are still each other's differences and are
+probably sound; it is the absolute figure that drifted, and nobody has re-derived where.
+
+**Seen and deliberately NOT changed**, on the WI-29b rule that a round whose value is a
+narrow fix should not smuggle a behaviour change: `Select All`, `Generate Spray Logs` and
+`View details` on the saved work orders list all measure **33 px**, under the ≥ 44 px rule.
+They are pre-existing and untouched — this round removes controls and adds none. It is
+worth noting only because the round makes them the *only* controls a viewer has on that
+list.
+
+**Floor:** tests **489**, unchanged · TypeScript **63**, unchanged (0 new, 0 fixed) ·
+ESLint **132 entries**, unchanged · build succeeds, **45 chunks** · first paint 409.98 →
+**410.00 kB raw, 116.54 kB gzip unchanged** — +0.02 kB raw, which is what gating a few
+buttons costs · migrations **64**, none needed.
+
+**NOT verified, and it is the owner's check.** Nothing here has run against a real viewer,
+because `team_members` still holds **0** viewer rows and this machine has no credentials.
+The harness proves the components; it does not prove `activeRole` resolves to `'viewer'`
+for a real invited account. That is the loose end this round narrows and does not close:
+
+1. Invite a second account as **viewer** and accept it.
+2. Sign in as that account and switch to the shared farm. Walk Fields, Products, Cost
+   Templates, Yields, Harvest, Sales & Hedging, Spray Planner.
+3. **Pass:** no Add, Edit, Delete, Apply or Save anywhere; Reports and every export still
+   work; Spray Planner still generates a plan. **Fail:** any control that writes.
+
+All four collaboration defects this project has ever found lived in the client, not the
+database — so this is the same exposure shape as the 30 Aug cluster, and the same reason:
+nobody has run it.

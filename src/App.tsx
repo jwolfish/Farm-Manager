@@ -474,6 +474,7 @@ function AppContent() {
               currentSeasonId={currentSeason?.id || null}
               effectiveUserId={activeFarm ? activeFarm.ownerId ?? user?.id ?? null : user?.id ?? null}
               farmId={activeFarm?.farmId ?? null}
+              readOnly={activeRole === 'viewer'}
             />
           }
         />

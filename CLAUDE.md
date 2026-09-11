@@ -205,7 +205,7 @@ add a yield number — it replaces the planning estimate with a measured one, in
   warning. Quote the split above, and if it ever disagrees with `baselines/eslint.txt`,
   the baseline is the measurement and this sentence is not.
 - `npx vite build` succeeds and emits **45 chunks**. The number that matters is **first
-  paint: 419.77 kB raw / 119.43 kB gzip**, which is `dist/index.html`'s single
+  paint: 410.00 kB raw / 116.54 kB gzip**, which is `dist/index.html`'s single
   `<script>` and nothing else — measure it that way, by reading the tags out of
   `index.html`, not by looking for "the main chunk". WI-29a added 48.85 kB raw /
   16.29 kB gzip to it (`react-router-dom`, which `App.tsx` imports eagerly), WI-29b a
@@ -220,6 +220,15 @@ add a yield number — it replaces the planning estimate with a measured one, in
   barrel) are out of the first paint entirely. **479.30 → 102.11 kB gzip**, against WI-22's
   ≤ 300 kB target. WI-29 then took it to 118.87, and the Netlify move to
   **119.11 kB gzip**, the field-editing work to **119.16**, and the harvest tracker to **119.43**.
+
+  **Those last two figures are WRONG and the tree is the measurement.** `main` at
+  `4e9b451` builds **409.98 kB raw / 116.54 kB gzip**, not 419.77 / 119.43. Measured on
+  10 Sep by building `main` directly, because a +0.02 kB change appeared to have saved
+  9.77 kB — the discrepancy was in the record, not the diff. This is the same class as
+  the edge-function version being wrong five times and the ESLint split being wrong for
+  four days: **build it and read `dist/index.html`, never quote this paragraph.** The
+  per-round deltas above are still each other's differences and are probably fine; it is
+  the absolute figure that drifted, and nobody has re-derived where.
 
   Consequence for future work: **app-level code is the only thing that still lands in the
   first paint.** R-1's 2.09 kB, R-6's 4.64 kB and WI-29a's 16.29 kB gz did, because they
@@ -406,10 +415,10 @@ checks that can return "no" over judgement.
 npm run verify
 ```
 
-That is `npm test` → `npm run baselines` → `npm run build`. The middle step is the
-interesting one. `tsc` reports **63** and `eslint` **105 errors / 27 warnings** on a healthy
-tree, so CI cannot require a zero exit; `scripts/check-baselines.mjs` instead compares
-against the committed sets in `baselines/` and fails only on something **new**.
+That is `npm test` → `npm run check:readonly` → `npm run baselines` → `npm run build`.
+`tsc` reports **63** and `eslint` **105 errors / 27 warnings** on a healthy tree, so CI
+cannot require a zero exit; `scripts/check-baselines.mjs` instead compares against the
+committed sets in `baselines/` and fails only on something **new**.
 
 - **Sets, not counts** — one error fixed and one introduced leaves the total unchanged, and
   this document has said since Round 3 that a matching total is not evidence.
@@ -421,12 +430,23 @@ against the committed sets in `baselines/` and fails only on something **new**.
   happily record new problems; if you use it that way, say why in the commit message.
 - Tests have **no** baseline. Green is the standard.
 
+**`npm run check:readonly` is the newest step and exists because the other two are blind
+to it.** `App.tsx` hands `readOnly={activeRole === 'viewer'}` to seven pages, and the
+contract has broken three times. Two of those — `Fields` and `Yields`, both 10 Sep — were
+pages that never *declared* the prop, which `tsc` reports as a TS2322 and the ratchet
+therefore catches. The third, `SalesTracking`, **declared it and never bound it**: six
+commodity sections rendered full add / edit / delete for a viewer. Declaring the prop is
+exactly what silences `tsc`; an interface member is not an unused variable, so `eslint`
+says nothing either. It survived two sweeps of the baseline because the instrument was
+blind, not because anyone was careless — hence a check of its own
+(`scripts/check-readonly-props.mjs`). **A new page that takes `readOnly` must bind it.**
+
 The individual commands still work when you want one of them:
 
 ```
 npx tsc --noEmit -p tsconfig.app.json   # 63
 npx eslint .                            # 105 errors / 27 warnings
-npx vite build                          # must succeed; first paint 119.43 kB gz
+npx vite build                          # must succeed; first paint 116.54 kB gz
 npm test                                # 489 passing, must stay green
 ```
 

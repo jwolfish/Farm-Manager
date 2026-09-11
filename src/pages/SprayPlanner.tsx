@@ -41,13 +41,21 @@ interface Props {
   currentSeasonId: string | null;
   effectiveUserId: string | null;
   farmId: string | null;
+  /**
+   * A viewer on a shared farm keeps the whole PLANNING half of this screen —
+   * field and program selection, Generate, and all three exports — and loses
+   * every control that writes: saving a work order, editing one, and apply /
+   * unapply / delete, which move the inventory ledger. The RPCs re-check
+   * `can_edit_farm` and would refuse anyway; this removes the affordance.
+   */
+  readOnly?: boolean;
 }
 
 function fmtAcres(n: number) {
   return n.toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 });
 }
 
-export function SprayPlanner({ currentSeasonId, effectiveUserId, farmId }: Props) {
+export function SprayPlanner({ currentSeasonId, effectiveUserId, farmId, readOnly = false }: Props) {
   const {
     fields, programs, loading, error,
     actionError, dismissActionError,
@@ -547,23 +555,25 @@ export function SprayPlanner({ currentSeasonId, effectiveUserId, farmId }: Props
                           </p>
                         </div>
                       )}
-                      <div className="flex items-center gap-1.5">
-                        <button
-                          onClick={() => setEditingWorkOrderId(wo.programId)}
-                          className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-white/60 hover:bg-white/90 border border-white/50 transition-colors ${col.headerText}`}
-                        >
-                          <Pencil className="w-3 h-3" />
-                          Edit
-                        </button>
-                        <button
-                          onClick={() => handleSaveWorkOrder(wo)}
-                          disabled={savingProgramId === wo.programId}
-                          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-blue-600 hover:bg-blue-700 text-white border border-blue-600 transition-colors disabled:opacity-50"
-                        >
-                          {savingProgramId === wo.programId ? <Loader2 className="w-3 h-3 animate-spin" /> : <Save className="w-3 h-3" />}
-                          Save
-                        </button>
-                      </div>
+                      {!readOnly && (
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            onClick={() => setEditingWorkOrderId(wo.programId)}
+                            className={`flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-white/60 hover:bg-white/90 border border-white/50 transition-colors ${col.headerText}`}
+                          >
+                            <Pencil className="w-3 h-3" />
+                            Edit
+                          </button>
+                          <button
+                            onClick={() => handleSaveWorkOrder(wo)}
+                            disabled={savingProgramId === wo.programId}
+                            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg bg-blue-600 hover:bg-blue-700 text-white border border-blue-600 transition-colors disabled:opacity-50"
+                          >
+                            {savingProgramId === wo.programId ? <Loader2 className="w-3 h-3 animate-spin" /> : <Save className="w-3 h-3" />}
+                            Save
+                          </button>
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>
@@ -691,6 +701,7 @@ export function SprayPlanner({ currentSeasonId, effectiveUserId, farmId }: Props
         onUnapply={handleUnapplyWorkOrder}
         onGenerateSprayLogs={handleGenerateSprayLogs}
         applyingId={applyingId}
+        readOnly={readOnly}
       />
 
       {/* Master edit modal */}
@@ -714,6 +725,7 @@ export function SprayPlanner({ currentSeasonId, effectiveUserId, farmId }: Props
           onApply={(wo) => { handleApplyWorkOrder(wo); setViewingSavedWo(null); }}
           onUnapply={(wo) => { handleUnapplyWorkOrder(wo); setViewingSavedWo(null); }}
           onClose={() => setViewingSavedWo(null)}
+          readOnly={readOnly}
         />
       )}
     </div>

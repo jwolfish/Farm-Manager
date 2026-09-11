@@ -43,6 +43,11 @@ interface Props {
   onGenerateSprayLogs: (selected: SavedWorkOrder[]) => void;
   /** Work order whose apply/unapply is in flight, if any (WI-9). */
   applyingId?: string | null;
+  /**
+   * A viewer keeps View and Generate Spray Logs — both read-only — and loses
+   * apply, unapply and delete, which move the inventory ledger.
+   */
+  readOnly?: boolean;
 }
 
 function fmtAcres(n: number) {
@@ -54,7 +59,7 @@ function fmtDate(dateStr: string | null) {
   return new Date(dateStr).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
 }
 
-export function SavedWorkOrdersList({ workOrders, loading, onView, onDelete, onApply, onUnapply, onGenerateSprayLogs, applyingId = null }: Props) {
+export function SavedWorkOrdersList({ workOrders, loading, onView, onDelete, onApply, onUnapply, onGenerateSprayLogs, applyingId = null, readOnly = false }: Props) {
   const [expanded, setExpanded] = useState(true);
   const [confirmDeleteId, setConfirmDeleteId] = useState<string | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
@@ -211,7 +216,7 @@ export function SavedWorkOrdersList({ workOrders, loading, onView, onDelete, onA
                       </button>
 
                       {/* An unapplied order can be applied again (WI-9). */}
-                      {(wo.status === 'draft' || wo.status === 'unapplied') && (
+                      {!readOnly && (wo.status === 'draft' || wo.status === 'unapplied') && (
                         <button
                           onClick={() => onApply(wo)}
                           disabled={applyingId !== null}
@@ -226,7 +231,7 @@ export function SavedWorkOrdersList({ workOrders, loading, onView, onDelete, onA
                         </button>
                       )}
 
-                      {wo.status === 'applied' && (
+                      {!readOnly && wo.status === 'applied' && (
                         <button
                           onClick={() => onUnapply(wo)}
                           disabled={applyingId !== null}
@@ -241,7 +246,7 @@ export function SavedWorkOrdersList({ workOrders, loading, onView, onDelete, onA
                         </button>
                       )}
 
-                      {wo.status === 'draft' && (
+                      {!readOnly && wo.status === 'draft' && (
                         confirmDeleteId === wo.id ? (
                           <button
                             onClick={() => { onDelete(wo.id); setConfirmDeleteId(null); }}
