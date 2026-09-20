@@ -1,5 +1,6 @@
 import { X, ChevronLeft, ChevronRight, Check, AlertCircle } from 'lucide-react';
 import { useImportWizard } from '../hooks/useImportWizard';
+import { TemplateSelectionStep } from './import/TemplateSelectionStep';
 
 interface SeasonImportWizardProps {
   sourceSeasonId: string;
@@ -7,15 +8,30 @@ interface SeasonImportWizardProps {
   userId: string;
   onComplete: () => void;
   onCancel: () => void;
+  /**
+   * The cross-farm entry points reach this wizard too, where "Previous Season" is simply
+   * untrue — the source is another farm. Defaults to the new-season wording.
+   */
+  title?: string;
 }
 
-export function SeasonImportWizard({ sourceSeasonId, newSeasonId, userId, onComplete, onCancel }: SeasonImportWizardProps) {
+export function SeasonImportWizard({ sourceSeasonId, newSeasonId, userId, onComplete, onCancel, title = 'Import from Previous Season' }: SeasonImportWizardProps) {
   const {
     step, loading, error, setError, skippedItems,
     sourceData, selectedCategories, selectedItems, priceUpdates, cropTypeUpdates,
+    templatePreviews,
     setPriceUpdates, setCropTypeUpdates,
     handleNext, handleBack, handleCategoryToggle, toggleItemSelection, toggleAllInCategory,
   } = useImportWizard(sourceSeasonId, newSeasonId, userId, onComplete);
+
+  /** Everything except cost templates has a price or a crop type to review. */
+  const hasAnythingToPrice =
+    selectedItems.fields.length > 0 ||
+    selectedItems.seeds.length > 0 ||
+    selectedItems.fertilizers.length > 0 ||
+    selectedItems.chemicals.length > 0 ||
+    selectedItems.fertilizerPrograms.length > 0 ||
+    selectedItems.chemicalPrograms.length > 0;
 
   if (loading) {
     return (
@@ -31,7 +47,7 @@ export function SeasonImportWizard({ sourceSeasonId, newSeasonId, userId, onComp
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
       <div className="bg-white rounded-xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-hidden flex flex-col">
         <div className="p-6 border-b border-gray-200 flex items-center justify-between">
-          <h2 className="text-2xl font-bold text-gray-900">Import from Previous Season</h2>
+          <h2 className="text-2xl font-bold text-gray-900">{title}</h2>
           <button onClick={onCancel} className="text-gray-400 hover:text-gray-600 transition-colors">
             <X className="w-6 h-6" />
           </button>
@@ -60,6 +76,7 @@ export function SeasonImportWizard({ sourceSeasonId, newSeasonId, userId, onComp
                 { key: 'chemicals' as const, label: 'Individual Chemicals', count: sourceData.chemicals.length },
                 { key: 'fertilizerPrograms' as const, label: 'Fertilizer Programs', count: sourceData.fertilizerPrograms.length },
                 { key: 'chemicalPrograms' as const, label: 'Chemical Programs', count: sourceData.chemicalPrograms.length },
+                { key: 'costTemplates' as const, label: 'Cost Templates', count: sourceData.costTemplates.length },
               ].map((category) => (
                 <label
                   key={category.key}
@@ -272,11 +289,37 @@ export function SeasonImportWizard({ sourceSeasonId, newSeasonId, userId, onComp
             </div>
           )}
 
+          {step === 'select-templates' && (
+            <TemplateSelectionStep
+              templates={sourceData.costTemplates}
+              previews={templatePreviews}
+              selectedIds={selectedItems.costTemplates}
+              onToggle={(id) => toggleItemSelection('costTemplates', id)}
+              onToggleAll={() => toggleAllInCategory('costTemplates', sourceData.costTemplates.map((t) => t.id))}
+            />
+          )}
+
           {step === 'update-prices' && (
             <div className="space-y-6">
-              <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
-                <p className="text-sm text-blue-800">Review and update prices for the new season. The values shown are from the previous season.</p>
-              </div>
+              {hasAnythingToPrice ? (
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
+                  <p className="text-sm text-blue-800">Review and update prices for the new season. The values shown are from the previous season.</p>
+                </div>
+              ) : (
+                /*
+                 * Cost templates carry no price to review — their per-acre costs copy as
+                 * they are, and their program costs are re-derived here. Selecting only
+                 * templates would otherwise land on a page with a "review prices" heading
+                 * and nothing under it, which reads as a screen that failed to load.
+                 */
+                <div className="bg-blue-50 border border-blue-200 rounded-lg p-4 mb-6">
+                  <p className="text-sm text-blue-800">
+                    Nothing here needs a price. {selectedItems.costTemplates.length} cost template
+                    {selectedItems.costTemplates.length === 1 ? '' : 's'} will be copied, with each
+                    program costed at what it costs in this season. Press Complete Import to go ahead.
+                  </p>
+                </div>
+              )}
 
               {selectedItems.fields.length > 0 && (
                 <div>
@@ -489,7 +532,9 @@ export function SeasonImportWizard({ sourceSeasonId, newSeasonId, userId, onComp
                 <div>
                   <p className="font-medium text-amber-900">Import completed with warnings</p>
                   <p className="text-sm text-amber-800 mt-1">
-                    The following items could not be imported because their product mappings were not found. This can happen if the associated products were not selected for import.
+                    Everything below was left out, or needs a second look. This usually means something it
+                    depended on — a product, a program — was not selected for import and is not already in
+                    this season. Anything left out of a cost template is missing from its cost per acre.
                   </p>
                 </div>
               </div>

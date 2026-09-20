@@ -243,9 +243,11 @@ closed (WI-22's bundle, WI-29's router). What is left is layout and input hygien
   warning. Quote the split above, and if it ever disagrees with `baselines/eslint.txt`,
   the baseline is the measurement and this sentence is not.
 - `npx vite build` succeeds and emits **46 chunks**. The number that matters is **first
-  paint: 419.81 kB raw / 119.37 kB gzip**, which is `dist/index.html`'s single
+  paint: 430.27 kB raw / 122.14 kB gzip**, which is `dist/index.html`'s single
   `<script>` and nothing else — measure it that way, by reading the tags out of
-  `index.html`, not by looking for "the main chunk". WI-29a added 48.85 kB raw /
+  `index.html`, not by looking for "the main chunk". The cross-farm cost-template copy
+  added 10.46 kB raw / 2.78 kB gzip to it on 20 Sep, A/B'd against `main` at
+  419.81 / 119.37 — the wizard is eager because `App.tsx` imports it. WI-29a added 48.85 kB raw /
   16.29 kB gzip to it (`react-router-dom`, which `App.tsx` imports eagerly), WI-29b a
   further 2.55 kB raw of module boundaries, and the Netlify move 1.36 kB raw for
   `BrowserRouter` in place of `HashRouter`, the field-editing work 0.13 kB raw, and the harvest tracker 0.99 kB raw for its route, sidebar item and page label (the page itself is a 17.19 kB lazy chunk); WI-22's
@@ -283,7 +285,7 @@ closed (WI-22's bundle, WI-29's router). What is left is layout and input hygien
   are `App.tsx` and `main.tsx`; a change confined to one page no longer does. Total across all chunks went
   593 → 612 kB gzip from chunking overhead, which is the correct trade and not a
   regression — quote first paint, not the total.
-- `npm test` reports **490 passing** in 17 files (489 before MOB-4 added 1; 463 before the harvest tracker added 26; 456 before the ActionMenu fix added 7; 435 before the field-editing work added 21; 422 before WI-29a added 13; 401 before R-6 added 21; 386 before R-1 added 15; 380 before V-8 added 6; 372 before
+- `npm test` reports **508 passing** in 18 files (490 before the cost-template copy added 18; 489 before MOB-4 added 1; 463 before the harvest tracker added 26; 456 before the ActionMenu fix added 7; 435 before the field-editing work added 21; 422 before WI-29a added 13; 401 before R-6 added 21; 386 before R-1 added 15; 380 before V-8 added 6; 372 before
   `formatRate` added 8; 347 before V-6 added 25; 340 before V-5 added 7; 320 before V-2 added 20; 308 before V-0
   added 12; 295 before shopping-list coverage added 13).
 - **CI exists as of 6 Sep 2026** — `.github/workflows/ci.yml`, WI-21's core gate. It runs
@@ -434,6 +436,22 @@ These are real mistakes made during this work, not hypotheticals.
    makes those screens renderable on a machine with no Supabase credentials, which is how
    every screen defect in this project has been found.
 
+15. **A cost template's program arrays are foreign keys held by value, and they may NEVER
+   be copied across a season boundary verbatim.** `cost_templates.fertilizer_programs` /
+   `.chemical_programs` hold `{program_id, cost_per_acre}` — an id plus a frozen cost.
+   Copy the row into another season and the ids still point at the source's programs,
+   which is LOG-10 (a `master_product_id` carried across a farm boundary) in a new column,
+   and it is **invisible**: `calculateTemplateCost` sums the snapshot without resolving a
+   single id, so the template shows a plausible total and applies real money to fields,
+   while `cascadeProgramUpdateInSeason` loads templates `.eq('season_id', seasonId)` and
+   so never sees it again. The cost would be frozen at the moment of the copy, forever.
+   **`resolveTemplateProgramRefs` in `costTemplateImport.ts` is the only way to re-point
+   them**: the destination's program of that NAME, or unresolved and reported by name.
+   And the cost is **re-derived** with `recalculate*ProgramCost` against the destination —
+   never carried over, because a program costs what it costs on the farm it now lives on.
+   The control that proves it: every `program_id` across every template must resolve to a
+   program in its own season. That was 65 references, 0 dangling, 0 foreign, on 20 Sep.
+
 ## Hosting — Netlify, deployed by CI (6 Sep 2026)
 
 The app left Bolt on 6 Sep 2026. There is **no publish step**: push to `main`, CI runs the
@@ -494,8 +512,8 @@ The individual commands still work when you want one of them:
 ```
 npx tsc --noEmit -p tsconfig.app.json   # 63
 npx eslint .                            # 105 errors / 27 warnings
-npx vite build                          # must succeed; first paint 116.54 kB gz
-npm test                                # 490 passing, must stay green
+npx vite build                          # must succeed; first paint 122.14 kB gz
+npm test                                # 508 passing, must stay green
 ```
 
 **The Supabase CLI is installed as a dev dependency** (`supabase` 2.116.0, added 31 Aug

@@ -135,7 +135,7 @@ export function CrossFarmCopyModal({ currentSeasonId, onSelectSourceSeason, onCa
 
               {selectedSeasonId && (
                 <div className="bg-blue-50 border border-blue-200 rounded-lg px-4 py-3 text-xs text-blue-700">
-                  You'll be able to choose exactly which products and templates to copy in the next step. Prices can be adjusted before importing.
+                  You'll be able to choose exactly which fields, products, programs and cost templates to copy in the next step. Prices can be adjusted before importing.
                 </div>
               )}
             </>
