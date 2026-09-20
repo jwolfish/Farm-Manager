@@ -4332,14 +4332,20 @@ First paint was A/B'd by building both sides and reading the `<script>` out of
 `dist/index.html`, per the standing rule. `main` measured 419.81 / 119.37, which **agrees
 with the figure recorded for MOB-4** — so that number, at least, is not drifting.
 
-### NOT verified, and the owner's checks
+### NOT verified, and the owner's checks — **ALL THREE RUN AND PASSED, same day**
+
+*(This section shipped saying nothing had run against Supabase, with three checks for the
+owner. All three were run within the hour and all three passed — see* The copy is PROVEN
+END TO END *below. The checks are kept because they are the right ones to repeat if this
+area is touched again.)*
 
 **Nothing here has run against Supabase.** The resolver has 18 tests and the step was
 rendered, but `loadDestinationPrograms` and the whole template branch of `importSeasonData`
 — including the re-costing against the destination — are proven by reading. The round trip
 has not happened, and it is the check that found both V-5 defects.
 
-**And nothing has been touched by a thumb**, the same gap every round here has.
+**And nothing has been touched by a thumb**, the same gap every round here has. *(Still
+true: the owner drove this in a browser, not by thumb on a phone.)*
 
 1. **2027, the easy case.** Copy `Corn Typical` from T & L into Doolittle Farm Family 2027.
    All three programs should appear under *Reuses what is here*, **no duplicate programs
@@ -4355,3 +4361,97 @@ the 2026 backfill leaves those fields in both farms until something removes them
 T & L — a destructive operation that deserves its own round. And `App.tsx` imports the
 whole import wizard eagerly, putting ~20 kB in every first paint for a screen most sessions
 never open; that looks like a WI-22 leftover worth taking on its own.
+
+### The copy is PROVEN END TO END — 20 Sep 2026, 18:53 and 18:55 UTC
+
+**Both cases were run by the owner within the hour of the deploy, and every figure
+reconciles.** Until now the feature was proven by 18 unit tests, a rendered step and a
+read of the code; nobody had watched it write a template.
+
+| | |
+|---|---|
+| 18:53 | `Corn Typical` copied T & L 2027 → **Doolittle Farm Family 2027** — the populated destination |
+| 18:55 | Four templates copied T & L 2026 → **Doolittle Farm Family 2026** — the empty one |
+
+Four of T & L 2026's seven were selected: *Doolittle Farm Corn conventional till*,
+*Doolittle Farm Corn no till*, *Doolittle Farm Soybeans* and *Wheat Template*.
+
+**The control, which is the whole point:** **20 templates, 86 program references, 0
+dangling, 0 foreign season** — against 15 / 65 / 0 / 0 measured before the change. So 21
+new references were written and **every one resolves to a program in its own season**. The
+LOG-10-shaped defect this feature was designed around did not occur.
+
+**No duplicates, in the one case where it mattered:**
+
+| | before | after |
+|---|---|---|
+| DFF **2027** fert / chem programs | 7 / 6 | **7 / 6** — the copy created none |
+| DFF **2026** fert / chem programs | 0 / 0 | **6 / 7**, names all distinct |
+
+Reuse in the populated season, import into the empty one. One rule, both behaviours,
+observed rather than inferred.
+
+**Every cost checked independently.** Each program's cost per acre was recomputed in SQL
+from its items — rate converted into the product's pricing unit, times price, plus
+application cost — and compared against what each template actually stores. **All 21 new
+references reconcile to $0.0000.** All **7** DFF 2026 field totals equal the sum of their
+columns to the cent, with 0 overrides. That closes the chain the whole way down: program
+items → program cost → template reference → field cost column → field total.
+
+### The Wheat Template, which is where the re-costing earned its keep
+
+**T & L 2026's `Wheat Template` carries `Wheat Fungicide` at $10.00/ac. That program
+actually costs $32.49/ac** — a stale snapshot from February, understating it by
+**$22.49/acre**, that no cascade ever refreshed.
+
+**The copy into Doolittle Farm Family 2026 landed at $32.49**, the correct current figure,
+and the field using it (*Home Behind Woods*, 25 ac) reads chemical $46.57 =
+32.49 + 14.075, reconciling exactly.
+
+So re-deriving the cost against the destination did not merely avoid *introducing* a frozen
+number — **it avoided inheriting one**. Had the copy carried the source's snapshot, as the
+obvious implementation would, that field would have shipped $22.49/ac light, about $562
+across its acreage, on day one.
+
+**The stale T & L row is used by 0 fields**, so no money is currently wrong. It is latent,
+it predates this work, and it was deliberately left alone. Re-saving that template in the
+app should refresh it. Worth knowing it is there.
+
+### The single clearest piece of evidence
+
+The two `Corn Typical` templates now hold the **same three program names at the same three
+costs** — 39.4625, 82.75, 38.00 — pointing at **completely different program ids**, each
+confirmed to be in its own season:
+
+| Program | T & L 2027 points at | DFF 2027 points at |
+|---|---|---|
+| Corn Starter | `1396520e…` | **`ad3bfb2c…`** |
+| Corn Topdress N | `f4bb18a7…` | **`2eb67742…`** |
+| Spring Preplant N | `35280129…` | **`db67e2cd…`** |
+
+That is the entire fix in one result set: identical on screen, and independently
+cascade-live, so a fertilizer price change on either farm now moves only that farm's
+template. Copied verbatim, DFF's template would look exactly the same and be frozen
+forever — **the ids are the only visible difference, and they are the whole thing**.
+
+**Be honest about what this particular pair does NOT prove.** The costs match because the
+products were copied from T & L, so the two farms' prices agree today — destination-pricing
+was a no-op here. The Wheat Template above is the case where it demonstrably mattered.
+
+### A correction to this verification, which is the usual lesson
+
+**The first pass at the reconciliation query reported three mismatches and two of them were
+my query's fault.** It enumerated the unit pairs present on the Doolittle farm only, and
+missed `gal → gal` and `lbs → lbs` elsewhere in the data; an unhandled pair fell through
+the `CASE` to NULL, which `sum` ignores, so those items silently contributed **0** and
+manufactured a shortfall on two 2025 templates. Handled, they reconcile.
+
+That is the V-8 cross-join error in a new costume, and the same conclusion: **a
+verification query needs checking as hard as the code it verifies.** What caught it was
+asking which unit pairs exist *across every farm* rather than trusting the enumeration used
+to write the query. The one mismatch that survived the fix is the real one, and it is
+recorded above.
+
+**Still not done:** no dispatched-versus-tapped gap has been closed on this screen — the
+owner drove it in a browser, not by thumb on a phone, and the `ActionMenu` post-mortem is
+explicit that those are different tests.

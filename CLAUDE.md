@@ -450,7 +450,13 @@ These are real mistakes made during this work, not hypotheticals.
    And the cost is **re-derived** with `recalculate*ProgramCost` against the destination —
    never carried over, because a program costs what it costs on the farm it now lives on.
    The control that proves it: every `program_id` across every template must resolve to a
-   program in its own season. That was 65 references, 0 dangling, 0 foreign, on 20 Sep.
+   program in its own season. 65 references / 0 / 0 before the cross-farm copy shipped on
+   20 Sep, **86 / 0 / 0 after the owner copied five templates across two farms** — so the
+   21 new references all landed in-season, and re-costing against the destination caught a
+   stale $10.00 snapshot on a program that actually costs $32.49. **Re-run that control
+   after anything that writes a template.** *(When writing the query, enumerate the unit
+   pairs across EVERY farm — the first version of it missed two identity pairs and
+   manufactured two false mismatches.)*
 
 ## Hosting — Netlify, deployed by CI (6 Sep 2026)
 
