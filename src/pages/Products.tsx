@@ -301,6 +301,7 @@ export function Products({ seasonId, readOnly = false }: ProductsProps) {
       {crossFarmSourceSeasonId && seasonId && user && (
         <div className="fixed inset-0 z-50">
           <SeasonImportWizard
+            title="Copy from Another Farm"
             sourceSeasonId={crossFarmSourceSeasonId}
             newSeasonId={seasonId}
             userId={user.id}

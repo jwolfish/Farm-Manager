@@ -106,13 +106,13 @@ verified byte-for-byte. *(This paragraph used to end "the one thing left is a 5-
 in the running app." That check has been run and it passed — all nine overrides survived a
 live cascade, with the two fields that correctly moved by exactly $80 as the control.)*
 
-| Measured 10 Sep 2026 | |
+| Measured 20 Sep 2026 | |
 |---|---|
-| Tests | **489 passing**, 17 files (463 before the harvest tracker added 26; 456 before the ActionMenu fix added 7; 435 before the field-editing work added 21; 422 before WI-29a added 13; 401 before R-6 added 21; 386 before R-1 added 15; 380 before V-8 added 6; 347 before V-6 added 25) |
+| Tests | **508 passing**, 18 files (490 before the cost-template copy added 18; 489 before MOB-4 added 1; 463 before the harvest tracker added 26; 456 before the ActionMenu fix added 7; 435 before the field-editing work added 21; 422 before WI-29a added 13; 401 before R-6 added 21; 386 before R-1 added 15; 380 before V-8 added 6; 347 before V-6 added 25) |
 | TypeScript | **63 errors** (103 at review, 98 before WI-19, 75 before V-8 replaced two `Json` casts with `Array.isArray` guards, 73 before the chemical path got the same four, 69 before WI-29b deleted a dead parameter, 68 before the field-editing work fixed three, 65 before the harvest tracker fixed two — the undeclared `readOnly` on `Yields` and a hand-written interface declaring a nullable cost column non-null). Set compared with positions stripped at every step |
 | ESLint | **105 errors, 27 warnings.** **The split recorded here was wrong from 6 Sep to 10 Sep** — it said 105 / 28 while the committed baseline held 106 / 27. The total, 133, was right; only the split was not, and no work moved a warning. One error went on 10 Sep with a dead parameter. Quote **105 / 27**; the old split was never measured |
-| Build | succeeds — **42 chunks. First paint 418.78 kB raw / 119.16 kB gzip**, which is the single `<script>` in `dist/index.html`. WI-22 landed 6 Sep and took it from 1,794.82 kB / 479.30 gz to 102.11 gz by making 12 of 13 pages `React.lazy`; WI-29a then added 16.29 kB gz of `react-router-dom`, WI-29b 0.47 kB gz of module boundaries, the Netlify move 0.24 kB gz for `BrowserRouter`, and the field-editing work 0.05 kB gz — all eager. Still inside WI-22's ≤ 300 kB gz target. **Quote first paint, not a "main chunk"** |
-| Migrations | **64 files**, matching the database one-for-one |
+| Build | succeeds — **46 chunks. First paint 430.27 kB raw / 122.14 kB gzip**, which is the single `<script>` in `dist/index.html`. The cross-farm cost-template copy added 10.46 kB raw / 2.78 kB gz on 20 Sep, A/B'd against `main` at 419.81 / 119.37 — and that `main` figure agrees with MOB-4's, so it is not currently drifting. WI-22 landed 6 Sep and took it from 1,794.82 kB / 479.30 gz to 102.11 gz by making 12 of 13 pages `React.lazy`; WI-29a then added 16.29 kB gz of `react-router-dom`, WI-29b 0.47 kB gz of module boundaries, the Netlify move 0.24 kB gz for `BrowserRouter`, and the field-editing work 0.05 kB gz — all eager. Still inside WI-22's ≤ 300 kB gz target. **Quote first paint, not a "main chunk"** |
+| Migrations | **65 files** (this row said 64 until 20 Sep; the 11 Sep invitation fix had already made it 65), matching the database one-for-one |
 | Edge function | **version 19**, running source confirmed identical to the repo by sha256 immediately after the SEC-8 deploy, 6 Sep |
 | Security advisors | 14 WARN, unchanged after the harvest migration, which creates no function, table or policy — 13 are the by-design `authenticated_security_definer_function_executable` lint that fires on every RPC, 1 is `auth_leaked_password_protection` (WI-6). No new class of finding. V-6’s internal `apply_field_fertilizer_rates` is correctly absent, being executable by neither role |
 | Cascade tasks | **58 total, 0 failed** |
@@ -4198,3 +4198,160 @@ test from a real tap.
    price box should show a `$` that does not sit on the number.
 4. On a desktop, the shopping list table should look **exactly as it did**. If rows have
    grown taller there, the `sm:` scoping is wrong and this round caused it.
+
+### "Copy from another farm" could not copy cost templates — 20 Sep 2026
+
+**Reported by the owner, from setting up the second farm the same day.** The button sits on
+the Cost Templates screen and the wizard behind it had six categories, none of them
+templates. The two 2027 templates in Doolittle Farm Family were created by hand on 20 Sep,
+which is what hitting this looks like.
+
+**It was a promise, not just an omission.** `CrossFarmCopyModal` told the user *"You'll be
+able to choose exactly which products and templates to copy in the next step"*, and
+`CostTemplates.tsx` called `loadTemplates()` when the wizard finished — refreshing a list
+the wizard could not have touched. Both ends were written as though it worked.
+
+### WHY IT WAS NOT A SEVENTH CHECKBOX, which is the part worth keeping
+
+`cost_templates.fertilizer_programs` / `.chemical_programs` are JSON arrays of
+`{program_id, cost_per_acre}` — **a foreign key held by value, plus a frozen cost**. Copy
+the row into another farm and those ids still point at the source farm's programs. That is
+LOG-10 — the `master_product_id` carried across a farm boundary in Round 2 — in a new
+column, and it would have been **invisible in both directions**:
+
+| | |
+|---|---|
+| `calculateTemplateCost` | sums the snapshot and resolves **no** id, so the template shows a plausible total and applies real money to fields |
+| `cascadeProgramUpdateInSeason` | loads templates `.eq('season_id', seasonId)`, so the copied one is never seen again — a price change on **either** farm moves nothing |
+
+The cost would have been frozen at the moment of the copy, permanently, with nothing on
+screen to say so. The `season_id !== seasonId` guard at `cascadeUpdates.ts:346` does not
+save it; the query filter means that branch is already unreachable.
+
+**Measured before touching anything, as the control:** 65 program references across the 15
+templates, **0 dangling, 0 foreign season**. That is the clean baseline a verbatim copy
+would have broken, and the query to re-run after any change here.
+
+### The rule, which covers both reasons anyone copies a template
+
+> For each program a template references: **use the destination's program of that NAME if
+> one exists, otherwise it comes with the import.**
+
+The owner's two cases pull in opposite directions and this single rule serves both, which
+is why neither pure option was built:
+
+| | |
+|---|---|
+| **2026 backfill** into Doolittle Farm Family — 0 fields, 0 products, 0 programs, 0 templates | nothing matches, so everything imports |
+| **2027 copy** between farms already set up | everything matches, so nothing is duplicated |
+
+**Importing the programs unconditionally would have made a mess today.** Nothing in the
+import path dedupes season products or programs — it inserts — so copying a template into
+2027 would have produced a second "Corn Post" beside the one already there. Checked: all 6
+chemical programs and all 5 relevant fertilizer programs already match by name across the
+two farms, and the five matched fertilizer programs are **byte-identical** in items and
+application cost. Reusing them is therefore indistinguishable from importing a fresh set,
+except that it creates no duplicates.
+
+**`importSeasonData` writes templates LAST, on purpose.** The destination is read *after*
+every selected program has been written, so "a program that came with this import" and "a
+program the destination already had" are the same thing by the time a template looks for
+one. One rule, one read, no second code path.
+
+**The cost is re-derived, never carried.** Each resolved program is re-costed with
+`recalculate*ProgramCost` against the destination season, because the same program can cost
+different money on a farm whose prices differ. Copying the source's `cost_per_acre` would
+have been the frozen-cost defect reintroduced by hand. `resolveTemplateProgramRefs` returns
+no cost at all, so a caller cannot do it by accident — one of the 18 tests pins that.
+
+**A missing program is refused, not warned about.** `validateImport` gained a rule in the
+shape of the one it already applies to programs and their products: a template whose
+programs are neither selected for import nor present in the destination stops the wizard
+and names them. A template silently short one program is an understated cost per acre,
+which is the WI-15 lie in its quiet direction.
+
+### What was built
+
+| | |
+|---|---|
+| `src/lib/costTemplateImport.ts` | The pure resolver — `resolveTemplateProgramRefs`, `indexProgramsByName`. The `accumulateNeed` / `describeRenderError` pattern |
+| `src/lib/costTemplateImport.test.ts` | **18 tests** |
+| `src/components/import/TemplateSelectionStep.tsx` | The step as presentation only, importing nothing from `lib/` |
+| `seasonImport.ts` | Loads source templates; new `loadDestinationPrograms`; the template branch; the validation rule |
+| `useImportWizard.ts` | The category, the `select-templates` step, and `templatePreviews` |
+| `SeasonImportWizard.tsx` | The checkbox, the step, a `title` prop, corrected warnings copy |
+
+**The step previews each template before anything is written** — *Reuses what is here*,
+*Comes with this import*, *Not in this season* — rather than reporting it as a warning
+afterwards, because the only useful time to learn a template will arrive incomplete is
+before it does.
+
+**Three smaller corrections in the same flow.** The wizard's title read *"Import from
+Previous Season"* on the cross-farm path, where the source is another farm; its warnings
+panel claimed every skipped item was a product-mapping problem; and selecting only
+templates landed on a *"Review and update prices"* page with nothing under it, which reads
+as a screen that failed to load. The modal's promise is now accurate rather than removed.
+
+### Verification
+
+**PROVED TO FAIL, NOT MERELY TO PASS.** With the defect reinstated — one line returning the
+source id instead of the destination's — **6 of the 18 tests fail**, including
+*"NEVER returns a source program id"*. Restored, 18 pass.
+
+**RENDERED at 1280 px and 375 px**, throwaway harness deleted afterwards, using real
+production template and program names. `scrollWidth === clientWidth === 375` and `scrollX`
+0 after `scrollTo(999,0)`; Select All measures **44 px**; rows are 327 x 96–140 and a real
+browser click on the row *body* toggles the checkbox (false → true, counter 1 → 2, selected
+styling applied); Select All checks all four and flips its label; console clean across
+three loads. **Rendering found NO defect this round — the fifth time in fifteen.** Recorded
+plainly rather than dropped, per the standing note that the streak flatters the method.
+
+**The ratchet earned its keep twice.** It caught five new `no-unused-vars` from a
+destructure-to-discard, which was rewritten rather than baselined; and a `ProgramRef[]`
+that would not assign to the `Json` column, which is why that type is a `type` alias and
+not an `interface` — only an alias gets the implicit index signature.
+
+**A bundle regression caught by measuring rather than by reasoning.** The first version
+imported `templateLib/programCosts` at module scope, and `App.tsx` imports
+`SeasonImportWizard` **eagerly** for the new-season flow — so the whole unit-conversion
+table landed in every first paint, **+16.9 kB raw / +4.4 kB gzip**. It is behind a dynamic
+`import()` now, loaded only by someone actually copying a template, which halved it.
+
+**Floor:**
+
+| | Before | After |
+|---|---|---|
+| Tests | 490, 17 files | **508, 18 files** (+18) |
+| TypeScript | 63 | **63** — 0 new, 0 fixed |
+| ESLint | 132 entries | **132** — unchanged |
+| `check:readonly` | passes | passes |
+| First paint | 419,806 raw / 119,367 gz | **430,266 raw / 122,144 gz** (+10.46 kB raw, +2.78 kB gz) |
+| Migrations | 65 | **65** — none needed |
+
+First paint was A/B'd by building both sides and reading the `<script>` out of
+`dist/index.html`, per the standing rule. `main` measured 419.81 / 119.37, which **agrees
+with the figure recorded for MOB-4** — so that number, at least, is not drifting.
+
+### NOT verified, and the owner's checks
+
+**Nothing here has run against Supabase.** The resolver has 18 tests and the step was
+rendered, but `loadDestinationPrograms` and the whole template branch of `importSeasonData`
+— including the re-costing against the destination — are proven by reading. The round trip
+has not happened, and it is the check that found both V-5 defects.
+
+**And nothing has been touched by a thumb**, the same gap every round here has.
+
+1. **2027, the easy case.** Copy `Corn Typical` from T & L into Doolittle Farm Family 2027.
+   All three programs should appear under *Reuses what is here*, **no duplicate programs
+   should be created**, and the template's cost per acre should be computed from Doolittle
+   Farm Family's own prices — equal to T & L's only where the two farms' prices agree.
+2. **2026, the backfill.** That season is empty, so tick products, programs **and**
+   templates together. Everything should read *Comes with this import*.
+3. **Re-run the control.** Every `program_id` in every template must still resolve to a
+   program in its own season — 0 dangling, 0 foreign.
+
+**Two things noticed and deliberately left alone.** This **copies, it does not move**, so
+the 2026 backfill leaves those fields in both farms until something removes them from
+T & L — a destructive operation that deserves its own round. And `App.tsx` imports the
+whole import wizard eagerly, putting ~20 kB in every first paint for a screen most sessions
+never open; that looks like a WI-22 leftover worth taking on its own.

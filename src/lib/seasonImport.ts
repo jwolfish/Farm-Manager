@@ -1,5 +1,10 @@
 import { supabase } from './supabase';
-import type { CropType } from './database.types';
+import type { CropType, Database } from './database.types';
+import {
+  resolveTemplateProgramRefs,
+  indexProgramsByName,
+  type ProgramRef,
+} from './costTemplateImport';
 
 export interface Field {
   id: string;
@@ -72,13 +77,22 @@ export interface ChemicalProgram {
   }>;
 }
 
+/**
+ * Taken from the generated schema rather than hand-written. A hand-maintained interface
+ * declaring a nullable cost column non-null is one of the errors the harvest round had to
+ * fix; there is no reason to create another.
+ */
+export type CostTemplate = Database['public']['Tables']['cost_templates']['Row'];
+
+type CostTemplateInsert = Database['public']['Tables']['cost_templates']['Insert'];
+
 export interface PriceUpdate {
   oldPrice: number;
   newPrice: number;
 }
 
 export async function loadSeasonData(seasonId: string, userId: string) {
-  const [fieldsResult, seedsResult, fertilizersResult, chemicalsResult, fertProgramsResult, chemProgramsResult] =
+  const [fieldsResult, seedsResult, fertilizersResult, chemicalsResult, fertProgramsResult, chemProgramsResult, templatesResult] =
     await Promise.all([
       supabase.from('fields').select('*').eq('season_id', seasonId).order('name'),
       supabase
@@ -126,6 +140,11 @@ export async function loadSeasonData(seasonId: string, userId: string) {
         )
         .eq('season_id', seasonId)
         .order('program_name'),
+      supabase
+        .from('cost_templates')
+        .select('*')
+        .eq('season_id', seasonId)
+        .order('name'),
     ]);
 
   return {
@@ -135,6 +154,43 @@ export async function loadSeasonData(seasonId: string, userId: string) {
     chemicals: (chemicalsResult.data || []) as IndividualChemical[],
     fertilizerPrograms: (fertProgramsResult.data || []) as FertilizerProgram[],
     chemicalPrograms: (chemProgramsResult.data || []) as ChemicalProgram[],
+    costTemplates: (templatesResult.data || []) as CostTemplate[],
+  };
+}
+
+/**
+ * What the destination season already holds, so a copied template can re-point at a
+ * program that is there instead of dragging in a duplicate.
+ *
+ * Read by the wizard up front to preview each template's resolution, and again by
+ * `importSeasonData` after any selected programs have been written — the second read is
+ * the one that decides, because by then a program imported in the same run is simply a
+ * program the destination has.
+ *
+ * Every read throws. A swallowed error here would report "nothing matches", which sends
+ * the import down the import-a-duplicate path — the quiet wrong answer.
+ */
+export async function loadDestinationPrograms(seasonId: string) {
+  /*
+   * Ordered oldest first, which decides the one case that would otherwise be arbitrary:
+   * if this import has just created a program whose name the season already had, the
+   * older row wins and the template re-points at what was already there rather than at
+   * the duplicate created seconds ago. `indexProgramsByName` keeps the first of a name.
+   */
+  const [fertResult, chemResult, templatesResult] = await Promise.all([
+    supabase.from('fertilizer_programs').select('id, program_name').eq('season_id', seasonId).order('created_at'),
+    supabase.from('chemical_programs').select('id, program_name').eq('season_id', seasonId).order('created_at'),
+    supabase.from('cost_templates').select('id, name').eq('season_id', seasonId).order('name'),
+  ]);
+
+  if (fertResult.error) throw fertResult.error;
+  if (chemResult.error) throw chemResult.error;
+  if (templatesResult.error) throw templatesResult.error;
+
+  return {
+    fertilizerPrograms: fertResult.data || [],
+    chemicalPrograms: chemResult.data || [],
+    templateNames: (templatesResult.data || []).map((t) => t.name),
   };
 }
 
@@ -148,6 +204,7 @@ export async function importSeasonData(
     chemicals: string[];
     fertilizerPrograms: string[];
     chemicalPrograms: string[];
+    costTemplates: string[];
   },
   sourceData: {
     fields: Field[];
@@ -156,6 +213,7 @@ export async function importSeasonData(
     chemicals: IndividualChemical[];
     fertilizerPrograms: FertilizerProgram[];
     chemicalPrograms: ChemicalProgram[];
+    costTemplates: CostTemplate[];
   },
   priceUpdates: {
     fields: Record<string, { land_rent_per_acre: number; property_tax_per_acre: number }>;
@@ -468,6 +526,132 @@ export async function importSeasonData(
     }
   }
 
+  /*
+   * Cost templates LAST, and deliberately so: the destination is read after every program
+   * above has been written, so "a program that came with this import" and "a program the
+   * destination already had" are the same thing by the time a template looks for one.
+   * That single rule is what makes both reasons for copying work — into an empty farm
+   * everything resolves to the freshly imported programs, and into a farm already set up
+   * everything resolves to what is there, with no duplicates created either way.
+   *
+   * See `costTemplateImport.ts` for why a template's program ids can never be copied
+   * across verbatim.
+   */
+  if (selectedItems.costTemplates.length > 0) {
+    /*
+     * Loaded on demand, not at module scope. `App.tsx` imports `SeasonImportWizard`
+     * eagerly for the new-season flow, so anything this file imports statically lands in
+     * the first paint — and `programCosts` drags in the whole unit-conversion table for
+     * ~17 kB raw / 4.4 kB gzip. Measured: static costs every visitor those bytes, this
+     * costs them only to someone actually copying a cost template.
+     */
+    const { recalculateFertilizerProgramCost, recalculateChemicalProgramCost } = await import(
+      './templateLib/programCosts'
+    );
+
+    const destination = await loadDestinationPrograms(newSeasonId);
+
+    const fertIndex = indexProgramsByName(destination.fertilizerPrograms);
+    const chemIndex = indexProgramsByName(destination.chemicalPrograms);
+    for (const name of [...fertIndex.ambiguous, ...chemIndex.ambiguous]) {
+      skippedItems.push(
+        `two programs in the destination season are both named "${name}" — templates were pointed at the first of them`
+      );
+    }
+
+    const sourceFertNames = new Map(sourceData.fertilizerPrograms.map((p) => [p.id, p.program_name]));
+    const sourceChemNames = new Map(sourceData.chemicalPrograms.map((p) => [p.id, p.program_name]));
+    const existingTemplateNames = new Set(destination.templateNames);
+
+    const templatesToInsert: CostTemplateInsert[] = [];
+
+    for (const templateId of selectedItems.costTemplates) {
+      const template = sourceData.costTemplates.find((t) => t.id === templateId);
+      if (!template) continue;
+
+      const fert = resolveTemplateProgramRefs(template.fertilizer_programs, sourceFertNames, fertIndex.byName);
+      const chem = resolveTemplateProgramRefs(template.chemical_programs, sourceChemNames, chemIndex.byName);
+
+      for (const name of fert.unresolved) {
+        skippedItems.push(`fertilizer program "${name}" in cost template "${template.name}"`);
+      }
+      for (const name of chem.unresolved) {
+        skippedItems.push(`chemical program "${name}" in cost template "${template.name}"`);
+      }
+
+      /*
+       * Each resolved program is re-costed against the DESTINATION season rather than
+       * carrying the source's snapshot, because the same program can cost different money
+       * on a farm whose prices differ. This is the one implementation of that arithmetic
+       * (`recalculate*ProgramCost`); a second one here would be guardrail 7 all over again.
+       */
+      const fertRefs: ProgramRef[] = [];
+      for (const { programId, name } of fert.resolved) {
+        const result = await recalculateFertilizerProgramCost(programId, newSeasonId);
+        if (!result) {
+          skippedItems.push(`fertilizer program "${name}" in cost template "${template.name}" could not be costed`);
+          continue;
+        }
+        if (result.unpricedItems.length > 0) {
+          skippedItems.push(
+            `cost template "${template.name}": fertilizer program "${name}" is an undercount — ${result.unpricedItems.join('; ')}`
+          );
+        }
+        fertRefs.push({ program_id: programId, cost_per_acre: result.newCost });
+      }
+
+      const chemRefs: ProgramRef[] = [];
+      for (const { programId, name } of chem.resolved) {
+        const result = await recalculateChemicalProgramCost(programId, newSeasonId);
+        if (!result) {
+          skippedItems.push(`chemical program "${name}" in cost template "${template.name}" could not be costed`);
+          continue;
+        }
+        if (result.unpricedItems.length > 0) {
+          skippedItems.push(
+            `cost template "${template.name}": chemical program "${name}" is an undercount — ${result.unpricedItems.join('; ')}`
+          );
+        }
+        chemRefs.push({ program_id: programId, cost_per_acre: result.newCost });
+      }
+
+      if (existingTemplateNames.has(template.name)) {
+        skippedItems.push(
+          `a cost template named "${template.name}" already existed here — a second one was created, so delete whichever you do not want`
+        );
+      }
+
+      /*
+       * Listed column by column rather than spread, so the identity of the source row
+       * (`id`, `season_id`, `user_id`, the timestamps) cannot ride along by accident.
+       * A cost column added to this table later must be added here too.
+       */
+      templatesToInsert.push({
+        season_id: newSeasonId,
+        user_id: userId,
+        name: template.name,
+        description: template.description,
+        tillage_cost_per_acre: template.tillage_cost_per_acre,
+        planting_cost_per_acre: template.planting_cost_per_acre,
+        harvest_cost_per_acre: template.harvest_cost_per_acre,
+        equipment_cost_per_acre: template.equipment_cost_per_acre,
+        custom_services_cost_per_acre: template.custom_services_cost_per_acre,
+        labor_cost_per_acre: template.labor_cost_per_acre,
+        crop_insurance_cost_per_acre: template.crop_insurance_cost_per_acre,
+        drying_storage_cost_per_acre: template.drying_storage_cost_per_acre,
+        hauling_cost_per_acre: template.hauling_cost_per_acre,
+        other_expenses_per_acre: template.other_expenses_per_acre,
+        fertilizer_programs: fertRefs,
+        chemical_programs: chemRefs,
+      });
+    }
+
+    if (templatesToInsert.length > 0) {
+      const { error } = await supabase.from('cost_templates').insert(templatesToInsert);
+      if (error) throw error;
+    }
+  }
+
   return { success: true, skippedItems };
 }
 
@@ -479,6 +663,7 @@ export function validateImport(
     chemicals: string[];
     fertilizerPrograms: string[];
     chemicalPrograms: string[];
+    costTemplates: string[];
   },
   sourceData: {
     fields: Field[];
@@ -487,7 +672,15 @@ export function validateImport(
     chemicals: IndividualChemical[];
     fertilizerPrograms: FertilizerProgram[];
     chemicalPrograms: ChemicalProgram[];
-  }
+    costTemplates: CostTemplate[];
+  },
+  /**
+   * Program names already in the destination season. A template whose programs are all
+   * there needs nothing imported; one whose programs are neither there nor selected would
+   * arrive with a hole in its cost, so that is refused rather than warned about — the
+   * same rule this function already applies to a program missing its products.
+   */
+  destinationProgramNames?: { fertilizer: readonly string[]; chemical: readonly string[] }
 ): { valid: boolean; errors: string[] } {
   const errors: string[] = [];
 
@@ -516,6 +709,59 @@ export function validateImport(
       errors.push(
         `Chemical program "${program.program_name}" requires ${missingChemicals.length} chemical(s) that are not selected`
       );
+    }
+  }
+
+  const selectedTemplates = sourceData.costTemplates.filter((t) => selectedItems.costTemplates.includes(t.id));
+  if (selectedTemplates.length > 0) {
+    const normalise = (n: string) => n.trim().toLowerCase();
+    const available = (
+      kind: 'fertilizer' | 'chemical',
+      sourcePrograms: readonly { id: string; program_name: string }[],
+      selectedIds: readonly string[]
+    ) => {
+      const names = new Set<string>();
+      // Selected for import in this run...
+      for (const p of sourcePrograms) {
+        if (selectedIds.includes(p.id)) names.add(normalise(p.program_name));
+      }
+      // ...or already sitting in the destination.
+      for (const n of destinationProgramNames?.[kind] ?? []) names.add(normalise(n));
+      return names;
+    };
+
+    const fertAvailable = available('fertilizer', sourceData.fertilizerPrograms, selectedItems.fertilizerPrograms);
+    const chemAvailable = available('chemical', sourceData.chemicalPrograms, selectedItems.chemicalPrograms);
+    const fertNameById = new Map(sourceData.fertilizerPrograms.map((p) => [p.id, p.program_name]));
+    const chemNameById = new Map(sourceData.chemicalPrograms.map((p) => [p.id, p.program_name]));
+
+    for (const template of selectedTemplates) {
+      const missing = new Set<string>();
+
+      const check = (raw: unknown, nameById: Map<string, string>, availableNames: Set<string>) => {
+        if (!Array.isArray(raw)) return;
+        for (const entry of raw) {
+          const id =
+            entry && typeof entry === 'object' && typeof (entry as { program_id?: unknown }).program_id === 'string'
+              ? (entry as { program_id: string }).program_id
+              : null;
+          if (!id) continue;
+          const name = nameById.get(id);
+          if (name === undefined) continue;
+          if (!availableNames.has(normalise(name))) missing.add(name);
+        }
+      };
+
+      check(template.fertilizer_programs, fertNameById, fertAvailable);
+      check(template.chemical_programs, chemNameById, chemAvailable);
+
+      if (missing.size > 0) {
+        errors.push(
+          `Cost template "${template.name}" uses ${[...missing].map((n) => `"${n}"`).join(', ')}, ` +
+            `which ${missing.size === 1 ? 'is' : 'are'} not in the destination season. ` +
+            `Select ${missing.size === 1 ? 'that program' : 'those programs'} for import as well, or create ${missing.size === 1 ? 'it' : 'them'} first.`
+        );
+      }
     }
   }
 
