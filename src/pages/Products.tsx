@@ -41,7 +41,7 @@ type ProductType = "seeds" | "fertilizers" | "chemicals" | "programs" | "shoppin
 export function Products({ seasonId, readOnly = false }: ProductsProps) {
   const { user } = useAuth();
   const { ownedFarms } = useFarm();
-  const [activeTab, setActiveTab] = useState<ProductType>('seeds');
+  const [activeTab, setActiveTab] = useState<ProductType>('contracts');
   const [programType, setProgramType] = useState<'fertilizer' | 'chemical'>('fertilizer');
   const [, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
@@ -157,12 +157,12 @@ export function Products({ seasonId, readOnly = false }: ProductsProps) {
   }, []);
 
   const tabs = [
+    { id: "contracts" as ProductType, name: "Fertilizer Contracts", icon: Truck },
+    { id: "shopping" as ProductType, name: "Shopping Lists", icon: ShoppingCart },
+    { id: 'programs' as ProductType, name: 'Application Programs', icon: Layers },
     { id: 'seeds' as ProductType, name: 'Seed Varieties', icon: Package },
     { id: 'fertilizers' as ProductType, name: 'Fertilizers', icon: Droplet },
     { id: 'chemicals' as ProductType, name: 'Chemicals', icon: FlaskConical },
-    { id: 'programs' as ProductType, name: 'Application Programs', icon: Layers },
-    { id: "shopping" as ProductType, name: "Shopping Lists", icon: ShoppingCart },
-    { id: "contracts" as ProductType, name: "Fertilizer Contracts", icon: Truck },
   ];
 
   if (!seasonId) {
