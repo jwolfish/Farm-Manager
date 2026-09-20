@@ -10,6 +10,7 @@ import { ErrorBoundary } from '../ErrorBoundary';
 import { MarkPurchasedModal } from './MarkPurchasedModal';
 import { exportShoppingListPDF } from '../../lib/exports/shoppingListPdfExport';
 import { convertProductUnits } from '../../lib/unitConversions';
+import { parseNumberField } from '../../lib/mathUtils';
 import { matchFertilizerProductByName } from '../../lib/fertilizerContractMath';
 import type { FertilizerProduct } from '../../lib/fertilizerContracts';
 
@@ -261,8 +262,14 @@ export function ShoppingListsTab({ seasonId, readOnly = false, onPricesChanged }
   };
 
   const saveEdit = async (lineId: string) => {
-    const adjusted = parseFloat(editValues.adjusted_quantity);
-    const quoted = editValues.quoted_price_per_unit ? parseFloat(editValues.quoted_price_per_unit) : null;
+    // MOB-4 made these boxes text inputs so a phone raises a decimal keypad, which
+    // also makes "1,200" typeable where type="number" refused it — and
+    // parseFloat('1,200') is 1. parseNumberField strips separators and returns null
+    // rather than NaN, so the isFinite guards below behave as they did.
+    const adjusted = parseNumberField(editValues.adjusted_quantity) ?? NaN;
+    const quoted = editValues.quoted_price_per_unit
+      ? parseNumberField(editValues.quoted_price_per_unit) ?? NaN
+      : null;
     const supplier = editValues.supplier.trim() || null;
 
     const newStatus = quoted != null && supplier ? 'quoted' : 'needed';
@@ -277,10 +284,18 @@ export function ShoppingListsTab({ seasonId, readOnly = false, onPricesChanged }
       })
       .eq('id', lineId);
 
-    if (!err) {
-      setEditingLineId(null);
-      await loadLines();
+    // Was `if (!err)` with the error discarded, so a failed save closed nothing and
+    // said nothing — the row simply stayed in edit mode with no explanation. Touching
+    // this write path means surfacing it, per the convention in CLAUDE.md. Reuses the
+    // banner this tab already renders; the typed values are kept either way.
+    if (err) {
+      setError(`Could not save that line: ${err.message}`);
+      return;
     }
+
+    setError(null);
+    setEditingLineId(null);
+    await loadLines();
   };
 
   /**

@@ -28,6 +28,11 @@ interface Props {
   disabled?: boolean;
   /** Whole numbers only — a ticket number, say. */
   integer?: boolean;
+  /**
+   * Focus on mount. Here so a modal that already autofocused its quantity box
+   * keeps doing so through the swap — preserving behaviour, not proposing it.
+   */
+  autoFocus?: boolean;
 }
 
 export function NumberField({
@@ -42,6 +47,7 @@ export function NumberField({
   required,
   disabled,
   integer,
+  autoFocus,
 }: Props) {
   const id = useId();
 
@@ -66,6 +72,7 @@ export function NumberField({
           value={value}
           disabled={disabled}
           placeholder={placeholder}
+          autoFocus={autoFocus}
           onChange={(e) => onChange(e.target.value)}
           /* py-3 is a 44px tap target. The app's usual py-2 is about 36, which
              is a real miss with gloves on. */

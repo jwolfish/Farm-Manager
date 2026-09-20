@@ -180,6 +180,44 @@ add a yield number — it replaces the planning estimate with a measured one, in
 
 @docs/Harvest-Tracker-Design.md
 
+## Mobile (MOB-1 … MOB-4; MOB-5 is the `<DataList>` primitive)
+
+`Farm-Manager-Pre-Mobile-Readiness.md` is the plan. Both structural blockers are long
+closed (WI-22's bundle, WI-29's router). What is left is layout and input hygiene.
+
+- **"Has no scroll container" is NOT how you find a table that breaks a phone.** That
+  predicate is greppable and wrong; on 20 Sep it produced three findings and all three
+  were false positives. The rule that decides it: **a `w-full` table only overflows if
+  something inside it refuses to wrap** — `whitespace-nowrap`, a `min-w-*`, or a fixed
+  `w-[…]`. With wrappable text it compresses to fit and a scroll container does nothing.
+  Related CSS trap: **`overflow-y-auto` alone already scrolls horizontally**, because
+  `visible` computes to `auto` on the other axis whenever one axis is not `visible`.
+  Adding `overflow-x-auto` beside it is a no-op. Every table in the tree that can
+  actually overflow already has a container.
+- **Mobile-first scoping is how a layout fix avoids a desktop regression.** `py-3 sm:py-1`
+  gives the phone a 44 px target and returns the desktop table to its density. MOB-2
+  nearly shipped a desktop regression by pinning without scoping, and caught it by
+  measuring desktop before committing. **A/B it: stash, build, measure, restore** — the
+  same-tree delta is trustworthy where an absolute figure in a document is not.
+- **`<NumberField>` renders its own `<label>`, so it does not fit a table cell.** For an
+  inline editable cell, take the part that matters instead — `type="text"` +
+  `inputMode="decimal"` (keypad, and no value change on an accidental scroll) — and size
+  it mobile-first. Do not grow NumberField a label-less mode; that is props bloat for one
+  caller shape.
+- **Swapping an input to text means the parse must change too.** `parseFloat('1,250.75')`
+  is **1**. Use `parseNumberField` from `mathUtils.ts`, which strips separators and
+  returns `null` rather than `NaN`. A text box makes that string typeable where
+  `type="number"` refused it, so this is required by the swap, not optional tidying.
+- **`NumberField`'s `required` only renders the asterisk** — the input carries no
+  `required` attribute. Before swapping a form field, check the submit handler validates
+  explicitly, or native validation is silently lost.
+- **Size the row's ACTIONS, not just its inputs.** MOB-4 made three boxes 46 px and found
+  Save and Cancel still at **16 px**, and two icon-only buttons at **14**. Making the
+  entry tappable and leaving the confirm at 16 is the worse of the two defects. State the
+  sizing once per file (`TOUCH_ACTION` in `ShoppingListLineRow`) so the next button
+  inherits it, and measure with `getBoundingClientRect` — a comment claiming 44 has been
+  wrong five times now.
+
 ## Known baseline — do not treat these as regressions you caused
 
 - `npx tsc --noEmit -p tsconfig.app.json` reports **63 errors** (was 103 at review, 98
@@ -204,8 +242,8 @@ add a yield number — it replaces the planning estimate with a measured one, in
   baseline held 106 / 27 the whole time. The total, 133, was right; nothing had moved a
   warning. Quote the split above, and if it ever disagrees with `baselines/eslint.txt`,
   the baseline is the measurement and this sentence is not.
-- `npx vite build` succeeds and emits **45 chunks**. The number that matters is **first
-  paint: 410.00 kB raw / 116.54 kB gzip**, which is `dist/index.html`'s single
+- `npx vite build` succeeds and emits **46 chunks**. The number that matters is **first
+  paint: 419.81 kB raw / 119.37 kB gzip**, which is `dist/index.html`'s single
   `<script>` and nothing else — measure it that way, by reading the tags out of
   `index.html`, not by looking for "the main chunk". WI-29a added 48.85 kB raw /
   16.29 kB gzip to it (`react-router-dom`, which `App.tsx` imports eagerly), WI-29b a
@@ -230,12 +268,22 @@ add a yield number — it replaces the planning estimate with a measured one, in
   per-round deltas above are still each other's differences and are probably fine; it is
   the absolute figure that drifted, and nobody has re-derived where.
 
+  **And it drifted again, in the OTHER direction — measured 20 Sep at `eca8506`.** The
+  figure at the top of this bullet is that measurement: **419.81 kB raw / 119.37 kB
+  gzip** with MOB-4, and **419.76 / 119.34** on `main` without it. The viewer-role and
+  invitation rounds recorded `main` at 409.92 / 116.54, so the record is ~10 kB raw and
+  ~2.8 kB gzip light, and those two rounds claimed +0.02 and −0.06 kB between them, which
+  cannot account for it. Nobody has re-derived this one either. **The rule stands and is
+  the only thing here worth trusting: build both sides and read the `<script>` out of
+  `dist/index.html`.** A same-tree A/B delta is reliable; the absolute figure in any
+  document is not.
+
   Consequence for future work: **app-level code is the only thing that still lands in the
   first paint.** R-1's 2.09 kB, R-6's 4.64 kB and WI-29a's 16.29 kB gz did, because they
   are `App.tsx` and `main.tsx`; a change confined to one page no longer does. Total across all chunks went
   593 → 612 kB gzip from chunking overhead, which is the correct trade and not a
   regression — quote first paint, not the total.
-- `npm test` reports **489 passing** in 17 files (463 before the harvest tracker added 26; 456 before the ActionMenu fix added 7; 435 before the field-editing work added 21; 422 before WI-29a added 13; 401 before R-6 added 21; 386 before R-1 added 15; 380 before V-8 added 6; 372 before
+- `npm test` reports **490 passing** in 17 files (489 before MOB-4 added 1; 463 before the harvest tracker added 26; 456 before the ActionMenu fix added 7; 435 before the field-editing work added 21; 422 before WI-29a added 13; 401 before R-6 added 21; 386 before R-1 added 15; 380 before V-8 added 6; 372 before
   `formatRate` added 8; 347 before V-6 added 25; 340 before V-5 added 7; 320 before V-2 added 20; 308 before V-0
   added 12; 295 before shopping-list coverage added 13).
 - **CI exists as of 6 Sep 2026** — `.github/workflows/ci.yml`, WI-21's core gate. It runs
@@ -447,7 +495,7 @@ The individual commands still work when you want one of them:
 npx tsc --noEmit -p tsconfig.app.json   # 63
 npx eslint .                            # 105 errors / 27 warnings
 npx vite build                          # must succeed; first paint 116.54 kB gz
-npm test                                # 489 passing, must stay green
+npm test                                # 490 passing, must stay green
 ```
 
 **The Supabase CLI is installed as a dev dependency** (`supabase` 2.116.0, added 31 Aug

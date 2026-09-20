@@ -43,6 +43,22 @@ interface Props {
 const qty = (value: number) =>
   value.toLocaleString('en-US', { maximumFractionDigits: 2 });
 
+/**
+ * MOB-4. Every action in this row was a bare text or icon button with NO padding.
+ * Measured at 375 px with getBoundingClientRect, not guessed: Save and Cancel came
+ * out at 16 px, "Edit quote" and "Book this" at 32, and the two icon-only ones at
+ * 14 — against the >= 44 px rule this project keeps re-learning. Making the three
+ * input boxes tappable and leaving Save at 16 would have been the worse defect of
+ * the two, since Save is the control the edit exists for.
+ *
+ * Stated once rather than six times so the next button added here inherits it.
+ * Mobile-first: the phone gets the target, `sm:` returns the desktop table to the
+ * compact row it has today.
+ */
+const TOUCH_ACTION =
+  'inline-flex items-center justify-center gap-1 min-h-[44px] min-w-[44px] px-2 ' +
+  'sm:min-h-0 sm:min-w-0 sm:px-0';
+
 export function ShoppingListLineRow({
   line,
   coverageLabel,
@@ -109,14 +125,28 @@ export function ShoppingListLineRow({
         )}
       </td>
 
+      {/*
+        MOB-4, and it applies to all three boxes in this edit row.
+
+        NOT <NumberField> — that renders its own <label> above the box, and a table
+        cell has nowhere to put one. What IS taken from it is the part that matters in
+        a truck: text + inputMode="decimal" raises a keypad rather than a full
+        keyboard, and a text box cannot change value on an accidental scroll the way
+        type="number" does.
+
+        `py-3 sm:py-1`, mobile-first: the phone gets a 44 px target and the desktop
+        table keeps its density. Same scoping trick MOB-2 used on the Products tab
+        strip, where an unscoped version nearly shipped a desktop regression.
+      */}
       <td className="px-4 py-3 text-right">
         {isEditing ? (
           <input
-            type="number"
-            step="0.01"
+            type="text"
+            inputMode="decimal"
+            autoComplete="off"
             value={editValues.adjusted_quantity}
             onChange={(e) => onEditValuesChange({ ...editValues, adjusted_quantity: e.target.value })}
-            className="w-24 px-2 py-1 border border-gray-300 rounded text-right text-sm focus:ring-2 focus:ring-green-500 focus:border-transparent"
+            className="w-24 px-2 py-3 sm:py-1 border border-gray-300 rounded text-right text-sm focus:ring-2 focus:ring-green-500 focus:border-transparent"
           />
         ) : (
           <span className="font-medium text-gray-900">
@@ -132,7 +162,7 @@ export function ShoppingListLineRow({
             value={editValues.supplier}
             onChange={(e) => onEditValuesChange({ ...editValues, supplier: e.target.value })}
             placeholder="Supplier name"
-            className="w-32 px-2 py-1 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-green-500 focus:border-transparent"
+            className="w-32 px-2 py-3 sm:py-1 border border-gray-300 rounded text-sm focus:ring-2 focus:ring-green-500 focus:border-transparent"
           />
         ) : (
           <span className="text-gray-700">{line.supplier || <span className="text-gray-300">--</span>}</span>
@@ -142,12 +172,13 @@ export function ShoppingListLineRow({
       <td className="px-4 py-3 text-right">
         {isEditing ? (
           <input
-            type="number"
-            step="0.01"
+            type="text"
+            inputMode="decimal"
+            autoComplete="off"
             value={editValues.quoted_price_per_unit}
             onChange={(e) => onEditValuesChange({ ...editValues, quoted_price_per_unit: e.target.value })}
             placeholder="0.00"
-            className="w-24 px-2 py-1 border border-gray-300 rounded text-right text-sm focus:ring-2 focus:ring-green-500 focus:border-transparent"
+            className="w-24 px-2 py-3 sm:py-1 border border-gray-300 rounded text-right text-sm focus:ring-2 focus:ring-green-500 focus:border-transparent"
           />
         ) : line.purchased_price_per_unit != null ? (
           <span className="font-medium text-green-700">
@@ -178,13 +209,13 @@ export function ShoppingListLineRow({
               <>
                 <button
                   onClick={() => onSave(line.id)}
-                  className="text-green-600 hover:text-green-700 text-xs font-medium"
+                  className={`${TOUCH_ACTION} text-green-600 hover:text-green-700 text-xs font-medium`}
                 >
                   Save
                 </button>
                 <button
                   onClick={onCancel}
-                  className="text-gray-500 hover:text-gray-700 text-xs font-medium"
+                  className={`${TOUCH_ACTION} text-gray-500 hover:text-gray-700 text-xs font-medium`}
                 >
                   Cancel
                 </button>
@@ -193,7 +224,7 @@ export function ShoppingListLineRow({
               <>
                 <button
                   onClick={() => onStartEdit(line)}
-                  className="inline-flex items-center gap-1 text-blue-600 hover:text-blue-700 text-xs font-medium"
+                  className={`${TOUCH_ACTION} text-blue-600 hover:text-blue-700 text-xs font-medium`}
                   title="Edit quantity, supplier and quoted price"
                 >
                   <Edit2 className="w-3.5 h-3.5" /> Edit quote
@@ -206,7 +237,7 @@ export function ShoppingListLineRow({
                 {line.product_category === 'fertilizer' ? (
                   <button
                     onClick={() => onBook(line)}
-                    className="inline-flex items-center gap-1 text-green-700 hover:text-green-800 text-xs font-medium"
+                    className={`${TOUCH_ACTION} text-green-700 hover:text-green-800 text-xs font-medium`}
                     title="Create a booking for this product"
                   >
                     <Truck className="w-3.5 h-3.5" /> Book this
@@ -214,7 +245,7 @@ export function ShoppingListLineRow({
                 ) : line.status !== 'purchased' ? (
                   <button
                     onClick={() => onPurchase(line)}
-                    className="text-green-600 hover:text-green-700"
+                    className={`${TOUCH_ACTION} text-green-600 hover:text-green-700`}
                     title="Mark purchased"
                   >
                     <DollarSign className="w-3.5 h-3.5" />
@@ -222,7 +253,7 @@ export function ShoppingListLineRow({
                 ) : (
                   <button
                     onClick={() => onPurchase(line)}
-                    className="text-gray-500 hover:text-gray-700"
+                    className={`${TOUCH_ACTION} text-gray-500 hover:text-gray-700`}
                     title="Edit purchase"
                   >
                     <Check className="w-3.5 h-3.5" />

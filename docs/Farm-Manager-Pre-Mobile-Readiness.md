@@ -250,6 +250,43 @@ before the primitive**, not after.
 Then build the primitive from the twelve. Then re-measure what is left, which will be a
 smaller and far better understood number than 31.
 
+> **CORRECTION, 20 Sep 2026 — "has no scroll container" is the WRONG PREDICATE, and it
+> produced a wrong finding today.** MOB-2 closed the eight named above on 6 Sep. A fresh
+> grep for the same shape then reported three more — `LedgerHistoryModal` and
+> `ChemicalWorkOrders` ×2 — and all three were **false positives**. They were changed,
+> rendered, measured, and reverted the same hour.
+>
+> **The rule that actually decides it:**
+>
+> > A `w-full` table only overflows its container if something inside it **refuses to
+> > wrap** — `whitespace-nowrap`, a `min-w-*`, or a fixed `w-[…]`. With wrappable text it
+> > compresses to fit and there is nothing for a scroll container to do.
+>
+> Measured at 375 px, with long real chemical names (`Chlorimuron-ethyl+Thifensulfuron-methyl`):
+>
+> | | Table wants | Box | Hidden |
+> |---|---|---|---|
+> | `ChemicalWorkOrders` mix table (no nowrap anywhere) | 301 px | 301 px | **0** |
+> | `LedgerHistoryModal` (nowrap on Date, Change, Balance) | 573 px | 343 px | 230 px |
+>
+> **And `LedgerHistoryModal` was already scrolling sideways before the "fix".** Its
+> container is `overflow-y-auto`, and CSS computes `visible` to `auto` on the other axis
+> whenever one axis is not `visible` — so `overflow-x` was *already* `auto`. `scrollLeft`
+> reached **230 px both before and after** the edit; the genuinely broken state
+> (`overflow: visible` on both axes) reaches 0, and that is not what the file had. Adding
+> `overflow-x-auto` there is a no-op.
+>
+> **Re-surveyed under the corrected rule: every table in the tree that can actually
+> overflow already has a container.** The containment work this section asks for is
+> **done**, not partly done. What is NOT re-checked is whether all eight of MOB-2's were
+> needed — three certainly were, since the product tabs carried `overflow-hidden`, which
+> clips for real; the other five were not measured then and have not been measured since.
+>
+> The cheap lesson: this predicate is greppable and wrong, and the right one needs the
+> element geometry. That is an argument *for* §4.4's primitive rather than against it —
+> "keep the identity column visible" is exactly the property twelve hand retrofits would
+> each get slightly wrong.
+
 ### 4.6 What is NOT verified here, and should not be claimed
 
 - **Four of twelve were rendered**, not all twelve. The other eight share the identical

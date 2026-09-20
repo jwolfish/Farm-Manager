@@ -3,6 +3,8 @@ import { X, Plus, Minus } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { useAuth } from '../../contexts/AuthContext';
 import { useFarm } from '../../contexts/FarmContext';
+import { parseNumberField } from '../../lib/mathUtils';
+import { NumberField } from '../NumberField';
 
 interface Props {
   productName: string;
@@ -36,7 +38,8 @@ export function InventoryAdjustModal({
     if (!user || !activeFarmId) return;
     setError(null);
 
-    const qty = parseFloat(quantity);
+    // Text box now, so commas are typeable — see MarkPurchasedModal for the why.
+    const qty = parseNumberField(quantity) ?? NaN;
     if (!isFinite(qty) || qty <= 0) {
       setError('Quantity must be a number greater than 0.');
       return;
@@ -120,21 +123,16 @@ export function InventoryAdjustModal({
             </div>
           </div>
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-2">
-              Quantity ({unitType})
-            </label>
-            <input
-              type="number"
-              step="0.01"
-              value={quantity}
-              onChange={(e) => setQuantity(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-              placeholder="0.00"
-              required
-              autoFocus
-            />
-          </div>
+          {/* MOB-4. autoFocus is preserved deliberately — see NumberField's prop. */}
+          <NumberField
+            label={`Quantity (${unitType})`}
+            value={quantity}
+            onChange={setQuantity}
+            suffix={unitType}
+            placeholder="0.00"
+            required
+            autoFocus
+          />
 
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-2">
