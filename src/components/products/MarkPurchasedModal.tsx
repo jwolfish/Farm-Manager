@@ -3,6 +3,8 @@ import { X, Check } from 'lucide-react';
 import { supabase } from '../../lib/supabase';
 import { queueCascadeTask, type TaskType, type CascadeTaskData } from '../../lib/backgroundTasks';
 import { convertUnits, describeConversionFailure } from '../../lib/unitConversions';
+import { parseNumberField } from '../../lib/mathUtils';
+import { NumberField } from '../NumberField';
 import { useAuth } from '../../contexts/AuthContext';
 import type { ShoppingLine } from './ShoppingListsTab';
 
@@ -42,8 +44,11 @@ export function MarkPurchasedModal({ line, onClose, onComplete }: Props) {
     e.preventDefault();
     if (!user) return;
 
-    const qty = parseFloat(quantity);
-    const ppu = parseFloat(price);
+    // parseNumberField, not parseFloat, BECAUSE the box is now text: a thousands
+    // separator is typeable where type="number" would have refused it, and
+    // parseFloat('1,200') is 1. Strips commas, returns null rather than NaN.
+    const qty = parseNumberField(quantity) ?? NaN;
+    const ppu = parseNumberField(price) ?? NaN;
 
     if (!isFinite(qty) || qty <= 0) {
       setError('Quantity must be a number greater than 0.');
@@ -142,39 +147,28 @@ export function MarkPurchasedModal({ line, onClose, onComplete }: Props) {
         </div>
 
         <form onSubmit={handleSubmit} className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Purchased Quantity ({line.unit_type})
-            </label>
-            <input
-              type="number"
-              step="0.01"
-              value={quantity}
-              onChange={(e) => setQuantity(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-              required
-            />
-            <p className="text-xs text-gray-400 mt-1">
-              Adjust if the final order quantity differs (e.g. full drums, bags).
-            </p>
-          </div>
+          {/*
+            MOB-4. The native `required` these two carried is not lost: handleSubmit
+            validates both explicitly and names which one failed, which is better than
+            a browser tooltip. NumberField's own `required` only renders the asterisk.
+          */}
+          <NumberField
+            label={`Purchased Quantity (${line.unit_type})`}
+            value={quantity}
+            onChange={setQuantity}
+            suffix={line.unit_type}
+            required
+            help="Adjust if the final order quantity differs (e.g. full drums, bags)."
+          />
 
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">
-              Purchased Price per {line.unit_type} ($)
-            </label>
-            <input
-              type="number"
-              step="0.01"
-              value={price}
-              onChange={(e) => setPrice(e.target.value)}
-              className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent"
-              required
-            />
-            <p className="text-xs text-gray-400 mt-1">
-              This price will update the product's cost across your crop plan.
-            </p>
-          </div>
+          <NumberField
+            label={`Purchased Price per ${line.unit_type}`}
+            value={price}
+            onChange={setPrice}
+            prefix="$"
+            required
+            help="This price will update the product's cost across your crop plan."
+          />
 
           {error && (
             <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">

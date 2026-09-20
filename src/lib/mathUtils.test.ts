@@ -39,6 +39,18 @@ describe('parseNumberField', () => {
     expect(parseNumberField(' 1,250 ')).toBe(1250);
   });
 
+  /*
+   * Separator AND decimal together. Newly reachable as of MOB-4: the shopping
+   * list, MarkPurchasedModal and InventoryAdjustModal now use text boxes with a
+   * decimal keypad, so a typed "1,250.75" reaches the parse where type="number"
+   * would have refused it. parseFloat gives 1 for this string, which is the
+   * silent wrong number the switch to parseNumberField exists to avoid.
+   */
+  it('reads a separator and a decimal in the same value', () => {
+    expect(parseNumberField('1,250.75')).toBe(1250.75);
+    expect(parseFloat('1,250.75')).toBe(1); // the trap, pinned
+  });
+
   it('returns null for blank and for anything that is not a number', () => {
     expect(parseNumberField('')).toBeNull();
     expect(parseNumberField('   ')).toBeNull();

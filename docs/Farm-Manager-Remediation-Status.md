@@ -4033,3 +4033,168 @@ by the grants, and by a live idempotency call; `sendInvitation` calling it is pr
 reading. The check is to invite a **second** new address that already has an account and
 watch it link without any repair — which is also the check that this defect is actually gone
 rather than worked around on one row.
+
+### MOB-4 — the entry surfaces, and a finding of mine that was wrong — 20 Sep 2026
+
+**The mobile effort resumes after ten days of feature work.** MOB-1 (sidebar drawer),
+MOB-2 (stop the page scrolling sideways) and MOB-3 (the field-editing containers) landed
+6–10 Sep. `Farm-Manager-Pre-Mobile-Readiness.md` §6 says what comes next: the eight
+unwrapped tables, then the `<DataList>` primitive built from the twelve report tables.
+
+**The eight were already done by MOB-2. The primitive is deliberately NOT next.** Reports
+are a February-at-a-desk activity and the primitive is the largest item on the list and the
+only one that requires designing a new abstraction. The two primitives built for the phone
+— `NumberField` and `ResponsiveModal` — are meanwhile sitting unused on all the old code,
+which is what §4.7's "the retrofit pile is growing faster than it is being paid down"
+measures. **So MOB-4 is the entry surfaces**, sequenced by where a phone is actually used,
+and the primitive becomes MOB-5.
+
+### FIRST, A CORRECTION: "no scroll container" is the wrong predicate
+
+A fresh grep for §4.5's shape reported three more unwrapped tables —
+`LedgerHistoryModal` and `ChemicalWorkOrders` ×2 — and **all three were false positives.**
+They were changed, rendered, measured and reverted inside the hour. The full record is in
+the correction box now in §4.5 of the readiness doc; the short version:
+
+> A `w-full` table only overflows if something inside it **refuses to wrap**.
+
+| Measured at 375 px, long real chemical names | Table wants | Box | Hidden |
+|---|---|---|---|
+| `ChemicalWorkOrders` mix table — no `whitespace-nowrap` anywhere | 301 px | 301 px | **0** |
+| `LedgerHistoryModal` — nowrap on Date, Change, Balance | 573 px | 343 px | 230 px |
+
+**And `LedgerHistoryModal` was already scrolling sideways.** Its container is
+`overflow-y-auto`, and CSS computes `visible` to `auto` on the other axis whenever one axis
+is not `visible` — so `overflow-x` was *already* `auto`. `scrollLeft` reached **230 px both
+before and after** the edit; the genuinely broken state (`overflow: visible` both axes)
+reaches 0, and that is not what the file had.
+
+**Re-surveyed under the corrected rule: every table in the tree that can actually overflow
+already has a container.** The containment work is done. What is NOT re-checked is whether
+all eight of MOB-2's needed it — three certainly did, since the product tabs carried
+`overflow-hidden`, which clips for real.
+
+Recorded rather than quietly dropped, because the wrong predicate is the greppable one and
+will be reached for again.
+
+### What MOB-4 changed
+
+| File | Change |
+|---|---|
+| `MarkPurchasedModal` | 2 fields → `NumberField` |
+| `InventoryAdjustModal` | 1 field → `NumberField` |
+| `ShoppingListLineRow` | 3 inline cell inputs + all 6 action buttons |
+| `ShoppingListsTab` | `saveEdit` parse, and its swallowed error |
+| `NumberField` | one new optional prop, `autoFocus` |
+
+**The inline cells could NOT take `NumberField`, and that is the interesting constraint.**
+It renders its own `<label>` above the box, and a table cell has nowhere to put one. What
+the cells take instead is the part that matters in a truck: `type="text"` +
+`inputMode="decimal"` raises a keypad rather than a full keyboard, and a text box cannot
+change value on an accidental scroll the way `type="number"` does. Sizing is
+`py-3 sm:py-1` — mobile-first, so the phone gets a 44 px target and the desktop table keeps
+its density, the same scoping trick MOB-2 used on the Products tab strip after an unscoped
+version nearly shipped a desktop regression.
+
+**Dropping the native `required` is safe and was checked, not assumed.** `NumberField`'s
+`required` only renders the asterisk; the input carries no `required` attribute. Both
+modals already validate explicitly in `handleSubmit` and name which field failed, which is
+better than a browser tooltip.
+
+**`parseFloat` → `parseNumberField` is REQUIRED by the change, not smuggled into it.** A
+text box makes `1,250.75` typeable where `type="number"` refused it, and
+`parseFloat('1,250.75')` is **1** — a silent wrong number in a write path that moves money
+and inventory. One new test pins both halves, the right answer and the trap. Tests
+489 → **490**; that is the only new test, because nothing else here is new pure logic.
+
+**The swallowed error on `saveEdit` is now surfaced**, per the convention in `CLAUDE.md`
+about touching a write path. It was `if (!err)` with the error discarded, so a failed save
+closed nothing and said nothing — the row just sat in edit mode. It reuses the banner the
+tab already renders, so this adds no UI decisions.
+
+### RENDERING FOUND FOUR DEFECTS, ALL MINE, ALL IN THE ROW I HAD JUST EDITED
+
+Measured with `getBoundingClientRect` at 375 px, not asserted in a comment:
+
+| Control | Before | After |
+|---|---|---|
+| **Save** | **16 px** | 44 |
+| **Cancel** | **16 px** | 44 |
+| Edit quote / Book this | 32 px | 44 |
+| Mark purchased / Edit purchase (icon only) | **14 px** | 44 |
+
+**Making the three input boxes 46 px and leaving their Save button at 16 would have been
+the worse defect of the two**, since Save is the control the edit exists for. It is the
+F-4b shape again — the thing the screen exists for is the thing that gets missed — and it
+is the ninth time rendering has caught something review did not.
+
+The sizing is stated once as `TOUCH_ACTION` at the top of the file rather than six times,
+so the next button added to that row inherits it.
+
+### The desktop A/B, because MOB-2 nearly shipped a regression here
+
+Not reasoned about — measured, by stashing the change, building, measuring, restoring:
+
+| At 1280 px | BEFORE (main) | AFTER |
+|---|---|---|
+| Table width / box | 1214 / 1214 | 1214 / 1214 |
+| Row height | 55 px | 55 px |
+| The three inputs | 30 px | 30 px |
+| All four text buttons | 16 px | 16 px |
+
+**Zero desktop change**, which is what `sm:` scoping is for.
+
+### Also verified
+
+- **Page containment at 375**: `scrollWidth === clientWidth === 375`, `scrollX` 0 after
+  `scrollTo(999,0)`. The line table scrolls inside its own box (917 px into 341).
+- **`NumberField`'s prefix and suffix do not sit on the value** — `$` at left 12 px against
+  28 px of left padding; `ton` at right 12 against 64 px of right padding.
+- **Typing `1,250.75` into a cell is accepted** where `type="number"` would have refused it.
+- **The Save press was driven as `mousedown` → gap → `mouseup` → gap → `click`, spaced
+  across tasks**, asserting the button survived the mousedown — the method the `ActionMenu`
+  post-mortem established. It survives, the click lands, the row leaves edit mode.
+
+### Floor
+
+| | |
+|---|---|
+| Tests | 489 → **490** (+1, the separator-and-decimal case) |
+| TypeScript | **63**, unchanged — 0 new, 0 fixed |
+| ESLint | **105 / 27**, unchanged. `npm run baselines` reports *no new problems* |
+| `check:readonly` | passes |
+| Build | succeeds, **46 chunks** |
+| Migrations | **65**, none needed |
+
+**First paint 419,756 → 419,806 bytes raw, 119,340 → 119,367 gzip** — +50 raw, +27 gzip,
+which is what a handful of Tailwind classes and two imports cost. Measured by building both
+sides and reading the `<script>` out of `dist/index.html`, per the standing rule.
+
+> **A figure in this document disagrees with the tree again.** The viewer-role and
+> invitation sections record `main` at **409.92 kB raw / 116.54 kB gzip**. Built today at
+> `eca8506` it is **419.76 kB raw / 119.34 kB gzip** — about 10 kB raw and 2.8 kB gzip
+> higher. This is the same class as the 10 Sep discrepancy the doc already flags, and
+> nobody has re-derived where it comes from. The **delta** above is a true A/B on one tree
+> and stands; it is the absolute figure that has drifted. Build it and read
+> `dist/index.html`; do not quote this paragraph either.
+
+### NOT verified, and the owner's checks
+
+**Nothing here has run against Supabase.** `ShoppingListLineRow` imports no Supabase client
+— it was split out of the tab for exactly this reason — so it was driven as the **real**
+component inside a copy of the real `<thead>`. The two modals do import it and could not be
+mounted; what was proven for them is `NumberField` given the exact props they now pass, not
+the modal around it. `saveEdit`'s new parse and its new error banner are proven by reading.
+
+**And nothing has been touched by a thumb.** Every input above was dispatched in a desktop
+browser at a 375 px viewport, which the `ActionMenu` post-mortem is explicit is a different
+test from a real tap.
+
+1. On the phone, open **Products → Shopping Lists**, press **Edit quote** on a line. The
+   three boxes should raise a **keypad, not a full keyboard**, and Save / Cancel should be
+   comfortably tappable.
+2. Type a quantity with a comma — `1,250.75` — and save. It should store **1250.75**.
+3. **Mark as Purchased** on a chemical or seed line: both boxes should be keypads, the
+   price box should show a `$` that does not sit on the number.
+4. On a desktop, the shopping list table should look **exactly as it did**. If rows have
+   grown taller there, the `sm:` scoping is wrong and this round caused it.
