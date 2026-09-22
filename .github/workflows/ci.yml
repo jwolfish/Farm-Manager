@@ -39,6 +39,15 @@ jobs:
       - name: Read-only props — a viewer sees no control that writes
         run: node scripts/check-readonly-props.mjs
 
+      # Guardrail 7. The cost math exists twice — src/lib/ and the edge function, which
+      # cannot import from src/ — and has been hand-synced several times. Every sync so
+      # far has been correct, which is why one eventually will not be: the 31 Aug
+      # override defect was a fix that landed on one side only, and nine real fields
+      # carried a wrong total for six months with no error anywhere. This fingerprints
+      # each side against baselines/mirrors.json and fails when one moves alone.
+      - name: Mirrored cost math — both copies move together
+        run: node scripts/check-mirrored-math.mjs
+
       # tsc and eslint are NOT zero on a healthy tree (63 and 105/27), so this compares
       # against committed baselines and fails only on something NEW. Sets, not counts —
       # one error fixed and one introduced leaves the total unchanged.

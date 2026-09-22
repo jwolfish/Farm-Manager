@@ -1,0 +1,62 @@
+{
+  "normalizeUnit": {
+    "src": "src/lib/unitConversions.ts",
+    "client": "a1170343cf275013",
+    "edge": "5c8d5599d270fc36"
+  },
+  "lookupUnit": {
+    "src": "src/lib/unitConversions.ts",
+    "client": "b2d8c19a7341f9a1",
+    "edge": "77d8f6de7254091c"
+  },
+  "convertUnits": {
+    "src": "src/lib/unitConversions.ts",
+    "client": "793c23d5867ab06e",
+    "edge": "65bfb08d29ef53c9"
+  },
+  "unitClassOf": {
+    "src": "src/lib/unitConversions.ts",
+    "client": "742c0707c8dcc47b",
+    "edge": "742c0707c8dcc47b"
+  },
+  "convertProductUnits": {
+    "src": "src/lib/unitConversions.ts",
+    "client": "29a6ef65c07d1a4e",
+    "edge": "056571385cabb63d"
+  },
+  "describeConversionFailure": {
+    "src": "src/lib/unitConversions.ts",
+    "client": "af3d76b5dcf452ea",
+    "edge": "1f9c794e773224e0"
+  },
+  "calculateCostWithConversion": {
+    "src": "src/lib/unitConversions.ts",
+    "client": "c629137e2250a573",
+    "edge": "fb329a99edd5edce"
+  },
+  "applyFieldCostOverrides": {
+    "src": "src/lib/templateLib/templateCalculations.ts",
+    "client": "e742e9a2ab4f40b7",
+    "edge": "e1d695d7c42afdf5"
+  },
+  "refreshProgramCostInRefs": {
+    "src": "src/lib/templateLib/templateCalculations.ts",
+    "client": "005bf021db8f5dc7",
+    "edge": "5182448441a4f0d7"
+  },
+  "calculateFieldTotalCost": {
+    "src": "src/lib/templateLib/templateCalculations.ts",
+    "client": "56f70ea78d78c836",
+    "edge": "726aeccd0917fe4f"
+  },
+  "recalculateFertilizerProgramCost": {
+    "src": "src/lib/templateLib/programCosts.ts",
+    "client": "c2be452e51aa88d8",
+    "edge": "a69476e8fd72e0cd"
+  },
+  "recalculateChemicalProgramCost": {
+    "src": "src/lib/templateLib/programCosts.ts",
+    "client": "c62db0dbb641989b",
+    "edge": "d3f3f4040c3a4b89"
+  }
+}

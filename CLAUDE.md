@@ -339,6 +339,12 @@ These are real mistakes made during this work, not hypotheticals.
    `calculateFieldTotalCost` and both `recalculate*ProgramCost` functions are implemented
    in `src/lib/` AND again in the edge function, which cannot import from `src/`. A fix
    to one must be applied to the other until WI-27 consolidates them.
+   **`npm run mirrors` now catches a one-sided change** — twelve functions (those five
+   plus `normalizeUnit`, `lookupUnit`, `unitClassOf`, `convertProductUnits`,
+   `describeConversionFailure`, `applyFieldCostOverrides` and `refreshProgramCostInRefs`),
+   fingerprinted per side against `baselines/mirrors.json`, in `npm run verify` and in CI.
+   It is the first mechanical check on this guardrail; before 21 Sep 2026 nothing but
+   attention enforced it.
 
 8. **`convertUnits()` returns a `ConversionResult`, not a number** (WI-11, landed on
    `main`). Every caller must handle `ok: false` — never fall back to
@@ -487,7 +493,8 @@ checks that can return "no" over judgement.
 npm run verify
 ```
 
-That is `npm test` → `npm run check:readonly` → `npm run baselines` → `npm run build`.
+That is `npm test` → `npm run check:readonly` → `npm run mirrors` → `npm run baselines` →
+`npm run build`.
 `tsc` reports **63** and `eslint` **105 errors / 27 warnings** on a healthy tree, so CI
 cannot require a zero exit; `scripts/check-baselines.mjs` instead compares against the
 committed sets in `baselines/` and fails only on something **new**.
@@ -501,6 +508,30 @@ committed sets in `baselines/` and fails only on something **new**.
 - **Moving a baseline the wrong way is possible but must be argued.** `--update` will
   happily record new problems; if you use it that way, say why in the commit message.
 - Tests have **no** baseline. Green is the standard.
+
+**`npm run mirrors` is guardrail 7 made checkable** (`scripts/check-mirrored-math.mjs`,
+21 Sep 2026). Twelve functions exist in `src/lib/` *and* in the edge function, and until
+now nothing but attention kept them in step — the 31 Aug override defect was a fix that
+landed on one side only and cost nine fields six months of wrong totals. It does **not**
+diff the two bodies against each other: they are legitimately different text (`fc` versus
+`fieldCost`, no imports, inlined types), and a check that cries wolf gets ignored. It
+fingerprints each side separately against `baselines/mirrors.json`, comments and
+whitespace stripped, and answers one question — *did somebody change one copy without
+acknowledging the other?* A two-sided change is waved through by `npm run mirrors:update`;
+a one-sided one fails and names which file was **not** touched. A missing or renamed
+symbol fails even under `--update`, because that is the drift, not an exemption. **Proved
+to fail**: doubling `hauling_cost_per_acre` in the edge copy alone is caught and named; a
+comment added above the client copy is not.
+
+**Two hooks now fire automatically** (`.claude/settings.json`, `scripts/hooks/`), which is
+what makes the above hard to forget rather than merely available. `guard-baselines.mjs`
+**refuses** a hand edit to anything in `baselines/` — editing those by hand deletes the
+record that a problem exists and the ratchet then reports green, the one failure the
+ratchet cannot detect because it *is* the detector; `baselines:update` and
+`mirrors:update` write through node and are unaffected. `mirror-reminder.mjs` says so the
+moment either copy of the cost math is edited. The reminder is deliberately **not** a
+gate: a one-sided edit is sometimes correct, so blocking would be wrong — `npm run
+mirrors` is the gate, and it can return "no".
 
 **`npm run check:readonly` is the newest step and exists because the other two are blind
 to it.** `App.tsx` hands `readOnly={activeRole === 'viewer'}` to seven pages, and the

@@ -15,7 +15,9 @@
     "baselines": "node scripts/check-baselines.mjs",
     "baselines:update": "node scripts/check-baselines.mjs --update",
     "check:readonly": "node scripts/check-readonly-props.mjs",
-    "verify": "npm test && npm run check:readonly && npm run baselines && npm run build",
+    "mirrors": "node scripts/check-mirrored-math.mjs",
+    "mirrors:update": "node scripts/check-mirrored-math.mjs --update",
+    "verify": "npm test && npm run check:readonly && npm run mirrors && npm run baselines && npm run build",
     "deploy:cascade": "supabase functions deploy process-cascade-task --project-ref wvccxjakqwqfmyewclue --use-api"
   },
   "dependencies": {
