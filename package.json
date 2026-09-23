@@ -21,7 +21,7 @@
     "deploy:cascade": "supabase functions deploy process-cascade-task --project-ref wvccxjakqwqfmyewclue --use-api"
   },
   "dependencies": {
-    "@supabase/supabase-js": "^2.57.4",
+    "@supabase/supabase-js": "~2.57.4",
     "jspdf": "^4.2.1",
     "jspdf-autotable": "^5.0.7",
     "lucide-react": "^0.344.0",

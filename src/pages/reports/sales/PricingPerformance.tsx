@@ -226,7 +226,7 @@ export function PricingPerformance({ salesData, seasonData, farmName, currentSea
                   <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
                   <XAxis dataKey="date" type="category" tick={{ fontSize: 11 }} allowDuplicatedCategory={false} />
                   <YAxis tickFormatter={(v) => `$${v.toFixed(2)}`} tick={{ fontSize: 11 }} domain={['auto', 'auto']} />
-                  <Tooltip formatter={(v: number) => `$${v.toFixed(3)}/bu`} />
+                  <Tooltip formatter={(v) => `$${Number(v).toFixed(3)}/bu`} />
                   <Legend />
                   {([...groupedTimeline.entries()] as [CropType, typeof timelineData][]).map(([crop, points]) => (
                     <Line

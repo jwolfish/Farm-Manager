@@ -189,7 +189,7 @@ export function FieldCostComparison({ fieldData, seasonData, farmName, currentSe
                   <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" horizontal={false} />
                   <XAxis type="number" tick={{ fontSize: 11 }} tickFormatter={(v) => `$${v}`} />
                   <YAxis type="category" dataKey="name" tick={{ fontSize: 11 }} width={100} />
-                  <Tooltip formatter={(v: number) => fmtAcre(v)} />
+                  <Tooltip formatter={(v) => fmtAcre(Number(v))} />
                   <Bar dataKey="costPerAcre" name="Cost/Acre" fill="#2563eb" radius={[0, 4, 4, 0]}
                     label={{ position: 'right', fontSize: 11, formatter: (v: number) => fmtAcre(v) }}
                   />

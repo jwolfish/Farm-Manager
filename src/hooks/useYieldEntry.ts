@@ -2,7 +2,7 @@ import { useEffect, useState, useRef, useCallback } from 'react';
 import { isHarvestedRow } from '../lib/harvestProgress';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
-import type { CropType } from '../lib/database.types';
+import type { CropType, TablesUpdate } from '../lib/database.types';
 
 export interface FieldYield {
   id?: string;
@@ -173,7 +173,10 @@ export function useYieldEntry(seasonId: string | null) {
   const updateSeasonPrice = async (cropType: CropType, price: number | null) => {
     if (!seasonId || !season) return;
     try {
-      const updateData: Record<string, number | null> = {};
+      const updateData: Pick<
+        TablesUpdate<'seasons'>,
+        'corn_price_per_bushel' | 'soybeans_price_per_bushel' | 'wheat_price_per_bushel'
+      > = {};
       if (cropType === 'corn') updateData.corn_price_per_bushel = price;
       if (cropType === 'soybeans') updateData.soybeans_price_per_bushel = price;
       if (cropType === 'wheat') updateData.wheat_price_per_bushel = price;
