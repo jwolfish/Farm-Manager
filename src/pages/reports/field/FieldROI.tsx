@@ -3,6 +3,7 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ReferenceLine, ResponsiveContainer, Cell,
 } from 'recharts';
 import { FieldPerformanceSummary, SeasonSummary } from '../../../lib/reportTypes';
+import { REVENUE_ALLOCATION_NOTE } from '../../../lib/fieldRevenueAllocation';
 import { ReportCard } from '../../../components/reports/ReportCard';
 import { ReportHeader } from '../../../components/reports/ReportHeader';
 import { exportTableToCSV } from '../../../lib/exportUtils';
@@ -218,6 +219,7 @@ export function FieldROI({ fieldData, seasonData, farmName, currentSeasonId }: P
               </tbody>
             </table>
           </div>
+          <p className="mt-3 text-xs text-gray-500">{REVENUE_ALLOCATION_NOTE}</p>
         </>
       )}
     </ReportCard>
