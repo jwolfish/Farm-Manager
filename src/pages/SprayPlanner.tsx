@@ -22,6 +22,7 @@ import { SavedWorkOrdersList } from '../components/SavedWorkOrdersList';
 import { WorkOrderDetailModal } from '../components/WorkOrderDetailModal';
 import type { SavedWorkOrder } from '../lib/workOrderCrud';
 import { convertUnits } from '../lib/unitConversions';
+import { lookupChemicalInventory } from '../lib/chemicalInventory';
 import { convertSavedWorkOrdersToSprayFormat } from '../lib/exports/savedWorkOrderAdapter';
 import { exportSprayLogPDF } from '../lib/exports/sprayLogPdfExport';
 
@@ -443,7 +444,7 @@ export function SprayPlanner({ currentSeasonId, effectiveUserId, farmId, readOnl
             const lowItems = workOrders.flatMap((wo) =>
               wo.chemTotals
                 .filter((ct) => {
-                  const inv = inventoryMap.get(ct.masterProductId ?? '') ?? inventoryMap.get(ct.chemicalName);
+                  const inv = lookupChemicalInventory(inventoryMap, ct.masterProductId, ct.chemicalName);
                   if (!inv) return false;
                   const needed = convertUnits(ct.rateUnit, inv.unitType, ct.totalRaw);
                   // Cannot compare across units that will not convert, so this
@@ -601,7 +602,7 @@ export function SprayPlanner({ currentSeasonId, effectiveUserId, farmId, readOnl
                     </thead>
                     <tbody>
                       {wo.chemTotals.map((ct, i) => {
-                        const inv = inventoryMap.get(ct.masterProductId ?? '') ?? inventoryMap.get(ct.chemicalName);
+                        const inv = lookupChemicalInventory(inventoryMap, ct.masterProductId, ct.chemicalName);
                         const onHand = inv?.onHand ?? null;
                         const neededInInvUnit = inv ? convertUnits(ct.rateUnit, inv.unitType, ct.totalRaw) : null;
                         const isLow =

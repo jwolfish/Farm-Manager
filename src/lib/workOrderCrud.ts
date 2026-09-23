@@ -1,5 +1,6 @@
 import { supabase } from './supabase';
 import { buildInventoryQuantities } from './inventoryMath';
+import { ChemicalInventory, emptyChemicalInventory, indexInventoryRows } from './chemicalInventory';
 import type { WorkOrderStatus } from './database.types';
 
 /**
@@ -409,46 +410,35 @@ export async function fetchInventoryForChemicals(
   farmId: string,
   productIds: string[],
   chemicalNames?: string[]
-): Promise<Map<string, { masterProductId: string; onHand: number; unitType: string }>> {
-  if (productIds.length === 0 && (!chemicalNames || chemicalNames.length === 0)) return new Map();
-
-  const map = new Map<string, { masterProductId: string; onHand: number; unitType: string }>();
+): Promise<ChemicalInventory> {
+  const inventory = emptyChemicalInventory();
+  if (productIds.length === 0 && (!chemicalNames || chemicalNames.length === 0)) return inventory;
 
   if (productIds.length > 0) {
     const { data, error } = await supabase
       .from('master_products')
-      .select('id, canonical_name, on_hand_quantity, unit_type')
+      .select('id, canonical_name, on_hand_quantity, unit_type, product_category')
       .in('id', productIds);
     if (error) console.error('fetchInventoryForChemicals (by id):', error.message);
-    if (data) {
-      for (const row of data) {
-        const entry = { masterProductId: row.id, onHand: Number(row.on_hand_quantity ?? 0), unitType: row.unit_type };
-        map.set(row.id, entry);
-        map.set(row.canonical_name, entry);
-      }
-    }
+    if (data) indexInventoryRows(inventory, data);
   }
 
   if (chemicalNames && chemicalNames.length > 0) {
-    const missingNames = chemicalNames.filter((n) => !map.has(n));
+    const missingNames = chemicalNames.filter((n) => !inventory.byName.has(n));
     if (missingNames.length > 0) {
+      // Chemicals only: a seed or fertilizer that shares a name must not answer for it (WI-18).
       const { data, error } = await supabase
         .from('master_products')
-        .select('id, canonical_name, on_hand_quantity, unit_type')
+        .select('id, canonical_name, on_hand_quantity, unit_type, product_category')
         .eq('farm_id', farmId)
+        .eq('product_category', 'chemical')
         .in('canonical_name', missingNames);
       if (error) console.error('fetchInventoryForChemicals (by name):', error.message);
-      if (data) {
-        for (const row of data) {
-          const entry = { masterProductId: row.id, onHand: Number(row.on_hand_quantity ?? 0), unitType: row.unit_type };
-          map.set(row.id, entry);
-          map.set(row.canonical_name, entry);
-        }
-      }
+      if (data) indexInventoryRows(inventory, data);
     }
   }
 
-  return map;
+  return inventory;
 }
 
 export async function searchFarmChemicals(

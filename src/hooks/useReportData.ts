@@ -3,6 +3,7 @@ import { supabase } from '../lib/supabase';
 import { SeasonSummary, CropSummary, CostBreakdown, FieldPerformanceSummary, SaleRecord } from '../lib/reportTypes';
 import { CropType } from '../lib/database.types';
 import { safeDivide } from '../lib/mathUtils';
+import { allocateCropRevenue, RevenueAllocation } from '../lib/fieldRevenueAllocation';
 
 interface RawField {
   id: string;
@@ -176,6 +177,24 @@ function buildFieldPerformance(
   fields: RawField[],
   sales: RawSale[]
 ): FieldPerformanceSummary[] {
+  const revenueAllocationByCrop = new Map<CropType, RevenueAllocation>();
+  for (const cropType of new Set(fields.map((f) => f.crop_type))) {
+    const cropSales = sales.filter((s) => s.crop_type === cropType);
+    if (cropSales.length === 0) continue;
+    revenueAllocationByCrop.set(
+      cropType,
+      allocateCropRevenue(
+        cropSales.reduce((s, c) => s + c.total_revenue, 0),
+        fields
+          .filter((f) => f.crop_type === cropType)
+          .map((f) => {
+            const y = Array.isArray(f.field_yields) ? f.field_yields[0] : f.field_yields;
+            return { fieldId: f.id, acreage: f.acreage, yieldPerAcre: y?.yield_bushels_per_acre ?? null };
+          })
+      )
+    );
+  }
+
   return fields.map((field) => {
     const cost = Array.isArray(field.field_costs) ? field.field_costs[0] : field.field_costs;
     const yieldRecord = Array.isArray(field.field_yields) ? field.field_yields[0] : field.field_yields;
@@ -212,12 +231,10 @@ function buildFieldPerformance(
     let totalRevenue: number | null = null;
 
     if (cropSales.length > 0 && field.acreage > 0) {
-      const allRevenue = cropSales.reduce((s, c) => s + c.total_revenue, 0);
-      const cropFields = fields.filter((f) => f.crop_type === field.crop_type);
-      const totalCropAcres = cropFields.reduce((s, f) => s + f.acreage, 0);
-      if (totalCropAcres > 0) {
-        const share = safeDivide(field.acreage, totalCropAcres);
-        totalRevenue = allRevenue * share;
+      // WI-17: split by bushels, not acreage — see fieldRevenueAllocation.ts for the rule.
+      const allocated = revenueAllocationByCrop.get(field.crop_type)?.revenueByField.get(field.id);
+      if (allocated !== undefined) {
+        totalRevenue = allocated;
         revenuePerAcre = safeDivide(totalRevenue, field.acreage);
       }
     } else if (yieldPerAcre !== null && seasonPrice) {

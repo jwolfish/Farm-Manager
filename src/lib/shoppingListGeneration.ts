@@ -47,26 +47,38 @@ export async function generateChemicalLines(
   seasonId: string,
   farmId: string
 ): Promise<ShoppingLineInput[]> {
-  const [fieldsRes, overridesRes] = await Promise.all([
-    supabase
-      .from('fields')
-      .select('id, acreage, field_costs(template_id)')
-      .eq('season_id', seasonId),
-    supabase
-      .from('field_cost_overrides')
-      .select('field_id, cost_item_name, override_value')
-      .eq('cost_item_name', 'chemical_programs'),
-  ]);
+  /*
+   * Every read in this function is checked, as the fertilizer path's already are (V-8).
+   * A swallowed read here returns a SHORTER list — a failed override read orders at the
+   * template's programs, a failed program read orders nothing for them — which reads as
+   * a smaller plan and under-orders. That is the WI-15 lie in its quiet direction.
+   */
+  const fieldsRes = await supabase
+    .from('fields')
+    .select('id, acreage, field_costs(template_id)')
+    .eq('season_id', seasonId);
+  if (fieldsRes.error) {
+    throw new Error(`Could not load fields: ${fieldsRes.error.message}`);
+  }
 
   const fields = fieldsRes.data ?? [];
   if (fields.length === 0) return [];
 
-  const fieldIds = fields.map((f: any) => f.id);
-  const overridesFiltered = (overridesRes.data ?? []).filter((o: any) =>
-    fieldIds.includes(o.field_id)
-  );
+  const fieldIds = fields.map((f) => f.id);
+
+  // Bounded by fieldIds — PERF-2 / WI-23. This used to fetch every chemical override the
+  // caller could see, across every season, and filter it in JavaScript.
+  const overridesRes = await supabase
+    .from('field_cost_overrides')
+    .select('field_id, override_value')
+    .eq('cost_item_name', 'chemical_programs')
+    .in('field_id', fieldIds);
+  if (overridesRes.error) {
+    throw new Error(`Could not load field overrides: ${overridesRes.error.message}`);
+  }
+
   const overrideMap = new Map<string, ProgramRef[]>();
-  for (const o of overridesFiltered) {
+  for (const o of overridesRes.data ?? []) {
     // Guarded, not cast — the fertilizer path above does the same. `override_value`
     // is a `Json` column holding EITHER a number or a ProgramRef[]; the query filters
     // to `chemical_programs`, but that guarantee lives three lines away in a query
@@ -89,10 +101,11 @@ export async function generateChemicalLines(
 
   let templateMap = new Map<string, ProgramRef[]>();
   if (templateIds.length > 0) {
-    const { data } = await supabase
+    const { data, error } = await supabase
       .from('cost_templates')
       .select('id, chemical_programs')
       .in('id', templateIds);
+    if (error) throw new Error(`Could not load cost templates: ${error.message}`);
     for (const t of data ?? []) {
       // Guarded, not cast. `chemical_programs` is a `Json` column, so anything
       // that is not an array must mean "no programs" rather than be read as one.
@@ -113,7 +126,7 @@ export async function generateChemicalLines(
 
   if (allProgramIds.size === 0) return [];
 
-  const { data: programs } = await supabase
+  const { data: programs, error: programsError } = await supabase
     .from('chemical_programs')
     .select(`
       id,
@@ -123,6 +136,7 @@ export async function generateChemicalLines(
       )
     `)
     .in('id', [...allProgramIds]);
+  if (programsError) throw new Error(`Could not load chemical programs: ${programsError.message}`);
 
   const programMap = new Map<string, any>();
   for (const p of programs ?? []) programMap.set(p.id, p);
@@ -175,10 +189,12 @@ export async function generateChemicalLines(
 
   const onHandMap = new Map<string, { quantity: number; unitType: string }>();
   if (masterIds.length > 0) {
-    const { data: masters } = await supabase
+    const { data: masters, error: mastersError } = await supabase
       .from('master_products')
       .select('id, on_hand_quantity, unit_type')
       .in('id', masterIds);
+    // A failed read would leave on-hand at 0 and shop for stock already in the shed.
+    if (mastersError) throw new Error(`Could not load on-hand quantities: ${mastersError.message}`);
     for (const m of masters ?? []) {
       onHandMap.set(m.id, { quantity: Number(m.on_hand_quantity ?? 0), unitType: m.unit_type });
     }
@@ -597,14 +613,25 @@ export async function createShoppingList(
   seasonId: string,
   category: 'chemical' | 'fertilizer' | 'seed'
 ): Promise<ShoppingListCreated | { error: string }> {
-  // Generate lines based on category
+  // Generate lines based on category.
+  //
+  // The generators THROW on a failed read, on purpose — a swallowed read returns a
+  // shorter list that under-orders. Caught here and returned as `{ error }`, because
+  // the tab only handles that shape: an uncaught throw left Generate spinning forever
+  // with no message.
   let lines: ShoppingLineInput[];
-  if (category === 'chemical') {
-    lines = await generateChemicalLines(seasonId, farmId);
-  } else if (category === 'fertilizer') {
-    lines = await generateFertilizerLines(seasonId, farmId);
-  } else {
-    lines = await generateSeedLines(seasonId, farmId);
+  try {
+    if (category === 'chemical') {
+      lines = await generateChemicalLines(seasonId, farmId);
+    } else if (category === 'fertilizer') {
+      lines = await generateFertilizerLines(seasonId, farmId);
+    } else {
+      lines = await generateSeedLines(seasonId, farmId);
+    }
+  } catch (err) {
+    return {
+      error: `Could not build the ${category} list: ${err instanceof Error ? err.message : 'unknown error'}. Nothing was saved.`,
+    };
   }
 
   if (lines.length === 0) {
