@@ -224,7 +224,7 @@ export function CostBreakdownComparison({ data, farmName, currentSeasonId }: Pro
               <CartesianGrid strokeDasharray="3 3" stroke="#f0f0f0" />
               <XAxis dataKey="name" tick={{ fontSize: 11 }} angle={-35} textAnchor="end" interval={0} />
               <YAxis tickFormatter={(v) => `$${v}`} tick={{ fontSize: 12 }} />
-              <Tooltip formatter={(v: number) => fmtAcre(v)} />
+              <Tooltip formatter={(v) => fmtAcre(Number(v))} />
               <Legend />
               <Bar dataKey={sA.seasonName} fill="#2563eb" radius={[3, 3, 0, 0]} />
               <Bar dataKey={sB.seasonName} fill="#16a34a" radius={[3, 3, 0, 0]} />

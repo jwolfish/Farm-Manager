@@ -11,6 +11,7 @@ import { recalculateFieldTotal } from './fieldCostOverrides';
 import { Database, Json } from '../database.types';
 
 type CostTemplate = Database['public']['Tables']['cost_templates']['Row'];
+type FieldCostUpdate = Database['public']['Tables']['field_costs']['Update'];
 
 export interface CascadeUpdateResult {
   templateId: string;
@@ -88,7 +89,7 @@ export async function cascadeTemplateUpdate(
     'drying_storage_cost_per_acre',
     'hauling_cost_per_acre',
     'other_expenses_per_acre',
-  ];
+  ] as const satisfies readonly (keyof FieldCostUpdate)[];
 
   const fertilizerCost = Array.isArray(updatedTemplate.fertilizer_programs)
     ? (updatedTemplate.fertilizer_programs as Array<{ cost_per_acre: number }>).reduce((sum, p) => sum + (p.cost_per_acre || 0), 0)
@@ -112,7 +113,7 @@ export async function cascadeTemplateUpdate(
         result.fullyUpdatedFields++;
       }
 
-      const updates: Record<string, unknown> = {};
+      const updates: FieldCostUpdate = {};
 
       if (!overrideMap.has('fertilizer_programs')) {
         updates.fertilizer_cost_per_acre = fertilizerCost;
@@ -122,7 +123,7 @@ export async function cascadeTemplateUpdate(
       }
       for (const field of costFields) {
         if (!overrideMap.has(field)) {
-          updates[field] = (updatedTemplate as Record<string, unknown>)[field] || 0;
+          updates[field] = ((updatedTemplate as Record<string, unknown>)[field] as number | null) || 0;
         }
       }
 
@@ -351,7 +352,7 @@ export async function cascadeProgramUpdateInSeason(
 
       const { error } = await supabase
         .from('cost_templates')
-        .update({ [programField]: programs })
+        .update(programField === 'fertilizer_programs' ? { fertilizer_programs: programs } : { chemical_programs: programs })
         .eq('id', template.id);
 
       if (!error) {

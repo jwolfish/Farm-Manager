@@ -53,11 +53,8 @@ src/pages/reports/costs/BreakEvenAnalysis.tsx | TS2322 | Type '(v: number) => st
 src/pages/reports/costs/BreakEvenAnalysis.tsx | TS2322 | Type '(v: number) => string' is not assignable to type 'LabelFormatter'.
 src/pages/reports/costs/CostPerBushel.tsx | TS2322 | Type '(v: number) => string' is not assignable to type 'LabelFormatter'.
 src/pages/reports/costs/InputEfficiency.tsx | TS2322 | Type '(v: number) => string' is not assignable to type 'LabelFormatter'.
-src/pages/reports/field/FieldCostComparison.tsx | TS2322 | Type '(v: number) => string' is not assignable to type 'Formatter<number, NameType> & ((value: number, name: NameType, item: Payload<number, NameType>, index: number, payload: Payload<number, NameType>[]) => ReactNode | [...])'.
 src/pages/reports/field/FieldCostComparison.tsx | TS2322 | Type '(v: number) => string' is not assignable to type 'LabelFormatter'.
 src/pages/reports/field/FieldROI.tsx | TS2322 | Type '(v: number) => string' is not assignable to type 'LabelFormatter'.
 src/pages/reports/field/FieldYieldRanking.tsx | TS2322 | Type '(v: number) => string' is not assignable to type 'LabelFormatter'.
-src/pages/reports/profitability/CostBreakdownComparison.tsx | TS2322 | Type '(v: number) => string' is not assignable to type 'Formatter<number, NameType> & ((value: number, name: NameType, item: Payload<number, NameType>, index: number, payload: Payload<number, NameType>[]) => ReactNode | [...])'.
-src/pages/reports/sales/PricingPerformance.tsx | TS2322 | Type '(v: number) => string' is not assignable to type 'Formatter<number, NameType> & ((value: number, name: NameType, item: Payload<number, NameType>, index: number, payload: Payload<number, NameType>[]) => ReactNode | [...])'.
 src/pages/reports/seeds/SeedBagRequirements.tsx | TS2345 | Argument of type 'string | null' is not assignable to parameter of type 'string'.
 src/pages/reports/seeds/SeedBagRequirements.tsx | TS2345 | Argument of type 'string | null' is not assignable to parameter of type 'string'.
