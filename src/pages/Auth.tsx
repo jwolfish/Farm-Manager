@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { Wheat, CheckCircle, ArrowLeft } from 'lucide-react';
+import { describeAuthError, newPasswordProblem, MIN_PASSWORD_LENGTH } from '../lib/authMessages';
 
 type Mode = 'login' | 'signup' | 'forgot' | 'reset';
 
@@ -51,7 +52,12 @@ export function Auth() {
           setError('Please enter your full name');
           return;
         }
-        await signUp(email, password, fullName);
+        const problem = newPasswordProblem(password);
+        if (problem) {
+          setError(problem);
+          return;
+        }
+        await signUp(email, password, fullName.trim());
       } else if (mode === 'forgot') {
         await resetPasswordForEmail(email);
         setForgotSent(true);
@@ -60,8 +66,9 @@ export function Auth() {
           setError('Passwords do not match');
           return;
         }
-        if (password.length < 6) {
-          setError('Password must be at least 6 characters');
+        const problem = newPasswordProblem(password);
+        if (problem) {
+          setError(problem);
           return;
         }
         await updatePassword(password);
@@ -69,7 +76,8 @@ export function Auth() {
         window.location.hash = '';
       }
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'An error occurred');
+      // Never the server's wording — on sign-up that said "User already registered" (WI-6).
+      setError(describeAuthError(mode, err));
     } finally {
       setLoading(false);
     }
@@ -197,8 +205,14 @@ export function Auth() {
                     className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all"
                     placeholder="••••••••"
                     required
-                    minLength={6}
+                    /* New passwords only. Sign-in must still accept an existing account's
+                       older, shorter password, so no minimum is enforced there. */
+                    minLength={mode === 'login' ? undefined : MIN_PASSWORD_LENGTH}
+                    autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
                   />
+                  {mode !== 'login' && (
+                    <p className="mt-1.5 text-xs text-gray-500">At least {MIN_PASSWORD_LENGTH} characters.</p>
+                  )}
                 </div>
               )}
 
@@ -215,7 +229,8 @@ export function Auth() {
                     className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-green-500 focus:border-transparent transition-all"
                     placeholder="••••••••"
                     required
-                    minLength={6}
+                    minLength={MIN_PASSWORD_LENGTH}
+                    autoComplete="new-password"
                   />
                 </div>
               )}

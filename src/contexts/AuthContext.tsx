@@ -165,18 +165,30 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     const { data, error } = await supabase.auth.signUp({
       email,
       password,
+      // Read by the create_user_profile trigger (its own migration), which makes
+      // the profile server-side so it exists even when there is no session yet.
+      options: { data: { full_name: fullName } },
     });
 
     if (error) throw error;
 
-    if (data.user) {
+    /*
+     * WI-6. The client write is kept, but as insert-if-missing, so it is correct in
+     * BOTH states: before the trigger is applied it creates the profile exactly as it
+     * always did; after, the trigger has already made the row and this is a no-op.
+     * A plain insert would hit the trigger's row and report a successful sign-up as a
+     * failure — which is why the migration must be applied only after this is live.
+     *
+     * Skipped with no session (email confirmation on): RLS would refuse it, which is
+     * the orphaned-account bug WI-6 describes. The trigger covers that case.
+     */
+    if (data.user && data.session) {
       const { error: profileError } = await supabase
         .from('user_profiles')
-        .insert({
-          id: data.user.id,
-          email,
-          full_name: fullName,
-        });
+        .upsert(
+          { id: data.user.id, email, full_name: fullName },
+          { onConflict: 'id', ignoreDuplicates: true }
+        );
 
       if (profileError) throw profileError;
     }
