@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { X, Check } from 'lucide-react';
+import { ResponsiveModal } from '../ResponsiveModal';
 import { supabase } from '../../lib/supabase';
 import { queueCascadeTask, type TaskType, type CascadeTaskData } from '../../lib/backgroundTasks';
 import { convertUnits, describeConversionFailure } from '../../lib/unitConversions';
@@ -26,6 +26,8 @@ interface Props {
   onClose: () => void;
   onComplete: () => void;
 }
+
+const FORM_ID = 'mark-purchased-form';
 
 export function MarkPurchasedModal({ line, onClose, onComplete }: Props) {
   const { user } = useAuth();
@@ -127,73 +129,63 @@ export function MarkPurchasedModal({ line, onClose, onComplete }: Props) {
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div className="absolute inset-0 bg-black/40" onClick={onClose} />
-      <div className="relative bg-white rounded-2xl shadow-xl w-full max-w-md p-6">
-        <button onClick={onClose} className="absolute top-4 right-4 text-gray-400 hover:text-gray-600">
-          <X className="w-5 h-5" />
-        </button>
-
-        <div className="flex items-center gap-3 mb-5">
-          <div className="w-10 h-10 rounded-full bg-green-100 flex items-center justify-center">
-            <Check className="w-5 h-5 text-green-700" />
-          </div>
-          <div>
-            <h3 className="text-lg font-semibold text-gray-900">
-              {isAlreadyPurchased ? 'Edit Purchase' : 'Mark as Purchased'}
-            </h3>
-            <p className="text-sm text-gray-500">{line.product_name}</p>
-          </div>
-        </div>
-
-        <form onSubmit={handleSubmit} className="space-y-4">
-          {/*
-            MOB-4. The native `required` these two carried is not lost: handleSubmit
-            validates both explicitly and names which one failed, which is better than
-            a browser tooltip. NumberField's own `required` only renders the asterisk.
-          */}
-          <NumberField
-            label={`Purchased Quantity (${line.unit_type})`}
-            value={quantity}
-            onChange={setQuantity}
-            suffix={line.unit_type}
-            required
-            help="Adjust if the final order quantity differs (e.g. full drums, bags)."
-          />
-
-          <NumberField
-            label={`Purchased Price per ${line.unit_type}`}
-            value={price}
-            onChange={setPrice}
-            prefix="$"
-            required
-            help="This price will update the product's cost across your crop plan."
-          />
-
+    <ResponsiveModal
+      open
+      onClose={onClose}
+      title={isAlreadyPurchased ? 'Edit Purchase' : 'Mark as Purchased'}
+      subtitle={line.product_name}
+      footer={
+        <div className="space-y-3">
+          {/* In the footer so it is on screen beside the button that produced it. */}
           {error && (
-            <div className="p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
+            <div role="alert" className="p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
               {error}
             </div>
           )}
-
-          <div className="flex gap-3 pt-2">
+          <div className="flex gap-3">
             <button
               type="submit"
+              form={FORM_ID}
               disabled={saving}
-              className="flex-1 px-4 py-2.5 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700 transition-colors disabled:opacity-50"
+              className="flex-1 px-4 py-3 bg-green-600 text-white rounded-lg font-medium hover:bg-green-700 transition-colors disabled:opacity-50"
             >
               {saving ? 'Saving...' : isAlreadyPurchased ? 'Update Purchase' : 'Confirm Purchase'}
             </button>
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2.5 bg-gray-100 text-gray-700 rounded-lg font-medium hover:bg-gray-200 transition-colors"
+              className="px-4 py-3 bg-gray-100 text-gray-700 rounded-lg font-medium hover:bg-gray-200 transition-colors"
             >
               Cancel
             </button>
           </div>
-        </form>
-      </div>
-    </div>
+        </div>
+      }
+    >
+      <form id={FORM_ID} onSubmit={handleSubmit} className="space-y-4 pb-4">
+        {/*
+          MOB-4. The native `required` these two carried is not lost: handleSubmit
+          validates both explicitly and names which one failed, which is better than
+          a browser tooltip. NumberField's own `required` only renders the asterisk.
+        */}
+        <NumberField
+          label={`Purchased Quantity (${line.unit_type})`}
+          value={quantity}
+          onChange={setQuantity}
+          suffix={line.unit_type}
+          required
+          help="Adjust if the final order quantity differs (e.g. full drums, bags)."
+        />
+
+        <NumberField
+          label={`Purchased Price per ${line.unit_type}`}
+          value={price}
+          onChange={setPrice}
+          prefix="$"
+          required
+          help="This price will update the product's cost across your crop plan."
+        />
+      </form>
+    </ResponsiveModal>
   );
 }
