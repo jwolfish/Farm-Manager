@@ -336,7 +336,7 @@ Verified against the tree today, not taken from the status doc.
 |---|---|
 | **WI-17** field revenue allocation | **Untouched.** `useReportData.ts:214` still allocates crop revenue by acreage share, so a field that yielded nothing is still credited revenue. Confirmed in code |
 | **WI-18** inventory lookup | **Untouched.** `workOrderCrud.ts:426–427` and `:444–445` still key one map by both `row.id` and `row.canonical_name`, so a seed and a chemical sharing a name collide |
-| **WI-6 / SEC-6** signup hygiene | **Untouched.** Raw auth errors still reach the UI (account enumeration), no password policy on signup, profile row still inserted client-side. The `auth_leaked_password_protection` advisor warning is this |
+| **WI-6 / SEC-6** signup hygiene | **Done 22–23 Sep 2026** (PRs #17, #19) except leaked-password protection, which is Pro-plan only — this project is on the free plan. *As of 6 Sep it read:* **Untouched.** Raw auth errors still reach the UI (account enumeration), no password policy on signup, profile row still inserted client-side. The `auth_leaked_password_protection` advisor warning is this |
 
 ### Performance — open, and only one of them is a mobile issue
 

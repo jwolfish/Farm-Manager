@@ -22,7 +22,8 @@ interface AuthContextType {
   session: Session | null;
   loading: boolean;
   signIn: (email: string, password: string) => Promise<void>;
-  signUp: (email: string, password: string, fullName: string) => Promise<void>;
+  /** Resolves `true` when the account waits on an email confirmation (no session yet). */
+  signUp: (email: string, password: string, fullName: string) => Promise<boolean>;
   signOut: () => Promise<void>;
   resetPasswordForEmail: (email: string) => Promise<void>;
   updatePassword: (newPassword: string) => Promise<void>;
@@ -167,7 +168,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       password,
       // Read by the create_user_profile trigger (its own migration), which makes
       // the profile server-side so it exists even when there is no session yet.
-      options: { data: { full_name: fullName } },
+      // emailRedirectTo: the confirmation link returns to whichever origin signed up
+      // (production, or a deploy preview) rather than always the dashboard's Site URL.
+      options: { data: { full_name: fullName }, emailRedirectTo: window.location.origin },
     });
 
     if (error) throw error;
@@ -192,6 +195,14 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
 
       if (profileError) throw profileError;
     }
+
+    /*
+     * No session means Supabase is waiting on the confirmation email (turned on
+     * 23 Sep 2026). With confirmation on, an address that ALREADY has an account also
+     * comes back this way, with no error — which is the point: both see the same
+     * "check your email" screen, so the form no longer reveals who has an account.
+     */
+    return !data.session;
   }, []);
 
   const signOut = useCallback(async () => {

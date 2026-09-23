@@ -20,6 +20,7 @@ export function Auth() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [forgotSent, setForgotSent] = useState(false);
+  const [signupSent, setSignupSent] = useState(false);
   const [resetDone, setResetDone] = useState(false);
   const { signIn, signUp, resetPasswordForEmail, updatePassword } = useAuth();
 
@@ -37,6 +38,7 @@ export function Auth() {
     setMode(next);
     setError('');
     setForgotSent(false);
+    setSignupSent(false);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -57,7 +59,10 @@ export function Auth() {
           setError(problem);
           return;
         }
-        await signUp(email, password, fullName.trim());
+        // With email confirmation on there is no session yet, so nothing else on screen
+        // would change — say what happens next instead of leaving the form sitting there.
+        const needsConfirmation = await signUp(email, password, fullName.trim());
+        if (needsConfirmation) setSignupSent(true);
       } else if (mode === 'forgot') {
         await resetPasswordForEmail(email);
         setForgotSent(true);
@@ -124,6 +129,24 @@ export function Auth() {
               <button
                 onClick={() => switchMode('login')}
                 className="text-green-600 hover:text-green-700 font-medium text-sm transition-colors"
+              >
+                Back to sign in
+              </button>
+            </div>
+          ) : mode === 'signup' && signupSent ? (
+            /* Sign-up — waiting on the confirmation email. Worded so it reads the same
+               whether or not the address already had an account. */
+            <div className="text-center">
+              <div className="flex justify-center mb-4">
+                <CheckCircle className="w-12 h-12 text-green-500" />
+              </div>
+              <p className="text-gray-800 font-medium mb-2">Check your inbox</p>
+              <p className="text-sm text-gray-500 mb-6">
+                We've sent a confirmation link to <span className="font-medium text-gray-700">{email}</span>. Open it to finish setting up your account, then sign in. Check your spam folder if you don't see it.
+              </p>
+              <button
+                onClick={() => switchMode('login')}
+                className="text-green-600 hover:text-green-700 font-medium text-sm transition-colors min-h-[44px] px-2"
               >
                 Back to sign in
               </button>
