@@ -1,6 +1,6 @@
 # Farm Manager Remediation — Status
 
-**Last updated:** 6 Sep 2026 — Rounds 1–6 (steps 1–3) complete, fertilizer F-1 … F-6
+**Last updated:** 23 Sep 2026 (see the last section, PRs #14–#17). Previously 6 Sep 2026 — Rounds 1–6 (steps 1–3) complete, fertilizer F-1 … F-6
 complete, shopping-list coverage complete, and **field-level fertilizer rates V-0 … V-6 and
 V-8 complete, confirmed in the running app**. Only V-7, the optional CSV import, remains,
 and it is **deferred by the owner's decision** until the grid has been used for a season.
@@ -106,27 +106,25 @@ verified byte-for-byte. *(This paragraph used to end "the one thing left is a 5-
 in the running app." That check has been run and it passed — all nine overrides survived a
 live cascade, with the two fields that correctly moved by exactly $80 as the control.)*
 
-| Measured 20 Sep 2026 | |
+| Measured 23 Sep 2026, on `main` at `c35f0b6` | |
 |---|---|
-| Tests | **508 passing**, 18 files (490 before the cost-template copy added 18; 489 before MOB-4 added 1; 463 before the harvest tracker added 26; 456 before the ActionMenu fix added 7; 435 before the field-editing work added 21; 422 before WI-29a added 13; 401 before R-6 added 21; 386 before R-1 added 15; 380 before V-8 added 6; 347 before V-6 added 25) |
-| TypeScript | **63 errors** (103 at review, 98 before WI-19, 75 before V-8 replaced two `Json` casts with `Array.isArray` guards, 73 before the chemical path got the same four, 69 before WI-29b deleted a dead parameter, 68 before the field-editing work fixed three, 65 before the harvest tracker fixed two — the undeclared `readOnly` on `Yields` and a hand-written interface declaring a nullable cost column non-null). Set compared with positions stripped at every step |
-| ESLint | **105 errors, 27 warnings.** **The split recorded here was wrong from 6 Sep to 10 Sep** — it said 105 / 28 while the committed baseline held 106 / 27. The total, 133, was right; only the split was not, and no work moved a warning. One error went on 10 Sep with a dead parameter. Quote **105 / 27**; the old split was never measured |
-| Build | succeeds — **46 chunks. First paint 430.27 kB raw / 122.14 kB gzip**, which is the single `<script>` in `dist/index.html`. The cross-farm cost-template copy added 10.46 kB raw / 2.78 kB gz on 20 Sep, A/B'd against `main` at 419.81 / 119.37 — and that `main` figure agrees with MOB-4's, so it is not currently drifting. WI-22 landed 6 Sep and took it from 1,794.82 kB / 479.30 gz to 102.11 gz by making 12 of 13 pages `React.lazy`; WI-29a then added 16.29 kB gz of `react-router-dom`, WI-29b 0.47 kB gz of module boundaries, the Netlify move 0.24 kB gz for `BrowserRouter`, and the field-editing work 0.05 kB gz — all eager. Still inside WI-22's ≤ 300 kB gz target. **Quote first paint, not a "main chunk"** |
-| Migrations | **65 files** (this row said 64 until 20 Sep; the 11 Sep invitation fix had already made it 65), matching the database one-for-one |
+| Tests | **533 passing**, 21 files (508 before the 22–23 Sep round added 25; 490 before the cost-template copy added 18; 489 before MOB-4 added 1; 463 before the harvest tracker added 26; 456 before the ActionMenu fix added 7; 435 before the field-editing work added 21; 422 before WI-29a added 13; 401 before R-6 added 21; 386 before R-1 added 15; 380 before V-8 added 6; 347 before V-6 added 25) |
+| TypeScript | **59 errors** (63 before the 22–23 Sep round fixed four — three recharts formatter signatures and the work-order reset that dropped `masterProductId`; 103 at review, 98 before WI-19, 75 before V-8 replaced two `Json` casts with `Array.isArray` guards, 73 before the chemical path got the same four, 69 before WI-29b deleted a dead parameter, 68 before the field-editing work fixed three, 65 before the harvest tracker fixed two — the undeclared `readOnly` on `Yields` and a hand-written interface declaring a nullable cost column non-null). Set compared with positions stripped at every step |
+| ESLint | **103 errors, 27 warnings** (105 / 27 before PERF-2 deleted two `(o: any)`, 22 Sep). **The split recorded here was wrong from 6 Sep to 10 Sep** — it said 105 / 28 while the committed baseline held 106 / 27. The total, 133, was right; only the split was not, and no work moved a warning. One error went on 10 Sep with a dead parameter. Quote **105 / 27**; the old split was never measured |
+| Build | succeeds — **47 chunks. First paint 431.80 kB raw / 122.69 kB gzip**, which is the single `<script>` in `dist/index.html`. The 22–23 Sep round added 1.54 kB raw / 0.55 kB gz, nearly all WI-6 sign-in messages (eager, because `Auth` is); `supabase-js` is pinned `~2.57.4` because 2.117 would have added 24.7 kB gz. Before that, it was 430.27 / 122.14. The cross-farm cost-template copy added 10.46 kB raw / 2.78 kB gz on 20 Sep, A/B'd against `main` at 419.81 / 119.37 — and that `main` figure agrees with MOB-4's, so it is not currently drifting. WI-22 landed 6 Sep and took it from 1,794.82 kB / 479.30 gz to 102.11 gz by making 12 of 13 pages `React.lazy`; WI-29a then added 16.29 kB gz of `react-router-dom`, WI-29b 0.47 kB gz of module boundaries, the Netlify move 0.24 kB gz for `BrowserRouter`, and the field-editing work 0.05 kB gz — all eager. Still inside WI-22's ≤ 300 kB gz target. **Quote first paint, not a "main chunk"** |
+| Migrations | **66 files**, matching the database one-for-one — WI-6 `create_user_profile_on_signup` applied 23 Sep as `20260923014253` |
 | Edge function | **version 19**, running source confirmed identical to the repo by sha256 immediately after the SEC-8 deploy, 6 Sep |
-| Security advisors | 14 WARN, unchanged after the harvest migration, which creates no function, table or policy — 13 are the by-design `authenticated_security_definer_function_executable` lint that fires on every RPC, 1 is `auth_leaked_password_protection` (WI-6). No new class of finding. V-6’s internal `apply_field_fertilizer_rates` is correctly absent, being executable by neither role |
+| Security advisors | **15 WARN, measured 23 Sep after the WI-6 migration** — 14 are the by-design lint and 1 is leaked-password protection, a dashboard toggle that is the owner's. The WI-6 trigger function is correctly absent, being executable by neither role. (Before: 14 WARN — 13 were the by-design `authenticated_security_definer_function_executable` lint that fires on every RPC, 1 is `auth_leaked_password_protection` (WI-6). No new class of finding. V-6’s internal `apply_field_fertilizer_rates` is correctly absent, being executable by neither role |
 | Cascade tasks | **58 total, 0 failed** |
 | SEC-5 policy matrix | **120 assertions, 0 failures** (extended at V-1 and re-run against the live schema; was 101 at F-3). **Not re-run since V-1** — V-4 and V-6 changed function bodies and grants, not tables or policies, so the matrix has nothing new to exercise; each was attacked directly in its own rehearsal instead |
 
 **Closed:** SEC-1, SEC-2, SEC-3, SEC-4, SEC-5, SEC-7, **SEC-8** · WI-9, WI-10, WI-11, WI-12, WI-13,
-WI-14, WI-15, WI-16 · LOG-1, LOG-2, LOG-3, LOG-4, LOG-5, LOG-7, LOG-8, LOG-10 · plus four
+WI-14, WI-15, WI-16, **WI-17**, **WI-18**, **WI-23 / PERF-2** (22–23 Sep) · LOG-1, LOG-2, LOG-3, LOG-4, LOG-5, LOG-7, LOG-8, LOG-10 · plus four
 collaboration defects found by testing, none of which were in the original review.
 
-**Partial:** SEC-6 (WI-6 untouched) · WI-19 (103 → 69; **all 73 read for defects on 6 Sep and none found**, 69 remain,
+**Partial:** SEC-6 / WI-6 (three of four parts done 22–23 Sep; the rest are Supabase dashboard settings — see the WI-6 section) · WI-19 (103 → 59; **all 73 read for defects on 6 Sep and none found**, 69 remain,
 86 `no-explicit-any` the substantive group) · WI-20 (435 tests, but nowhere near the
-80 % target) · WI-23 / PERF-2 (V-8 bounded the shopping list's fertilizer override query
-with `.in('field_id', …)`; the chemical one at `shoppingListGeneration.ts:57` still selects
-every visible row and filters in JavaScript) · WI-21 (core gate done; the types-drift and
+80 % target) · WI-21 (core gate done; the types-drift and
 pgTAP jobs need Supabase credentials in repository secrets).
 
 **Newly closed 6 Sep:** WI-21 core gate · **WI-22 / PERF-1** — first paint 479.30 →
@@ -4455,3 +4453,49 @@ recorded above.
 **Still not done:** no dispatched-versus-tapped gap has been closed on this screen — the
 owner drove it in a browser, not by thumb on a phone, and the `ActionMenu` post-mortem is
 explicit that those are different tests.
+
+### Upgrades, correctness and mobile — PRs #14–#17 — 22–23 Sep 2026
+
+Four PRs from one review of "what next", merged in order on 23 Sep. Detail is in each PR
+and commit; this is the record.
+
+| PR | What landed |
+|---|---|
+| #14 | In-range package updates + `npm audit fix`: production audit 3 → **0**. `supabase-js` **held and pinned `~2.57.4`** — 2.117 was in range and added 24.7 kB gz to first paint for nothing used |
+| #15 | **WI-17** field revenue split by bushels (`fieldRevenueAllocation.ts`); **WI-18** id/name inventory maps kept apart; **PERF-2** chemical override query bounded and every read in that path checked |
+| #16 | Home-screen install (manifest, Wheat icon, `display: minimal-ui`); six field pop-ups on `ResponsiveModal` |
+| #17 | **WI-6**: neutral sign-in errors, 10-character new passwords, and the `create_user_profile` trigger |
+
+**Real defects found, each measured on the old code before it was fixed:**
+
+- Sale and hedge forms: `12,500` bushels saved as **12** (`parseFloat` on a text box — MOB-4's trap, in two more places).
+- Work-order edit: acres seeded as `"1,050.0"`, which a `type="number"` box renders **empty** and `parseFloat` reads as **1** — an untouched Save set a 1,050-acre order to one acre. Latent: no program covers 1,000 ac yet.
+- Work-order "Reset to program defaults" dropped every `masterProductId`, so Apply refused the reset order. It was a TS2345 in the baseline — **the fifth real defect read out of it**.
+- The chemical picker opened inside `overflow-hidden`: 40 of 134 px cut off.
+- A failed shopping-list read left **Generate spinning forever** — `createShoppingList` did not catch what the generators throw.
+- 2025 corn, Field ROI: Umek (122.8 bu/ac) and Home West of Bins (255) both read **$633.02/ac**. Now $382.91 and $795.13; crop totals reconcile to the cent.
+
+**THE ROLLBACK, and why the migration waited.** Four merges a minute apart started four
+production deploys, and the **oldest** (`ca17634`, #14 only) finished last — production went
+live without #15–#17. Every run was green. It was caught only because WI-6's migration must
+not be applied until the new client is live: the old client's plain profile insert fails
+against the trigger (proved in the rehearsal), so applying on top of the rolled-back build
+would have made **every sign-up report failure**. The live bundle was fetched and grepped
+for WI-6's copy — absent — the newest deploy was re-run, the bundle re-checked, and only
+then was the migration applied. The follow-up adds a concurrency group and a
+"newest commit on main?" gate to the deploy job; see *Hosting* in `CLAUDE.md`.
+
+**WI-6 migration, applied 23 Sep as `20260923014253`.** Rehearsed first, 7/7, rollback
+confirmed. After applying: a rolled-back sign-up through the **live** trigger made the
+profile, and the live client's insert-if-missing passed RLS on top of it; neither role can
+execute the function; advisor unchanged at 15 WARN. `database.types.ts` regenerated with
+the local CLI — **no change**, because trigger functions are not emitted.
+
+**Not done, and the owner's:** Supabase → Authentication → turn on leaked-password
+protection, set the minimum password length to 10, and turn on email confirmation — the
+last is the only thing that fully stops the sign-up form revealing which addresses have
+accounts, and the trigger is what makes it safe. **Not verified:** any of the six pop-ups
+by a real thumb, installing to a home screen, or opening a report from the installed icon.
+
+**Mobile counts after this round:** raw `fixed inset-0` modals **21 → 15** files,
+`ResponsiveModal` in **14**, `NumberField` in **10**, `type="number"` **40 → 38**.

@@ -1,9 +1,9 @@
 /*
   # A profile is created by the database when an account is created (WI-6)
 
-  ## NOT YET APPLIED — apply only AFTER the client change in the same PR is live.
+  ## APPLIED 23 Sep 2026 (version 20260923014253), after the client change was live.
 
-  Until then the live client does a PLAIN insert into `user_profiles` right after sign-up.
+  It had to wait because the previous client did a PLAIN insert into `user_profiles` right after sign-up.
   With this trigger in place that insert would collide with the trigger's row, throw, and
   report a successful sign-up as a failure. The client in this PR does insert-if-missing,
   which is correct with or without the trigger — so the order is: merge, let the deploy
