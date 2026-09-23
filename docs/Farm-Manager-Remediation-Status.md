@@ -114,7 +114,7 @@ live cascade, with the two fields that correctly moved by exactly $80 as the con
 | Build | succeeds — **47 chunks. First paint 431.80 kB raw / 122.69 kB gzip**, which is the single `<script>` in `dist/index.html`. The 22–23 Sep round added 1.54 kB raw / 0.55 kB gz, nearly all WI-6 sign-in messages (eager, because `Auth` is); `supabase-js` is pinned `~2.57.4` because 2.117 would have added 24.7 kB gz. Before that, it was 430.27 / 122.14. The cross-farm cost-template copy added 10.46 kB raw / 2.78 kB gz on 20 Sep, A/B'd against `main` at 419.81 / 119.37 — and that `main` figure agrees with MOB-4's, so it is not currently drifting. WI-22 landed 6 Sep and took it from 1,794.82 kB / 479.30 gz to 102.11 gz by making 12 of 13 pages `React.lazy`; WI-29a then added 16.29 kB gz of `react-router-dom`, WI-29b 0.47 kB gz of module boundaries, the Netlify move 0.24 kB gz for `BrowserRouter`, and the field-editing work 0.05 kB gz — all eager. Still inside WI-22's ≤ 300 kB gz target. **Quote first paint, not a "main chunk"** |
 | Migrations | **66 files**, matching the database one-for-one — WI-6 `create_user_profile_on_signup` applied 23 Sep as `20260923014253` |
 | Edge function | **version 19**, running source confirmed identical to the repo by sha256 immediately after the SEC-8 deploy, 6 Sep |
-| Security advisors | **15 WARN, measured 23 Sep after the WI-6 migration** — 14 are the by-design lint and 1 is leaked-password protection, a dashboard toggle that is the owner's. The WI-6 trigger function is correctly absent, being executable by neither role. (Before: 14 WARN — 13 were the by-design `authenticated_security_definer_function_executable` lint that fires on every RPC, 1 is `auth_leaked_password_protection` (WI-6). No new class of finding. V-6’s internal `apply_field_fertilizer_rates` is correctly absent, being executable by neither role |
+| Security advisors | **15 WARN, measured 23 Sep after the WI-6 migration** — 14 are the by-design lint and 1 is leaked-password protection, which Supabase offers **on the Pro plan only** — this project is on the free plan, so that warning is **permanent and accepted**, not an open item. Do not chase it. The WI-6 trigger function is correctly absent, being executable by neither role. (Before: 14 WARN — 13 were the by-design `authenticated_security_definer_function_executable` lint that fires on every RPC, 1 is `auth_leaked_password_protection` (WI-6). No new class of finding. V-6’s internal `apply_field_fertilizer_rates` is correctly absent, being executable by neither role |
 | Cascade tasks | **58 total, 0 failed** |
 | SEC-5 policy matrix | **120 assertions, 0 failures** (extended at V-1 and re-run against the live schema; was 101 at F-3). **Not re-run since V-1** — V-4 and V-6 changed function bodies and grants, not tables or policies, so the matrix has nothing new to exercise; each was attacked directly in its own rehearsal instead |
 
@@ -122,7 +122,7 @@ live cascade, with the two fields that correctly moved by exactly $80 as the con
 WI-14, WI-15, WI-16, **WI-17**, **WI-18**, **WI-23 / PERF-2** (22–23 Sep) · LOG-1, LOG-2, LOG-3, LOG-4, LOG-5, LOG-7, LOG-8, LOG-10 · plus four
 collaboration defects found by testing, none of which were in the original review.
 
-**Partial:** SEC-6 / WI-6 (three of four parts done 22–23 Sep; the rest are Supabase dashboard settings — see the WI-6 section) · WI-19 (103 → 59; **all 73 read for defects on 6 Sep and none found**, 69 remain,
+**Partial:** SEC-6 / WI-6 — **done 23 Sep except leaked-password protection, which the free plan does not offer** (neutral errors, 10-character passwords in the client AND the dashboard, server-side profile trigger, email confirmation on) · WI-19 (103 → 59; **all 73 read for defects on 6 Sep and none found**, 69 remain,
 86 `no-explicit-any` the substantive group) · WI-20 (435 tests, but nowhere near the
 80 % target) · WI-21 (core gate done; the types-drift and
 pgTAP jobs need Supabase credentials in repository secrets).
@@ -4491,11 +4491,20 @@ profile, and the live client's insert-if-missing passed RLS on top of it; neithe
 execute the function; advisor unchanged at 15 WARN. `database.types.ts` regenerated with
 the local CLI — **no change**, because trigger functions are not emitted.
 
-**Not done, and the owner's:** Supabase → Authentication → turn on leaked-password
-protection, set the minimum password length to 10, and turn on email confirmation — the
-last is the only thing that fully stops the sign-up form revealing which addresses have
-accounts, and the trigger is what makes it safe. **Not verified:** any of the six pop-ups
-by a real thumb, installing to a home screen, or opening a report from the installed icon.
+**Dashboard settings — done by the owner 23 Sep:** minimum password length 10, and email
+confirmation ON, which is what fully stops the sign-up form revealing which addresses have
+accounts (the trigger is what made it safe). **Leaked-password protection is Pro-plan only
+and this project is on the free plan**, so the advisor's `auth_leaked_password_protection`
+warning stays — accepted, not open. Turning confirmation on exposed one gap: a successful
+sign-up then showed nothing at all, because it used to log straight in. PR #19 adds the
+"Check your inbox" screen.
+
+**Confirmed on a real phone by the owner, 23 Sep:** Add Sale, Adjust Inventory and Mark as
+Purchased — keypad, sizing, live totals, errors beside Save. (The comma fix in the sale and
+hedge forms is unreachable from a US phone keypad, which has no comma; it matters on a
+desktop keyboard or a pasted number.) **Still not verified:** Add Hedge and the two
+work-order pop-ups by thumb, installing to a home screen, and opening a report from the
+installed icon.
 
 **Mobile counts after this round:** raw `fixed inset-0` modals **21 → 15** files,
 `ResponsiveModal` in **14**, `NumberField` in **10**, `type="number"` **40 → 38**.
