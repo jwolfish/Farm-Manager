@@ -5,6 +5,7 @@ import { exportSprayPlannerPDF, exportSprayLogPDF, exportTableToCSV } from '../l
 import type { CrossTotalRow } from '../lib/exportUtils';
 import { CropType, Json } from '../lib/database.types';
 import { ProgramReference } from '../lib/templateUtils';
+import { ChemicalInventory, emptyChemicalInventory, lookupChemicalInventory } from '../lib/chemicalInventory';
 import {
   saveWorkOrder,
   loadWorkOrders,
@@ -121,7 +122,7 @@ export function useSprayPlanner(currentSeasonId: string | null, effectiveUserId:
 
   const [savedWorkOrders, setSavedWorkOrders] = useState<SavedWorkOrder[]>([]);
   const [savedLoading, setSavedLoading] = useState(false);
-  const [inventoryMap, setInventoryMap] = useState<Map<string, { masterProductId: string; onHand: number; unitType: string }>>(new Map());
+  const [inventoryMap, setInventoryMap] = useState<ChemicalInventory>(emptyChemicalInventory);
   const [savingProgramId, setSavingProgramId] = useState<string | null>(null);
   // Work order id whose apply/unapply is currently in flight.
   const [applyingId, setApplyingId] = useState<string | null>(null);
@@ -536,7 +537,7 @@ export function useSprayPlanner(currentSeasonId: string | null, effectiveUserId:
         acreage: f.acreage,
       })),
       lines: wo.chemTotals.map((ct, idx) => {
-        const inv = inventoryMap.get(ct.masterProductId ?? '') ?? inventoryMap.get(ct.chemicalName);
+        const inv = lookupChemicalInventory(inventoryMap, ct.masterProductId, ct.chemicalName);
         return {
           masterProductId: ct.masterProductId ?? inv?.masterProductId ?? null,
           chemicalName: ct.chemicalName,
