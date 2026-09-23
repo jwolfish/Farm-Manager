@@ -220,7 +220,10 @@ closed (WI-22's bundle, WI-29's router). What is left is layout and input hygien
 
 ## Known baseline — do not treat these as regressions you caused
 
-- `npx tsc --noEmit -p tsconfig.app.json` reports **63 errors** (was 103 at review, 98
+- `npx tsc --noEmit -p tsconfig.app.json` reports **59 errors** (63 until the 22–23 Sep
+  round fixed four: three recharts formatter signatures, and a work-order "Reset to program
+  defaults" that dropped every chemical's `masterProductId` — a real bug that had sat in the
+  baseline as a TS2345. Was 103 at review, 98
   before WI-19 began; 75 until V-8 replaced two `Json`-to-`ProgramRef[]` casts with real
   `Array.isArray` guards, and 73 until the chemical path got the same four guards on
   6 Sep, 69 until WI-29b deleted a dead parameter, and 68 until the field-editing work
@@ -232,7 +235,8 @@ closed (WI-22's bundle, WI-29's router). What is left is layout and input hygien
   12 errors resolved, 17 revealed that the stale hand-written file had been hiding —
   before the unused-symbol sweep brought it to 76. See the WI-19 section of the status
   doc for the full accounting; every movement is itemised there.
-- `npx eslint .` reports **105 errors, 27 warnings** (was 136/28 at review; 109 until V-8
+- `npx eslint .` reports **103 errors, 27 warnings** (105 / 27 until PERF-2 deleted two
+  `(o: any)` on 22 Sep; was 136/28 at review; 109 until V-8
   removed one `prefer-const` and one `no-explicit-any` from the code it rewrote, 107 until
   WI-29b deleted a dead parameter and an unnecessary dependency, and 106 until the
   field-editing work deleted another on 10 Sep). **`App.tsx` itself now reports zero**,
@@ -242,10 +246,14 @@ closed (WI-22's bundle, WI-29's router). What is left is layout and input hygien
   baseline held 106 / 27 the whole time. The total, 133, was right; nothing had moved a
   warning. Quote the split above, and if it ever disagrees with `baselines/eslint.txt`,
   the baseline is the measurement and this sentence is not.
-- `npx vite build` succeeds and emits **46 chunks**. The number that matters is **first
-  paint: 430.27 kB raw / 122.14 kB gzip**, which is `dist/index.html`'s single
-  `<script>` and nothing else — measure it that way, by reading the tags out of
-  `index.html`, not by looking for "the main chunk". The cross-farm cost-template copy
+- `npx vite build` succeeds and emits **47 chunks**. The number that matters is **first
+  paint: 431.80 kB raw / 122.69 kB gzip** (measured on `main` at `c35f0b6`, 23 Sep), which
+  is `dist/index.html`'s single `<script>` and nothing else — measure it that way, by
+  reading the tags out of `index.html`, not by looking for "the main chunk". The 22–23 Sep
+  round added 1.54 kB raw / 0.55 kB gzip, almost all of it WI-6's sign-in messages, which
+  are eager because `Auth` is. **`@supabase/supabase-js` is pinned `~2.57.4` on purpose**:
+  2.117 was in range and added 101 kB raw / 24.7 kB gzip to first paint for nothing this
+  app uses. Do not widen the pin without A/B'ing first paint. The cross-farm cost-template copy
   added 10.46 kB raw / 2.78 kB gzip to it on 20 Sep, A/B'd against `main` at
   419.81 / 119.37 — the wizard is eager because `App.tsx` imports it. WI-29a added 48.85 kB raw /
   16.29 kB gzip to it (`react-router-dom`, which `App.tsx` imports eagerly), WI-29b a
@@ -285,7 +293,7 @@ closed (WI-22's bundle, WI-29's router). What is left is layout and input hygien
   are `App.tsx` and `main.tsx`; a change confined to one page no longer does. Total across all chunks went
   593 → 612 kB gzip from chunking overhead, which is the correct trade and not a
   regression — quote first paint, not the total.
-- `npm test` reports **508 passing** in 18 files (490 before the cost-template copy added 18; 489 before MOB-4 added 1; 463 before the harvest tracker added 26; 456 before the ActionMenu fix added 7; 435 before the field-editing work added 21; 422 before WI-29a added 13; 401 before R-6 added 21; 386 before R-1 added 15; 380 before V-8 added 6; 372 before
+- `npm test` reports **533 passing** in 21 files (508 before the 22–23 Sep round added 25 — 11 revenue allocation, 5 chemical inventory lookup, 9 sign-in messages; 490 before the cost-template copy added 18; 489 before MOB-4 added 1; 463 before the harvest tracker added 26; 456 before the ActionMenu fix added 7; 435 before the field-editing work added 21; 422 before WI-29a added 13; 401 before R-6 added 21; 386 before R-1 added 15; 380 before V-8 added 6; 372 before
   `formatRate` added 8; 347 before V-6 added 25; 340 before V-5 added 7; 320 before V-2 added 20; 308 before V-0
   added 12; 295 before shopping-list coverage added 13).
 - **CI exists as of 6 Sep 2026** — `.github/workflows/ci.yml`, WI-21's core gate. It runs
@@ -475,6 +483,16 @@ preview URL. Full detail is in `DEVELOPER_GUIDE.md` → Deployment; the parts th
 - **`public/_headers` marks `/assets/*` immutable and `index.html` not cacheable.** The
   second half matters: a cached `index.html` names chunk filenames a deploy has deleted,
   which manufactures R-6's chunk-load error on purpose.
+- **Merging several PRs at once used to roll production BACK (23 Sep 2026).** Four merges a
+  minute apart started four production deploys; the oldest commit's run sat in the runner
+  queue, finished last, and production went live without three of the four. The deploy job
+  now has a `concurrency` group AND a "newest commit on main?" step that stands down if
+  `main` has moved on — the second is the one that fixes it, because jobs run in the order
+  they reach the group, not commit order. Side effect: re-running an OLD run no longer
+  redeploys it; roll back from Netlify's deploy list.
+- **After merging, check the live bundle, not the green tick.** `curl` the site's
+  `index.html`, read the `<script>`, and grep it for a string only the new code contains.
+  That is how the 23 Sep rollback was caught before a migration was applied on top of it.
 - **Deploys are gated on `verify`, not on Netlify's Git integration.** Do not connect the
   Netlify site to the repository as well — it would build on every push regardless of
   whether the floor passed, and deploy twice.
@@ -495,7 +513,7 @@ npm run verify
 
 That is `npm test` → `npm run check:readonly` → `npm run mirrors` → `npm run baselines` →
 `npm run build`.
-`tsc` reports **63** and `eslint` **105 errors / 27 warnings** on a healthy tree, so CI
+`tsc` reports **59** and `eslint` **103 errors / 27 warnings** on a healthy tree, so CI
 cannot require a zero exit; `scripts/check-baselines.mjs` instead compares against the
 committed sets in `baselines/` and fails only on something **new**.
 
@@ -547,10 +565,10 @@ blind, not because anyone was careless — hence a check of its own
 The individual commands still work when you want one of them:
 
 ```
-npx tsc --noEmit -p tsconfig.app.json   # 63
-npx eslint .                            # 105 errors / 27 warnings
-npx vite build                          # must succeed; first paint 122.14 kB gz
-npm test                                # 508 passing, must stay green
+npx tsc --noEmit -p tsconfig.app.json   # 59
+npx eslint .                            # 103 errors / 27 warnings
+npx vite build                          # must succeed; first paint 122.69 kB gz
+npm test                                # 533 passing, must stay green
 ```
 
 **The Supabase CLI is installed as a dev dependency** (`supabase` 2.116.0, added 31 Aug
