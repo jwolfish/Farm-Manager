@@ -65,8 +65,6 @@ src/lib/shoppingListGeneration.ts | error | @typescript-eslint/no-explicit-any |
 src/lib/shoppingListGeneration.ts | error | @typescript-eslint/no-explicit-any | Unexpected any. Specify a different type.
 src/lib/shoppingListGeneration.ts | error | @typescript-eslint/no-explicit-any | Unexpected any. Specify a different type.
 src/lib/shoppingListGeneration.ts | error | @typescript-eslint/no-explicit-any | Unexpected any. Specify a different type.
-src/lib/shoppingListGeneration.ts | error | @typescript-eslint/no-explicit-any | Unexpected any. Specify a different type.
-src/lib/shoppingListGeneration.ts | error | @typescript-eslint/no-explicit-any | Unexpected any. Specify a different type.
 src/lib/shoppingListGeneration.ts | error | @typescript-eslint/no-unused-vars | '_farmId' is defined but never used.
 src/lib/shoppingListGeneration.ts | error | @typescript-eslint/no-unused-vars | 'farmId' is defined but never used.
 src/lib/shoppingListGeneration.ts | error | @typescript-eslint/no-unused-vars | 'farmId' is defined but never used.
